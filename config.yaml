@@ -1,0 +1,39 @@
+# Tiny Steward — Semantic Capability Graph
+# Endpoints for llamacpp / Ollama local stack
+
+llm:
+  orchestrator:
+    base_url: "http://127.0.0.1:11440"
+    api: "openai"                      # llamacpp /v1/chat/completions
+    model: "qwythos-9b-96k"
+    ctx: 32768
+    max_tokens: 4096
+    temperature: 0.6
+    top_p: 0.95
+    repeat_penalty: 1.05
+  atomic:
+    base_url: "http://127.0.0.1:11439"
+    api: "openai"
+    model: "qwen3-4b-instruct-96k"
+    ctx: 16384
+    max_tokens: 2048
+    temperature: 0.1
+
+embeddings:
+  base_url: "http://127.0.0.1:11438"
+  api: "ollama"                        # Ollama /api/embeddings
+  model: "nomic-embed-text"
+
+help:
+  top_k: 5
+  min_similarity: 0.35
+  max_inject_tokens: 4000             # budget for skill text injection
+
+skills:
+  root: "./skills"
+  index: "./skills/_index.json"
+  rebuild_on_start: true
+
+sessions:
+  dir: "./sessions"
+  auto_save: true

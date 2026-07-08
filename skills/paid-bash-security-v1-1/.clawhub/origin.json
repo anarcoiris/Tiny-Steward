@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "registry": "https://clawhub.ai",
+  "slug": "paid-bash-security-v1-1",
+  "installedVersion": "1.1.1",
+  "installedAt": 1783262980092,
+  "artifact": {
+    "kind": "archive",
+    "sha256": "38d48ee6c52d97752be8253506393f69f68e1e6f7b0e61e486b23f91f7929cdf",
+    "integrity": "sha256-ONSO5sUtl3Ur6CU1Bjk/afaOHm97DmHkhrI/kfeSnN8="
+  },
+  "skillFile": {
+    "path": "SKILL.md",
+    "sha256": "5bb3d74e7948f3d2bb9aa479303b866990cb07f12dfa6caffefa81ab77eb0881"
+  }
+}

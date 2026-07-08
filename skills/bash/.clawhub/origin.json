@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "registry": "https://clawhub.ai",
+  "slug": "bash",
+  "installedVersion": "1.0.2",
+  "installedAt": 1783262946166,
+  "artifact": {
+    "kind": "archive",
+    "sha256": "c9d834e1b8051fe534306733a5a40823d1d1f64a0e195424a340a1b0a58ea5ef",
+    "integrity": "sha256-ydg04bgFH+U0MGczpaQII9HR9koOGVQko0ChsKWOpe8="
+  },
+  "skillFile": {
+    "path": "SKILL.md",
+    "sha256": "e4d97545e14dd300b1853421fa825756208f6e63073d2afe54294f8692584607"
+  }
+}
