@@ -80,8 +80,7 @@ class LLMClient:
             temperature=temperature,
             tools=tools,
         )
-        with self._client.stream("POST", "/v1/chat/completions", json=body) as resp:
-            resp.raise_for_status()
+        with self._stream_request("/v1/chat/completions", body) as resp:
             for line in resp.iter_lines():
                 if not line.startswith("data: "):
                     continue
@@ -131,8 +130,7 @@ class LLMClient:
         )
         usage: dict[str, int] | None = None
 
-        with self._client.stream("POST", "/v1/chat/completions", json=body) as resp:
-            resp.raise_for_status()
+        with self._stream_request("/v1/chat/completions", body) as resp:
             for line in resp.iter_lines():
                 if not line.startswith("data: "):
                     continue
@@ -216,6 +214,37 @@ class LLMClient:
         resp.raise_for_status()
         return resp.json()
 
+    def _stream_request(
+        self,
+        path: str,
+        body: dict[str, Any],
+        *,
+        max_retries: int = 3,
+        retry_delay: float = 2.0,
+    ):
+        """Open a streaming POST, retrying on 503 (slot busy) before yielding."""
+        last_exc: Exception | None = None
+        for attempt in range(max_retries):
+            try:
+                cm = self._client.stream("POST", path, json=body)
+                resp = cm.__enter__()
+                if resp.status_code == 503 and attempt < max_retries - 1:
+                    resp.read()
+                    cm.__exit__(None, None, None)
+                    time.sleep(retry_delay * (attempt + 1))
+                    continue
+                resp.raise_for_status()
+                return _StreamContext(cm, resp)
+            except httpx.HTTPStatusError as e:
+                last_exc = e
+                if e.response.status_code == 503 and attempt < max_retries - 1:
+                    time.sleep(retry_delay * (attempt + 1))
+                    continue
+                raise
+        if last_exc:
+            raise last_exc
+        raise RuntimeError("stream request failed without exception")
+
     def close(self):
         self._client.close()
 
@@ -224,6 +253,20 @@ class LLMClient:
 
     def __exit__(self, *args):
         self.close()
+
+
+class _StreamContext:
+    """Wraps httpx stream context so callers can `with` it after retries."""
+
+    def __init__(self, cm, resp):
+        self._cm = cm
+        self._resp = resp
+
+    def __enter__(self):
+        return self._resp
+
+    def __exit__(self, *args):
+        return self._cm.__exit__(*args)
 
 
 # ------------------------------------------------------------------

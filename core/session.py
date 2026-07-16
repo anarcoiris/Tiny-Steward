@@ -112,15 +112,71 @@ class SessionManager:
         for path in sorted(self.dir.glob("*.json")):
             try:
                 data = json.loads(path.read_text(encoding="utf-8"))
+                meta = data.get("metadata") or {}
                 sessions.append({
                     "name": data.get("name", path.stem),
                     "messages": len(data.get("messages", [])),
                     "skills": len(data.get("discovered_skills", [])),
                     "updated_at": data.get("updated_at", 0),
+                    "parent": meta.get("parent"),
+                    "status": meta.get("status"),
+                    "children": list(meta.get("children") or []),
                 })
             except Exception:
                 continue
         return sessions
+
+    def list_tree(self) -> list[dict[str, Any]]:
+        """Return sessions shaped for a parent→children tree display."""
+        sessions = self.list_sessions()
+        by_name = {s["name"]: s for s in sessions}
+        roots = []
+        for s in sessions:
+            parent = s.get("parent")
+            if not parent or parent not in by_name:
+                roots.append(s)
+        return roots
+
+    def register_child(self, parent_name: str, child_name: str) -> None:
+        """Append child_name to parent's metadata.children (loads/saves parent)."""
+        path = self._session_path(parent_name)
+        if not path.exists():
+            return
+        data = json.loads(path.read_text(encoding="utf-8"))
+        meta = data.setdefault("metadata", {})
+        children = list(meta.get("children") or [])
+        if child_name not in children:
+            children.append(child_name)
+            meta["children"] = children
+            data["updated_at"] = time.time()
+            path.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+        if self.current and self.current.name == parent_name:
+            self.current.metadata["children"] = children
+
+    def load_metadata(self, name: str) -> dict[str, Any]:
+        path = self._session_path(name)
+        if not path.exists():
+            return {}
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+            return dict(data.get("metadata") or {})
+        except Exception:
+            return {}
+
+    def update_session_metadata(self, name: str, updates: dict[str, Any]) -> None:
+        path = self._session_path(name)
+        if not path.exists():
+            # Create a minimal session shell so child can mark status before first save.
+            session = Session(name=name, metadata=dict(updates))
+            path.write_text(json.dumps(asdict(session), indent=2, ensure_ascii=False), encoding="utf-8")
+            return
+        data = json.loads(path.read_text(encoding="utf-8"))
+        meta = data.setdefault("metadata", {})
+        meta.update(updates)
+        data["updated_at"] = time.time()
+        path.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+        if self.current and self.current.name == name:
+            self.current.metadata.update(updates)
 
     def delete(self, name: str) -> bool:
         """Delete a session."""

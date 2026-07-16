@@ -6,8 +6,8 @@ llm:
     base_url: "http://127.0.0.1:11440"
     api: "openai"                      # llamacpp /v1/chat/completions
     model: "qwythos-9b-96k"
-    ctx: 98304
-    max_tokens: 4096
+    ctx: 131072
+    max_tokens: 8192
     temperature: 0.6
     top_p: 0.95
     repeat_penalty: 1.05
@@ -16,8 +16,8 @@ llm:
     api: "openai"
     model: "qwen3-4b-instruct-96k"
     ctx: 98304
-    max_tokens: 2048
-    temperature: 0.1
+    max_tokens: 4192
+    temperature: 0.15
 
 embeddings:
   base_url: "http://127.0.0.1:11438"
@@ -42,5 +42,18 @@ ui:
   streaming: true          # stream LLM tokens to terminal in real time
   markdown: true           # render Markdown in assistant responses
   stats: true              # show per-turn token + timing stats line
-  checkpoint_every: 10      # auto-save session checkpoint every N turns (0 = off)
+  checkpoint_every: 4      # auto-save session checkpoint every N turns (0 = off)
+  # Out-of-process delegate terminal: auto | in_process | windows_terminal | tmux | console
+  # auto → Windows Terminal split if wt.exe present, else new console; Unix + $TMUX → tmux; else in_process
+  delegate_terminal: auto
+
+# ---------------------------------------------------------------------------
+# llama.cpp ops notes (verified on this host 2026-07-16):
+# - atomic (:11439) qwen3-4b-instruct-96k: --parallel 1, -c 98304
+#   → single slot; concurrent child terminals serialize (503 retries help).
+# - orchestrator (:11440) qwythos-9b-96k: --parallel 1, -c 262144 (server),
+#   while config.yaml ctx: 98304 is the budget Tiny Steward uses for compaction.
+# - Raise atomic --parallel N before relying on multiple out-of-process delegates.
+# - Mid-generation abort is not used; mailbox drains between turns only.
+# ---------------------------------------------------------------------------
 

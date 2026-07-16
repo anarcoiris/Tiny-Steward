@@ -36,6 +36,30 @@ class TestToolCallParsing(unittest.TestCase):
         self.assertEqual(actions[0]["name"], "pwsh")
         self.assertEqual(actions[0]["body"], "Get-ChildItem")
 
+    def test_qwythos_ls_path_to_body(self):
+        text = (
+            '<tool_call>\n'
+            '<function=ls>\n'
+            '<parameter=path>\n'
+            'skills/_policy\n'
+            '</parameter>\n'
+            '</function>\n'
+            '</tool_call>'
+        )
+        actions = extract_actions(text)
+        self.assertEqual(len(actions), 1)
+        self.assertEqual(actions[0]["name"], "ls")
+        self.assertEqual(actions[0]["body"], "skills/_policy")
+        self.assertNotIn("path", actions[0]["attrs"])
+
+    def test_legacy_ls_path_attribute(self):
+        text = '<action name="ls" path="skills/_policy"></action>'
+        actions = extract_actions(text)
+        self.assertEqual(len(actions), 1)
+        self.assertEqual(actions[0]["name"], "ls")
+        self.assertEqual(actions[0]["body"], "")
+        self.assertEqual(actions[0]["attrs"]["path"], "skills/_policy")
+
     def test_legacy_action_fallback(self):
         text = '<action name="ls">.</action>'
         actions = extract_actions(text)

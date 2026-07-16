@@ -187,6 +187,8 @@ def ls(path: str = ".") -> dict[str, Any]:
     """List directory contents."""
     try:
         p = Path(path).expanduser().resolve()
+        if not p.exists():
+            return {"error": f"Path not found: {path}"}
         if not p.is_dir():
             return {"error": f"Not a directory: {path}"}
 
@@ -364,7 +366,7 @@ PRIMITIVES_TOOLS: list[dict] = [
     _fn("write", "Create or overwrite a file.", {"path": {"type": "string"}, "content": {"type": "string"}}, ["path", "content"]),
     _fn("append", "Append to a file.", {"path": {"type": "string"}, "content": {"type": "string"}}, ["path", "content"]),
     _fn("mkdir", "Create a directory.", {"path": {"type": "string"}}, ["path"]),
-    _fn("ls", "List directory contents.", {"path": {"type": "string"}}),
+    _fn("ls", "List directory contents. Directory path only — do not pass cwd.", {"path": {"type": "string"}}),
     _fn("grep", "Search for text in files.", {"pattern": {"type": "string"}, "path": {"type": "string"}}, ["pattern"]),
     _fn("http", "Make an HTTP request.", {
         "method": {"type": "string"},

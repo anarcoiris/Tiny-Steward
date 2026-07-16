@@ -391,6 +391,8 @@ def print_event(kind: str, message: str):
         "error":      ("✖",  _C.ERROR),
         "ok":         ("✔",  _C.OK),
         "info":       ("ℹ",  _C.INFO),
+        "mail":       ("✉",  _C.INFO),
+        "delegate":   ("🤝", _C.INFO),
     }
     icon, style = icons.get(kind, ("•", _C.DIM))
 
@@ -470,6 +472,46 @@ def print_session_table(sessions: list[dict], current_name: str):
             marker,
         )
     _console.print(table)
+
+
+def print_session_tree(sessions: list[dict], current_name: str):
+    """Print parent→children session tree."""
+    by_name = {s["name"]: s for s in sessions}
+    children_map: dict[str, list[dict]] = {}
+    roots: list[dict] = []
+    for s in sessions:
+        parent = s.get("parent")
+        if parent and parent in by_name:
+            children_map.setdefault(parent, []).append(s)
+        else:
+            roots.append(s)
+
+    def _label(s: dict) -> str:
+        status = s.get("status") or ""
+        marker = " ◀" if s["name"] == current_name else ""
+        extra = f" [{status}]" if status else ""
+        return f"{s['name']}{extra} ({s.get('messages', 0)} msgs){marker}"
+
+    if not _RICH:
+        print("\n  Session tree:")
+        def _walk(node: dict, indent: int = 0):
+            print("  " + "  " * indent + _label(node))
+            for child in children_map.get(node["name"], []):
+                _walk(child, indent + 1)
+        for r in roots:
+            _walk(r)
+        print()
+        return
+
+    from rich.tree import Tree
+    tree = Tree("Sessions")
+    def _add(parent_node, node: dict):
+        branch = parent_node.add(_label(node))
+        for child in children_map.get(node["name"], []):
+            _add(branch, child)
+    for r in roots:
+        _add(tree, r)
+    _console.print(tree)
 
 
 # ---------------------------------------------------------------------------

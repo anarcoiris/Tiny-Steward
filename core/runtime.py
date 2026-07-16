@@ -1,21 +1,21 @@
 """Runtime — the main reasoning loop.
 
-The orchestrator sends the conversation to the LLM, parses action tags
+The orchestrator sends the conversation to the LLM, parses tool calls
 from the response, executes them, and feeds results back into the
 conversation. The help() action triggers semantic skill search.
 
-Action format (XML-tagged in LLM response):
-  <action name="pwsh">Get-ChildItem</action>
-  <action name="help">Permission denied publickey</action>
-  <action name="write" path="file.txt">content here</action>
-  <action name="http" method="GET">https://example.com</action>
+Canonical action format (native tool_call, Qwythos-style):
+  <tool_call><function=ls><parameter=path>skills/</parameter></function></tool_call>
+Legacy <action> tags remain as a parser fallback only.
 """
 
 from __future__ import annotations
 
 import json
 import re
+import sys
 import time
+import uuid
 from pathlib import Path
 from typing import Any
 
@@ -26,10 +26,13 @@ from core.session import Session, SessionManager
 from core.stats import SessionStats
 from core.guidance import GuidanceEngine
 from core.interaction_log import InteractionLog
+from core.mailbox import Mailbox, mailbox_for
+from core.delegate_terminal import (
+    build_child_argv,
+    resolve_terminal_mode,
+    spawn_child,
+)
 import core.display as display
-
-
-import sys
 
 _OS_PATH_RULE = (
     "- Use relative paths (e.g. `skills/`) or valid Windows paths (e.g. `C:\\...`). Do NOT use Unix-style absolute paths (e.g. `/skills`) as they resolve to `C:\\skills` on Windows."
@@ -63,16 +66,58 @@ You are Tiny Steward, a task executor with a minimal set of primitive actions.
 
 ## How to act
 
-Respond with actions using XML tags:
+Respond with native tool calls (one at a time). Examples:
 
-<action name="pwsh">Get-ChildItem -Recurse</action>
-<action name="read" path="config.yaml" start_line="1" end_line="50"></action>
-<action name="write" path="output.txt">file content here</action>
-<action name="http" method="POST" url="http://example.com">{{"key": "value"}}</action>
-<action name="mcp" tool="nina_camera_capture">{{"duration": 1, "save": false}}</action>
-<action name="delegate" agent="nda_review">Review the Acme NDA text below...</action>
-<action name="help">container won't start</action>
-<action name="checkpoint">I am about to rewrite the index, if I crash I will retry with smaller chunks.</action>
+<tool_call>
+<function=ls>
+<parameter=path>
+skills/_policy
+</parameter>
+</function>
+</tool_call>
+
+<tool_call>
+<function=mkdir>
+<parameter=path>
+skills/_policy/references
+</parameter>
+</function>
+</tool_call>
+
+<tool_call>
+<function=read>
+<parameter=path>
+config.yaml
+</parameter>
+<parameter=start_line>
+1
+</parameter>
+<parameter=end_line>
+50
+</parameter>
+</function>
+</tool_call>
+
+<tool_call>
+<function=pwsh>
+<parameter=command>
+Get-ChildItem -Recurse
+</parameter>
+</function>
+</tool_call>
+
+<tool_call>
+<function=delegate>
+<parameter=agent>
+nda_review
+</parameter>
+<parameter=task>
+Review the Acme NDA text below...
+</parameter>
+</function>
+</tool_call>
+
+ls takes a directory path only — do not pass cwd. Use pwsh/bash when you need cwd.
 
 ## When to use help()
 
@@ -228,6 +273,8 @@ class Runtime:
         atomic_llm: LLMClient | None = None,
         shortcuts: dict[str, str] | None = None,
         max_delegate_turns: int = 10,
+        delegate_terminal: str = "auto",
+        config_path: str = "config.yaml",
     ):
         self.llm = llm
         self.help_engine = help_engine
@@ -240,6 +287,8 @@ class Runtime:
         self.checkpoint_every = checkpoint_every
         self.atomic_llm = atomic_llm
         self.max_delegate_turns = max_delegate_turns
+        self.delegate_terminal = delegate_terminal
+        self.config_path = config_path
         self.shortcuts = shortcuts or {
             "send": "escape, enter",
             "newline": "c-j"
@@ -258,6 +307,31 @@ class Runtime:
     def _init_interaction_log(self):
         if not self.interaction_log and self.session_manager:
             self.interaction_log = InteractionLog(self.session_manager.dir, self.session.name)
+
+    def _mailbox(self, session_id: str | None = None) -> Mailbox | None:
+        if not self.session_manager:
+            return None
+        return mailbox_for(self.session_manager.dir, session_id or self.session.name)
+
+    def _drain_mailbox_into_messages(self, messages: list[dict[str, Any]]) -> int:
+        """Drain inbox and inject supervisor messages. Returns count injected."""
+        box = self._mailbox()
+        if not box:
+            return 0
+        drained = box.drain()
+        for msg in drained:
+            sender = str(msg.get("from", "unknown"))
+            content = str(msg.get("content", ""))
+            msg_type = str(msg.get("type", "message"))
+            if msg_type == "delegate_result":
+                # Parent wait loop consumes these separately; skip injecting as chat.
+                continue
+            text = f"[Mail from {sender} | {msg_type} | priority={msg.get('priority', 'normal')}]\n{content}"
+            name = f"supervisor_{sender}"
+            messages.append({"role": "user", "name": name, "content": text})
+            self.session.add_message("user", text, name=name)
+            display.print_event("mail", f"Injected mail from {sender} ({msg_type})")
+        return len(drained)
 
     # ------------------------------------------------------------------
     # Tools payload policy (once per session per backend; resend on failure)
@@ -307,6 +381,19 @@ class Runtime:
                 return True
         return False
 
+    @staticmethod
+    def _is_benign_fs_error(result: dict[str, Any] | str) -> bool:
+        """Path/FS errors that should not trigger tools-payload resend."""
+        if not isinstance(result, dict):
+            return False
+        err = str(result.get("error", ""))
+        return (
+            err.startswith("Path not found:")
+            or err.startswith("Not a directory:")
+            or err.startswith("File not found:")
+            or err.startswith("Not a file or directory:")
+        )
+
     def _process_response_actions(
         self,
         response: str,
@@ -338,11 +425,15 @@ class Runtime:
                 self.interaction_log.record_action(action["name"], action.get("body", ""), code)
 
             display.print_result(action["name"], result_text, is_error=is_error)
-            self._append_tool_result(messages, action["name"], result_text)
+            # Avoid polluting the parent session during in-process secondary loops.
+            # Child sessions (metadata.parent set) persist their own tool results.
+            persist = backend != "secondary" or bool(self.session.metadata.get("parent"))
+            self._append_tool_result(messages, action["name"], result_text, persist=persist)
 
             if is_error:
                 errors += 1
-                self._force_tools_resend(backend)
+                if not self._is_benign_fs_error(result):
+                    self._force_tools_resend(backend)
 
         return True, errors
 
@@ -370,6 +461,7 @@ class Runtime:
                 messages = self._compact_messages(messages)
                 compaction_triggered = True
 
+            self._drain_mailbox_into_messages(messages)
             response, usage, elapsed = self._call_llm(messages, turn=turn)
             if response is None:
                 return "[LLM error]"
@@ -503,6 +595,7 @@ class Runtime:
                         f"Context compacted — budget {self.context_budget:,} tokens"
                     )
 
+                self._drain_mailbox_into_messages(messages)
                 response, usage, elapsed = self._call_llm(messages, turn=turn)
                 if response is None:
                     break
@@ -764,7 +857,7 @@ class Runtime:
                     f"{context_text}"
                 )
 
-            result = self._run_delegate_loop(skill, problem, context_text)
+            result = self._delegate_with_terminal(skill, problem, context_text)
             return {"content": result}
 
         primitive = PRIMITIVES.get(name)
@@ -788,11 +881,11 @@ class Runtime:
                 path = attrs.get("path", "")
                 return primitive(path, body)
             elif name == "mkdir":
-                return primitive(body)
+                return primitive(attrs.get("path") or body)
             elif name == "ls":
-                return primitive(body or ".")
+                return primitive(attrs.get("path") or body or ".")
             elif name == "grep":
-                path = attrs.get("path", ".")
+                path = attrs.get("path") or "."
                 return primitive(body, path)
             elif name == "http":
                 method = attrs.get("method", "GET")
@@ -836,6 +929,129 @@ class Runtime:
         )
         return "\n\n".join(prompt_parts)
 
+    def _delegate_with_terminal(self, skill, problem: str, context_text: str) -> str:
+        """Spawn a child terminal when configured; otherwise run in-process."""
+        mode = resolve_terminal_mode(self.delegate_terminal)
+        if mode == "in_process" or not self.session_manager:
+            return self._run_delegate_loop(skill, problem, context_text)
+
+        child_name = f"{self.session.name}__{skill.slug}_{uuid.uuid4().hex[:8]}"
+        steward_path = Path(__file__).resolve().parent.parent / "steward.py"
+        # Persist problem+context for the child process via a sidecar file.
+        problem_blob = {
+            "problem": problem,
+            "context": context_text,
+            "skill": skill.slug,
+            "parent": self.session.name,
+        }
+        problem_dir = self.session_manager.dir / ".mailbox" / child_name
+        problem_dir.mkdir(parents=True, exist_ok=True)
+        problem_path = problem_dir / "problem.json"
+        problem_path.write_text(json.dumps(problem_blob, ensure_ascii=False, indent=2), encoding="utf-8")
+
+        self.session_manager.update_session_metadata(child_name, {
+            "parent": self.session.name,
+            "status": "running",
+            "skill": skill.slug,
+            "terminal_kind": mode,
+            "problem_path": str(problem_path),
+        })
+        self.session_manager.register_child(self.session.name, child_name)
+
+        argv = build_child_argv(
+            python=sys.executable,
+            steward_path=steward_path,
+            config=self.config_path,
+            session=child_name,
+            parent=self.session.name,
+            skill=skill.slug,
+            problem=str(problem_path),
+        )
+        spawn_info = spawn_child(mode, argv, cwd=Path.cwd())
+        if spawn_info.get("kind") == "in_process":
+            return self._run_delegate_loop(skill, problem, context_text)
+
+        if self.session_manager:
+            self.session_manager.update_session_metadata(child_name, {
+                "pane_id": spawn_info.get("pane_id"),
+                "pid": spawn_info.get("pid"),
+                "terminal_kind": spawn_info.get("kind"),
+            })
+
+        display.print_event(
+            "delegate",
+            f"Spawned child session '{child_name}' via {spawn_info.get('kind')} — waiting for result…",
+        )
+        return self._wait_for_delegate_result(child_name, timeout_s=3600.0)
+
+    def _wait_for_delegate_result(self, child_name: str, *, timeout_s: float = 3600.0) -> str:
+        """Block until child marks done or mails a delegate_result."""
+        assert self.session_manager is not None
+        deadline = time.monotonic() + timeout_s
+        parent_box = self._mailbox(self.session.name)
+        while time.monotonic() < deadline:
+            meta = self.session_manager.load_metadata(child_name)
+            status = meta.get("status")
+            if status in ("done", "error"):
+                result = meta.get("result")
+                if result:
+                    return str(result)
+                return f"[Delegate {status} with empty result]"
+
+            if parent_box:
+                for path in sorted(parent_box.inbox.glob("*.json")):
+                    try:
+                        data = json.loads(path.read_text(encoding="utf-8"))
+                    except (json.JSONDecodeError, OSError):
+                        continue
+                    if data.get("type") == "delegate_result" and data.get("from") == child_name:
+                        try:
+                            path.unlink(missing_ok=True)
+                        except OSError:
+                            pass
+                        return str(data.get("content", ""))
+
+            time.sleep(0.5)
+
+        return f"[Delegate timeout waiting for child session '{child_name}']"
+
+    def run_delegate_child(self, skill, problem: str, context_text: str = "") -> str:
+        """Entry point for ``--delegate-mode`` child processes."""
+        parent = (self.session.metadata or {}).get("parent")
+        if self.session_manager:
+            self.session_manager.update_session_metadata(self.session.name, {
+                "status": "running",
+                "parent": parent,
+                "skill": skill.slug,
+            })
+
+        try:
+            result = self._run_delegate_loop(skill, problem, context_text)
+            status = "done"
+        except Exception as e:
+            result = f"[Delegate child error: {e}]"
+            status = "error"
+
+        if self.session_manager:
+            self.session_manager.update_session_metadata(self.session.name, {
+                "status": status,
+                "result": result,
+            })
+            self.session_manager.save()
+
+        if parent and self.session_manager:
+            box = mailbox_for(self.session_manager.dir, parent)
+            box.send(
+                from_session=self.session.name,
+                to_session=parent,
+                content=result,
+                msg_type="delegate_result",
+                priority="high",
+            )
+
+        display.print_event("delegate", f"Child session '{self.session.name}' finished ({status}).")
+        return result
+
     def _run_delegate_loop(self, skill, problem: str, context_text: str) -> str:
         """Run atomic (Qwen) micro-agent with tool-call loop."""
         system_prompt = self._build_delegate_system_prompt(skill)
@@ -847,6 +1063,7 @@ class Runtime:
         final_response = ""
 
         for _ in range(self.max_delegate_turns):
+            self._drain_mailbox_into_messages(messages)
             send_tools = self._should_send_tools("secondary")
 
             response, _, _ = self._call_llm(
@@ -862,6 +1079,8 @@ class Runtime:
 
             final_response = response
             messages.append({"role": "assistant", "content": response})
+            if self.session.metadata.get("parent"):
+                self.session.add_message("assistant", response)
 
             if "DONE" in response and not extract_actions(response):
                 break
@@ -1046,6 +1265,37 @@ class Runtime:
                 self._save_config_overrides()
             else:
                 self._print_config_table()
+            return True
+
+        # ── /mail <session> <text> ─────────────────────────────────────
+        if command == "/mail":
+            if not arg or " " not in arg:
+                display.print_event("info", "Usage: /mail <session> <message text>")
+                return True
+            target, text = arg.split(maxsplit=1)
+            if not self.session_manager:
+                display.print_event("error", "Session manager not available.")
+                return True
+            box = mailbox_for(self.session_manager.dir, target)
+            box.send(
+                from_session=self.session.name,
+                to_session=target,
+                content=text,
+                msg_type="supervision_question",
+                priority="high",
+            )
+            display.print_event("mail", f"Queued mail to session '{target}'.")
+            return True
+
+        # ── /tree ──────────────────────────────────────────────────────
+        if command == "/tree":
+            if not self.session_manager:
+                display.print_event("error", "Session manager not available.")
+                return True
+            display.print_session_tree(
+                self.session_manager.list_sessions(),
+                self.session.name if self.session else "",
+            )
             return True
 
         # ── /set ───────────────────────────────────────────────────────

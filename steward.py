@@ -5,6 +5,7 @@ Entry point. Provides:
   - Single task execution (--task "...")
   - Index building (--build-index)
   - Session management (--session <name>)
+  - Out-of-process delegate child (--delegate-mode)
 
 Usage:
   python steward.py                          # interactive REPL, default session
@@ -16,6 +17,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 from pathlib import Path
 
@@ -92,6 +94,10 @@ def main():
     parser.add_argument("--no-health-check", action="store_true", help="Skip endpoint health checks")
     parser.add_argument("--no-stream", action="store_true", help="Disable streaming output")
     parser.add_argument("--no-color", action="store_true", help="Disable color output")
+    parser.add_argument("--delegate-mode", action="store_true", help="Run as out-of-process delegate child")
+    parser.add_argument("--parent", help="Parent session name (delegate child)")
+    parser.add_argument("--delegate-skill", help="Skill slug for delegate child")
+    parser.add_argument("--problem", help="Problem text or path to problem.json (delegate child)")
     args = parser.parse_args()
 
     # Load config
@@ -103,6 +109,7 @@ def main():
     use_markdown  = ui_cfg.get("markdown", True)
     show_stats    = ui_cfg.get("stats", True)
     checkpoint_every = ui_cfg.get("checkpoint_every", 5)
+    delegate_terminal = ui_cfg.get("delegate_terminal", "auto")
 
     # Initialize orchestrator LLM
     orch_cfg = config["llm"]["orchestrator"]
@@ -186,14 +193,20 @@ def main():
     session_mgr = SessionManager(session_cfg.get("dir", "./sessions"))
     session = session_mgr.switch(args.session)
 
+    if args.parent:
+        session.metadata["parent"] = args.parent
+        session_mgr.save()
+
     # Runtime
     context_budget = int(orch_cfg.get("ctx", 32768) * 0.8)
     shortcuts = ui_cfg.get("shortcuts", {
         "send": "escape, enter",
         "newline": "c-j"
     })
+    # Delegate children always use the atomic lane as their primary LLM client.
+    runtime_llm = atomic_llm if (args.delegate_mode and atomic_llm) else llm
     runtime = Runtime(
-        llm=llm,
+        llm=runtime_llm,
         help_engine=help_engine,
         session=session,
         use_streaming=use_streaming,
@@ -203,10 +216,37 @@ def main():
         context_budget=context_budget,
         atomic_llm=atomic_llm,
         shortcuts=shortcuts,
+        delegate_terminal=delegate_terminal,
+        config_path=args.config,
     )
     runtime.session_manager = session_mgr
 
     # Execute
+    if args.delegate_mode:
+        if not args.delegate_skill:
+            display.print_event("error", "--delegate-mode requires --delegate-skill")
+            sys.exit(2)
+        if not atomic_llm:
+            display.print_event("error", "No atomic LLM configured for delegate child.")
+            sys.exit(2)
+        skill = help_engine.index.get_by_slug(args.delegate_skill) or help_engine.index.get_by_name(args.delegate_skill)
+        if not skill:
+            display.print_event("error", f"Skill '{args.delegate_skill}' not found.")
+            sys.exit(2)
+
+        problem = args.problem or ""
+        context_text = ""
+        if problem and Path(problem).is_file():
+            blob = json.loads(Path(problem).read_text(encoding="utf-8"))
+            problem = str(blob.get("problem", ""))
+            context_text = str(blob.get("context", ""))
+
+        try:
+            runtime.run_delegate_child(skill, problem, context_text)
+        finally:
+            session_mgr.save()
+        return
+
     if args.task:
         runtime.run_task(args.task)
         session_mgr.save()
