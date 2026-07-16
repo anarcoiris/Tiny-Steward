@@ -10,4 +10,7 @@ __pycache__/
 # Committing .env.example (template without secrets) is fine
 
 # Generated skill index — rebuilt on demand
-skills/_index.json
+skills/_index.json
+.git/
+*/__pycache__/*
+core/__pycache__/
