@@ -4,31 +4,31 @@ overview: Integrate Qwythos (primary) + Qwen (secondary) tool-call chat template
 todos:
   - id: schemas-tools
     content: Add `PRIMITIVES_TOOLS` + `PRIMARY_ARGS` to `core/primitives.py` aligned to `Runtime._execute_action()` parameter expectations.
-    status: in_progress
+    status: completed
   - id: llm-tools-param
     content: Update `core/llm.py` `chat()` + `chat_stream_with_usage()` to accept optional `tools` and inject `body['tools']`.
-    status: pending
+    status: completed
   - id: display-think-visible
     content: Modify `core/display.py` to stop stripping `<think>` from `_clean_response()` so user sees reasoning after streaming.
-    status: pending
+    status: completed
   - id: runtime-normalize-prune
     content: Add `strip_think_from_text()` + `normalize_messages_for_llm()` in `core/runtime.py` to prune `<think>` for LLM context and convert legacy `[Result of ...]` user messages into `role:'tool'` messages.
-    status: pending
+    status: completed
   - id: runtime-unified-extract
     content: Implement unified `extract_actions()` in `core/runtime.py` supporting Qwen JSON `<tool_call>...` and Qwythos XML `<tool_call>...`, then fallback to legacy `<action>` parsing; map args via `PRIMARY_ARGS` into `{name, body, attrs}`.
-    status: pending
+    status: completed
   - id: runtime-tool-role-results
     content: Update both runtime loops to append tool execution results as `role:'tool'` messages (not `role:'user'`), while keeping existing `display.print_result()` behavior.
-    status: pending
+    status: completed
   - id: runtime-tools-policy
     content: Implement session-scoped `tools` payload sending policy in `core/runtime.py` (send once per backend per session; resend only on tool parse/execution failures).
-    status: pending
+    status: completed
   - id: delegate-atomic-loop
     content: Refactor delegate handling so atomic (Qwen) outputs are parsed for tool calls and executed in a bounded nested loop; stream atomic output to the user while pruning `<think>` only in the prompt sent to atomic.
-    status: pending
+    status: completed
   - id: tests-tooling
     content: Add unit tests for tool-call parsing (Qwen/Qwythos/legacy), message normalization (legacy result->tool role), and tools payload resend policy using mock LLM clients.
-    status: pending
+    status: completed
 isProject: false
 ---
 

@@ -26,7 +26,7 @@ class MockLLM(LLMClient):
         super().__init__(base_url="http://mock", model="mock")
         self.last_messages = []
 
-    def chat(self, messages: list[dict[str, str]]) -> str:
+    def chat(self, messages: list[dict[str, str]], *, max_tokens=None, temperature=None, tools=None) -> str:
         self.last_messages = messages
         return "Mock sub-agent response"
 

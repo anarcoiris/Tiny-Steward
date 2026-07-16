@@ -14,3 +14,6 @@ skills/_index.json
 .git/
 */__pycache__/*
 core/__pycache__/
+*/references/roadmap.md
+**/questionary.md
+**/references/
