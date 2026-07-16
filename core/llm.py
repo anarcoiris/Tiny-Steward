@@ -25,6 +25,7 @@ class LLMClient:
         top_p: float = 0.9,
         repeat_penalty: float = 1.05,
         timeout: float = 300.0,
+        extra_params: dict[str, Any] | None = None,
     ):
         self.base_url = base_url.rstrip("/")
         self.model = model
@@ -32,6 +33,7 @@ class LLMClient:
         self.temperature = temperature
         self.top_p = top_p
         self.repeat_penalty = repeat_penalty
+        self.extra_params = extra_params or {}
         self._client = httpx.Client(
             base_url=self.base_url,
             timeout=httpx.Timeout(timeout, connect=15.0),
@@ -46,6 +48,7 @@ class LLMClient:
         *,
         max_tokens: int | None = None,
         temperature: float | None = None,
+        tools: list[dict] | None = None,
     ) -> str:
         """Send a chat completion request. Returns the assistant message text."""
         body = self._build_body(
@@ -53,6 +56,7 @@ class LLMClient:
             stream=False,
             max_tokens=max_tokens,
             temperature=temperature,
+            tools=tools,
         )
         data = self._post("/v1/chat/completions", body)
         return data["choices"][0]["message"]["content"]
@@ -66,6 +70,7 @@ class LLMClient:
         *,
         max_tokens: int | None = None,
         temperature: float | None = None,
+        tools: list[dict] | None = None,
     ) -> Generator[str, None, None]:
         """Stream a chat completion. Yields text chunks."""
         body = self._build_body(
@@ -73,6 +78,7 @@ class LLMClient:
             stream=True,
             max_tokens=max_tokens,
             temperature=temperature,
+            tools=tools,
         )
         with self._client.stream("POST", "/v1/chat/completions", json=body) as resp:
             resp.raise_for_status()
@@ -97,6 +103,7 @@ class LLMClient:
         *,
         max_tokens: int | None = None,
         temperature: float | None = None,
+        tools: list[dict] | None = None,
     ) -> Generator[str, None, dict[str, int] | None]:
         """Stream a chat completion and capture usage stats from the final chunk.
 
@@ -120,6 +127,7 @@ class LLMClient:
             stream=True,
             max_tokens=max_tokens,
             temperature=temperature,
+            tools=tools,
         )
         usage: dict[str, int] | None = None
 
@@ -172,8 +180,9 @@ class LLMClient:
         stream: bool,
         max_tokens: int | None,
         temperature: float | None,
+        tools: list[dict] | None = None,
     ) -> dict[str, Any]:
-        return {
+        body = {
             "model": self.model,
             "messages": messages,
             "max_tokens": max_tokens or self.max_tokens,
@@ -182,6 +191,10 @@ class LLMClient:
             "repeat_penalty": self.repeat_penalty,
             "stream": stream,
         }
+        if tools is not None:
+            body["tools"] = tools
+        body.update(self.extra_params)
+        return body
 
     def _post(
         self,

@@ -6,3 +6,4 @@ pyyaml>=6.0,<7.0       # config parsing
 numpy>=1.26,<3.0       # vector math for cosine similarity
 rich>=13,<15           # terminal color, Markdown rendering, tables
 python-dotenv>=1.0,<2.0  # load .env at startup (PYTHONUTF8, PYTHONIOENCODING, etc.)
+prompt_toolkit>=3.0,<4.0  # multiline input REPL

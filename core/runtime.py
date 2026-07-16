@@ -13,13 +13,14 @@ Action format (XML-tagged in LLM response):
 
 from __future__ import annotations
 
+import json
 import re
 import time
 from pathlib import Path
 from typing import Any
 
 from core.llm import LLMClient, estimate_messages_tokens, estimate_tokens
-from core.primitives import PRIMITIVES
+from core.primitives import PRIMITIVES, PRIMITIVES_TOOLS, PRIMARY_ARGS
 from core.help import HelpEngine
 from core.session import Session, SessionManager
 from core.stats import SessionStats
@@ -57,6 +58,7 @@ You are Tiny Steward, a task executor with a minimal set of primitive actions.
 - mcp(tool, body?): execute a tool on the nina-mcp server
 - delegate(agent, task): delegate a task to a specialist micro-agent (e.g. nda_review)
 - help(query): discover capabilities for a problem or error
+- set(key, value): tweak config parameters dynamically (e.g. temperature, max_tokens, thinking)
 - checkpoint(note): manually save your state and write a steering note before a complex or risky task
 
 ## How to act
@@ -99,10 +101,78 @@ You can call help() multiple times with narrower queries.
 
 # More flexible: capture all attributes
 ATTR_PATTERN = re.compile(r'(\w+)="([^"]*)"')
+TOOL_CALL_RE = re.compile(r"<tool_call>(.*?)</tool_call>", re.DOTALL)
+LEGACY_RESULT_RE = re.compile(r"^\[Result of (?P<name>[^\]]+)\]\n(?P<content>[\s\S]*)$")
+THINK_RE = re.compile(r"<think>.*?</think>", re.DOTALL)
+QWEN_PARAM_RE = re.compile(r"<parameter=([^>]+)>\n?(.*?)\n?</parameter>", re.DOTALL)
+
+
+def strip_think_from_text(text: str) -> str:
+    """Remove <think> blocks (for LLM context only)."""
+    return THINK_RE.sub("", text).strip()
+
+
+def normalize_messages_for_llm(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Prepare messages for the backend: legacy result conversion + think pruning."""
+    out: list[dict[str, Any]] = []
+    for msg in messages:
+        m = dict(msg)
+        role = m.get("role", "")
+        content = m.get("content", "")
+        if role == "user" and isinstance(content, str):
+            legacy = LEGACY_RESULT_RE.match(content)
+            if legacy:
+                m = {
+                    "role": "tool",
+                    "name": legacy.group("name"),
+                    "content": legacy.group("content"),
+                }
+        if m.get("role") == "assistant" and isinstance(m.get("content"), str):
+            m["content"] = strip_think_from_text(m["content"])
+        out.append(m)
+    return out
+
+
+def _args_to_action(name: str, args: dict[str, Any]) -> dict[str, Any]:
+    """Map tool arguments dict to legacy action shape {name, body, attrs}."""
+    primary = PRIMARY_ARGS.get(name)
+    attrs = {k: str(v) if v is not None else "" for k, v in args.items()}
+    body = ""
+    if primary is None:
+        body = ""
+    elif primary in attrs:
+        body = attrs.pop(primary)
+    return {"name": name, "body": body, "attrs": attrs}
+
+
+def _parse_qwen_tool_call(inner: str) -> dict[str, Any] | None:
+    inner = inner.strip()
+    try:
+        data = json.loads(inner)
+        name = data.get("name")
+        args = data.get("arguments", {})
+        if isinstance(args, str):
+            args = json.loads(args)
+        if name and isinstance(args, dict):
+            return _args_to_action(name, args)
+    except (json.JSONDecodeError, TypeError):
+        pass
+    return None
+
+
+def _parse_qwythos_tool_call(inner: str) -> dict[str, Any] | None:
+    fn_match = re.search(r"<function=([^>]+)>", inner)
+    if not fn_match:
+        return None
+    name = fn_match.group(1).strip()
+    args: dict[str, Any] = {}
+    for param_match in QWEN_PARAM_RE.finditer(inner):
+        args[param_match.group(1).strip()] = param_match.group(2).strip()
+    return _args_to_action(name, args)
 
 
 def parse_actions(text: str) -> list[dict[str, Any]]:
-    """Parse <action> tags from LLM response text."""
+    """Parse legacy <action> tags from LLM response text."""
     actions: list[dict[str, Any]] = []
 
     for match in re.finditer(r'<action\s+(.*?)>(.*?)</action>', text, re.DOTALL):
@@ -121,6 +191,20 @@ def parse_actions(text: str) -> list[dict[str, Any]]:
         })
 
     return actions
+
+
+def extract_actions(text: str) -> list[dict[str, Any]]:
+    """Unified extractor: Qwen JSON / Qwythos XML <tool_call>, then legacy <action>."""
+    if "<tool_call>" in text:
+        actions: list[dict[str, Any]] = []
+        for match in TOOL_CALL_RE.finditer(text):
+            inner = match.group(1)
+            action = _parse_qwen_tool_call(inner) or _parse_qwythos_tool_call(inner)
+            if action:
+                actions.append(action)
+        if actions:
+            return actions
+    return parse_actions(text)
 
 
 # ------------------------------------------------------------------
@@ -142,6 +226,8 @@ class Runtime:
         show_stats: bool = True,
         checkpoint_every: int = 5,          # auto-checkpoint every N turns
         atomic_llm: LLMClient | None = None,
+        shortcuts: dict[str, str] | None = None,
+        max_delegate_turns: int = 10,
     ):
         self.llm = llm
         self.help_engine = help_engine
@@ -153,6 +239,11 @@ class Runtime:
         self.show_stats = show_stats
         self.checkpoint_every = checkpoint_every
         self.atomic_llm = atomic_llm
+        self.max_delegate_turns = max_delegate_turns
+        self.shortcuts = shortcuts or {
+            "send": "escape, enter",
+            "newline": "c-j"
+        }
 
         # Session stats accumulator
         self.session_stats = SessionStats()
@@ -167,6 +258,93 @@ class Runtime:
     def _init_interaction_log(self):
         if not self.interaction_log and self.session_manager:
             self.interaction_log = InteractionLog(self.session_manager.dir, self.session.name)
+
+    # ------------------------------------------------------------------
+    # Tools payload policy (once per session per backend; resend on failure)
+    # ------------------------------------------------------------------
+    def _tools_sent_key(self, backend: str) -> str:
+        return f"tools_payload_sent_{'primary' if backend == 'primary' else 'secondary'}"
+
+    def _tools_force_key(self, backend: str) -> str:
+        return f"force_tools_payload_{'primary' if backend == 'primary' else 'secondary'}_next"
+
+    def _should_send_tools(self, backend: str) -> bool:
+        if self.session.metadata.get(self._tools_force_key(backend)):
+            return True
+        return not self.session.metadata.get(self._tools_sent_key(backend))
+
+    def _mark_tools_sent(self, backend: str) -> None:
+        self.session.metadata[self._tools_sent_key(backend)] = True
+        self.session.metadata[self._tools_force_key(backend)] = False
+
+    def _force_tools_resend(self, backend: str) -> None:
+        self.session.metadata[self._tools_force_key(backend)] = True
+
+    def _tools_for_skill(self, skill) -> list[dict]:
+        if not skill.requires:
+            return PRIMITIVES_TOOLS
+        allowed = set(skill.requires) | {"help"}
+        return [t for t in PRIMITIVES_TOOLS if t["function"]["name"] in allowed]
+
+    def _append_tool_result(
+        self,
+        messages: list[dict[str, Any]],
+        action_name: str,
+        result_text: str,
+        *,
+        persist: bool = True,
+    ) -> None:
+        tool_msg = {"role": "tool", "name": action_name, "content": result_text}
+        messages.append(tool_msg)
+        if persist:
+            self.session.add_message("tool", result_text, name=action_name)
+
+    def _action_failed(self, result: dict[str, Any] | str) -> bool:
+        if isinstance(result, dict):
+            if "error" in result:
+                return True
+            if result.get("exit_code", 0) != 0:
+                return True
+        return False
+
+    def _process_response_actions(
+        self,
+        response: str,
+        messages: list[dict[str, Any]],
+        *,
+        backend: str = "primary",
+        allow_delegate: bool = True,
+        log_actions: bool = False,
+    ) -> tuple[bool, int]:
+        """Execute actions from an LLM response. Returns (had_actions, error_count)."""
+        if "<tool_call>" in response and not extract_actions(response):
+            self._force_tools_resend(backend)
+
+        actions = extract_actions(response)
+        if not actions:
+            return False, 0
+
+        errors = 0
+        for action in actions:
+            display.print_action_placeholder(action["name"], action.get("body", ""))
+            result = self._execute_action(action, allow_delegate=allow_delegate)
+            result_text = self._format_result(action["name"], result)
+            is_error = self._action_failed(result)
+
+            if log_actions and self.interaction_log:
+                code = result.get("exit_code", 0) if isinstance(result, dict) else 0
+                if is_error and code == 0:
+                    code = 1
+                self.interaction_log.record_action(action["name"], action.get("body", ""), code)
+
+            display.print_result(action["name"], result_text, is_error=is_error)
+            self._append_tool_result(messages, action["name"], result_text)
+
+            if is_error:
+                errors += 1
+                self._force_tools_resend(backend)
+
+        return True, errors
 
     # ------------------------------------------------------------------
     # Public: run a single task
@@ -208,20 +386,12 @@ class Runtime:
                 compaction_triggered=compaction_triggered,
             )
 
-            if "DONE" in response and not parse_actions(response):
+            if "DONE" in response and not extract_actions(response):
                 return response
 
-            actions = parse_actions(response)
-            if not actions:
+            had_actions, _ = self._process_response_actions(response, messages, backend="primary")
+            if not had_actions:
                 return response
-
-            for action in actions:
-                result = self._execute_action(action)
-                result_text = self._format_result(action["name"], result)
-                is_error = "error" in (result if isinstance(result, dict) else {})
-                display.print_result(action["name"], result_text, is_error=is_error)
-                messages.append({"role": "user", "content": f"[Result of {action['name']}]\n{result_text}"})
-                self.session.add_message("user", f"[Result of {action['name']}]\n{result_text}")
 
         return "[Max turns reached]"
 
@@ -246,9 +416,52 @@ class Runtime:
             messages = self._compact_messages(messages)
             display.print_event("compact", "Session history compacted to fit context budget")
 
+        try:
+            from prompt_toolkit import PromptSession
+            from prompt_toolkit.formatted_text import ANSI
+            from prompt_toolkit.key_binding import KeyBindings
+            
+            bindings = KeyBindings()
+            hint_active = False
+            
+            def get_bottom_toolbar():
+                if hint_active:
+                    send_key = self.shortcuts.get('send', 'escape, enter')
+                    nl_key = self.shortcuts.get('newline', 'c-j')
+                    return f" [Hint] Press '{send_key}' to send, '{nl_key}' for a new line."
+                return ""
+                
+            send_keys = [k.strip() for k in self.shortcuts.get('send', 'escape, enter').split(',')]
+            @bindings.add(*send_keys)
+            def _(event):
+                nonlocal hint_active
+                hint_active = False
+                event.current_buffer.validate_and_handle()
+
+            nl_keys = [k.strip() for k in self.shortcuts.get('newline', 'c-j').split(',')]
+            @bindings.add(*nl_keys)
+            def _(event):
+                nonlocal hint_active
+                hint_active = False
+                event.current_buffer.insert_text('\n')
+
+            @bindings.add('enter')
+            def _(event):
+                nonlocal hint_active
+                hint_active = True
+                event.app.invalidate()
+                
+            prompt_session = PromptSession(key_bindings=bindings, multiline=True, bottom_toolbar=get_bottom_toolbar)
+        except ImportError:
+            prompt_session = None
+
         while True:
             try:
-                user_input = input(display.prompt_text()).strip()
+                if prompt_session:
+                    user_input = prompt_session.prompt(ANSI(display.prompt_text())).strip()
+                else:
+                    user_input = input(display.prompt_text()).strip()
+                user_input = user_input.encode('utf-8', 'replace').decode('utf-8')
             except (EOFError, KeyboardInterrupt):
                 display.print_event("info", "Bye.")
                 break
@@ -319,7 +532,7 @@ class Runtime:
                 )
                 display.print_guidance(hints)
 
-                actions = parse_actions(response)
+                actions = extract_actions(response)
                 if not actions:
                     outcome = "success"
                     break
@@ -327,22 +540,13 @@ class Runtime:
                 for action in actions:
                     if action["name"] == "help":
                         help_calls += 1
-                        
-                    display.print_action_placeholder(action["name"], action.get("body", ""))
-                    result = self._execute_action(action)
-                    result_text = self._format_result(action["name"], result)
-                    is_error = isinstance(result, dict) and "error" in result
-                    if is_error or (isinstance(result, dict) and result.get("exit_code", 0) != 0):
-                        errors_in_turn += 1
-                        
-                    if self.interaction_log:
-                        code = result.get("exit_code", 0) if isinstance(result, dict) else 0
-                        if is_error and code == 0: code = 1
-                        self.interaction_log.record_action(action["name"], action["body"], code)
-                        
-                    display.print_result(action["name"], result_text, is_error=is_error)
-                    messages.append({"role": "user", "content": f"[Result of {action['name']}]\n{result_text}"})
-                    self.session.add_message("user", f"[Result of {action['name']}]\n{result_text}")
+
+                _, errors_in_turn = self._process_response_actions(
+                    response,
+                    messages,
+                    backend="primary",
+                    log_actions=True,
+                )
 
                 if "DONE" in response:
                     outcome = "success"
@@ -361,33 +565,61 @@ class Runtime:
     # ------------------------------------------------------------------
     def _call_llm(
         self,
-        messages: list[dict[str, str]],
+        messages: list[dict[str, Any]],
         *,
         turn: int,
+        backend: str = "primary",
+        llm: LLMClient | None = None,
+        tools_override: list[dict] | None = None,
+        force_no_tools: bool = False,
     ) -> tuple[str | None, dict | None, float]:
         """Call the LLM. Returns (response_text, usage_dict_or_None, elapsed_s)."""
+        client = llm or (self.atomic_llm if backend == "secondary" else self.llm)
+        if client is None:
+            display.print_event("error", "LLM client not configured")
+            return None, None, 0.0
+
+        tools: list[dict] | None = None
+        if not force_no_tools:
+            if tools_override is not None:
+                tools = tools_override
+            elif self._should_send_tools(backend):
+                tools = PRIMITIVES_TOOLS
+
+        llm_messages = normalize_messages_for_llm(messages)
         t0 = time.monotonic()
         usage: dict | None = None
 
         try:
             if self.use_streaming:
-                response = self._stream_response(messages)
+                response = self._stream_response(llm_messages, client=client, tools=tools)
+                usage = getattr(self, "_last_usage", None)
             else:
-                response = self.llm.chat(messages)
+                response = client.chat(llm_messages, tools=tools)
         except Exception as e:
             display.print_event("error", f"LLM error: {e}")
             return None, None, time.monotonic() - t0
 
+        if tools is not None:
+            self._mark_tools_sent(backend)
+
         elapsed = time.monotonic() - t0
         return response, usage, elapsed
 
-    def _stream_response(self, messages: list[dict[str, str]]) -> str:
+    def _stream_response(
+        self,
+        messages: list[dict[str, Any]],
+        *,
+        client: LLMClient | None = None,
+        tools: list[dict] | None = None,
+    ) -> str:
         """Stream the LLM response token-by-token, render it, and return full text."""
+        llm = client or self.llm
         display.print_response_stream_start()
         chunks: list[str] = []
         usage: dict | None = None
 
-        gen = self.llm.chat_stream_with_usage(messages)
+        gen = llm.chat_stream_with_usage(messages, tools=tools)
         try:
             while True:
                 chunk = next(gen)
@@ -469,7 +701,7 @@ class Runtime:
     # ------------------------------------------------------------------
     # Action execution
     # ------------------------------------------------------------------
-    def _execute_action(self, action: dict[str, Any]) -> dict[str, Any] | str:
+    def _execute_action(self, action: dict[str, Any], *, allow_delegate: bool = True) -> dict[str, Any] | str:
         """Execute a single parsed action."""
         name = action["name"]
         body = action["body"]
@@ -495,6 +727,8 @@ class Runtime:
                 return {"error": "Session manager not available, cannot save checkpoint."}
 
         if name == "delegate":
+            if not allow_delegate:
+                return {"error": "Nested delegate not allowed in micro-agent"}
             agent_slug = attrs.get("agent") or attrs.get("skill") or body
             problem = body
             skill = self.help_engine.index.get_by_slug(agent_slug)
@@ -506,18 +740,13 @@ class Runtime:
             if not self.atomic_llm:
                 return {"error": "Delegate action failed: no atomic LLM configured. Please specify an atomic model in config.yaml."}
 
-            # Retrieve context (last 12 messages from session)
             context_messages = []
             for msg in self.session.messages[-12:]:
                 context_messages.append(f"{msg['role'].upper()}: {msg['content']}")
             context_text = "\n".join(context_messages)
 
-            # Auto-load CLAUDE.md if the agent is in the legal domain
             playbook_content = ""
             if "legal/" in skill.path:
-                # Find CLAUDE.md in the same directory as the skill path
-                skill_dir = (Path(self.help_engine.index.skills[0].path).parent if self.help_engine.index.skills else Path("skills"))
-                # But since skill.path is relative to skills root, let's locate it relative to skills root:
                 skills_root = Path("skills")
                 claude_path = skills_root / "legal" / "CLAUDE.md"
                 if claude_path.exists():
@@ -527,11 +756,15 @@ class Runtime:
                         playbook_content = f"[Warning: Failed to read CLAUDE.md: {e}]"
 
             if playbook_content:
-                context_text = f"PLAYBOOK CONFIGURATION (CLAUDE.md):\n==================================================\n{playbook_content}\n==================================================\n\n{context_text}"
+                context_text = (
+                    f"PLAYBOOK CONFIGURATION (CLAUDE.md):\n"
+                    f"==================================================\n"
+                    f"{playbook_content}\n"
+                    f"==================================================\n\n"
+                    f"{context_text}"
+                )
 
-            from core.micro_agent import MicroAgent
-            micro_agent = MicroAgent(self.atomic_llm)
-            result = micro_agent.delegate(skill, problem, context_text)
+            result = self._run_delegate_loop(skill, problem, context_text)
             return {"content": result}
 
         primitive = PRIMITIVES.get(name)
@@ -569,10 +802,80 @@ class Runtime:
             elif name == "mcp":
                 tool = attrs.get("tool", "")
                 return primitive(tool, body)
+            elif name == "set":
+                key = attrs.get("key")
+                val = attrs.get("value")
+                if not key or not val:
+                    return {"error": "Missing key or value in set action"}
+                msg = self._handle_set(f"{key} {val}")
+                return {"content": msg}
             else:
                 return primitive(body)
         except Exception as e:
             return {"error": f"Action {name} failed: {e}"}
+
+    def _build_delegate_system_prompt(self, skill) -> str:
+        prompt_parts = []
+        if getattr(skill, "system_prompt", None):
+            prompt_parts.append(skill.system_prompt)
+        else:
+            prompt_parts.append(f"You are a specialist agent executing the skill: {skill.name}.")
+            if skill.description:
+                prompt_parts.append(skill.description)
+
+        prompt_parts.append(
+            "Here are your step-by-step instructions, guidelines, and output formatting rules:\n"
+            "==================================================\n"
+            f"{skill.body}\n"
+            "=================================================="
+        )
+        if skill.requires:
+            prompt_parts.append(f"Available tools / primitives: {', '.join(skill.requires)}")
+        prompt_parts.append(
+            "Adhere strictly to the guidelines and templates. Be extremely concise, professional, and actionable."
+        )
+        return "\n\n".join(prompt_parts)
+
+    def _run_delegate_loop(self, skill, problem: str, context_text: str) -> str:
+        """Run atomic (Qwen) micro-agent with tool-call loop."""
+        system_prompt = self._build_delegate_system_prompt(skill)
+        messages: list[dict[str, Any]] = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": f"Problem:\n{problem}\n\nContext:\n{context_text}"},
+        ]
+        skill_tools = self._tools_for_skill(skill)
+        final_response = ""
+
+        for _ in range(self.max_delegate_turns):
+            send_tools = self._should_send_tools("secondary")
+
+            response, _, _ = self._call_llm(
+                messages,
+                turn=0,
+                backend="secondary",
+                llm=self.atomic_llm,
+                tools_override=skill_tools if send_tools else None,
+                force_no_tools=not send_tools,
+            )
+            if response is None:
+                return "[Delegate LLM error]"
+
+            final_response = response
+            messages.append({"role": "assistant", "content": response})
+
+            if "DONE" in response and not extract_actions(response):
+                break
+
+            had_actions, _ = self._process_response_actions(
+                response,
+                messages,
+                backend="secondary",
+                allow_delegate=False,
+            )
+            if not had_actions:
+                break
+
+        return final_response
 
     # ------------------------------------------------------------------
     # Formatting
@@ -588,10 +891,28 @@ class Runtime:
         parts = []
         if "content" in result:
             parts.append(result["content"])
-        if "stdout" in result and result["stdout"]:
-            parts.append(result["stdout"])
-        if "stderr" in result and result["stderr"]:
-            parts.append(f"STDERR: {result['stderr']}")
+
+        for out_key in ("stdout", "stderr"):
+            if out_key in result and result[out_key]:
+                out_str = result[out_key]
+                lines = out_str.splitlines()
+                if len(lines) > 50 and self.session_manager:
+                    import time
+                    temp_dir = self.session_manager.dir / ".temp"
+                    temp_dir.mkdir(parents=True, exist_ok=True)
+                    temp_file = temp_dir / f"{out_key}_{name}_{int(time.time())}.txt"
+                    temp_file.write_text(out_str, encoding="utf-8")
+                    prefix = f"STDERR: " if out_key == "stderr" else ""
+                    parts.append(
+                        f"{prefix}[{out_key} is {len(lines)} lines long. The first 50 lines are shown below.\n"
+                        f"The full output was saved to {temp_file}.\n"
+                        f"Use read('{temp_file}', start_line, end_line) to explore pending unexplored sources.]\n\n"
+                        + "\n".join(lines[:50])
+                    )
+                else:
+                    prefix = f"STDERR: " if out_key == "stderr" else ""
+                    parts.append(f"{prefix}{out_str}")
+
         if "exit_code" in result and result["exit_code"] != 0:
             parts.append(f"(exit code: {result['exit_code']})")
         if "status" in result:
@@ -763,12 +1084,12 @@ class Runtime:
         """Parse `/set key value` and apply the override."""
         parts = arg.split(maxsplit=1)
         if len(parts) < 2:
-            # Print docs for just this key
             key = parts[0].lower()
             doc = self._SET_DOCS.get(key, "Unknown key")
             val = self._get_config_value(key)
-            display.print_event("info", f"{key} = {val!r}   [{doc}]")
-            return
+            msg = f"{key} = {val!r}   [{doc}]"
+            display.print_event("info", msg)
+            return msg
 
         key, raw_val = parts[0].lower(), parts[1].strip()
 
@@ -781,16 +1102,18 @@ class Runtime:
                 self.use_markdown = new_val
             elif key == "stats":
                 self.show_stats = new_val
-            display.print_event("ok", f"{key} → {new_val}")
-            return
+            msg = f"{key} → {new_val}"
+            display.print_event("ok", msg)
+            return msg
 
         # Integer keys
         if key in ("max_tokens", "context_budget", "max_turns", "checkpoint_every"):
             try:
                 new_int = int(raw_val)
             except ValueError:
-                display.print_event("error", f"Expected integer for {key}, got: {raw_val!r}")
-                return
+                msg = f"Expected integer for {key}, got: {raw_val!r}"
+                display.print_event("error", msg)
+                return f"ERROR: {msg}"
             if key == "max_tokens":
                 self.llm.max_tokens = new_int
             elif key == "context_budget":
@@ -799,25 +1122,29 @@ class Runtime:
                 self.max_turns = new_int
             elif key == "checkpoint_every":
                 self.checkpoint_every = new_int
-            display.print_event("ok", f"{key} → {new_int}")
-            return
+            msg = f"{key} → {new_int}"
+            display.print_event("ok", msg)
+            return msg
 
         # Float keys
         if key in ("temperature", "top_p", "repeat_penalty"):
             try:
                 new_float = float(raw_val)
             except ValueError:
-                display.print_event("error", f"Expected float for {key}, got: {raw_val!r}")
-                return
+                msg = f"Expected float for {key}, got: {raw_val!r}"
+                display.print_event("error", msg)
+                return f"ERROR: {msg}"
             setattr(self.llm, key, new_float)
-            display.print_event("ok", f"{key} → {new_float}")
-            return
+            msg = f"{key} → {new_float}"
+            display.print_event("ok", msg)
+            return msg
 
         # String keys
         if key == "model":
             self.llm.model = raw_val
-            display.print_event("ok", f"model → {raw_val!r}")
-            return
+            msg = f"model → {raw_val!r}"
+            display.print_event("ok", msg)
+            return msg
 
         if key == "base_url":
             import httpx
@@ -826,15 +1153,17 @@ class Runtime:
                 base_url=self.llm.base_url,
                 timeout=httpx.Timeout(300.0, connect=15.0),
             )
-            display.print_event("ok", f"base_url → {raw_val!r}  (new HTTP client created)")
-            return
+            msg = f"base_url → {raw_val!r}  (new HTTP client created)"
+            display.print_event("ok", msg)
+            return msg
 
         # Atomic/subagent keys
         if key.startswith("atomic.") and self.atomic_llm:
             sub_key = key[len("atomic."):]
             if sub_key == "model":
                 self.atomic_llm.model = raw_val
-                display.print_event("ok", f"atomic.model → {raw_val!r}")
+                msg = f"atomic.model → {raw_val!r}"
+                display.print_event("ok", msg)
             elif sub_key == "base_url":
                 import httpx
                 self.atomic_llm.base_url = raw_val.rstrip("/")
@@ -842,18 +1171,42 @@ class Runtime:
                     base_url=self.atomic_llm.base_url,
                     timeout=httpx.Timeout(300.0, connect=15.0),
                 )
-                display.print_event("ok", f"atomic.base_url → {raw_val!r}")
+                msg = f"atomic.base_url → {raw_val!r}"
+                display.print_event("ok", msg)
             elif sub_key == "temperature":
                 self.atomic_llm.temperature = float(raw_val)
-                display.print_event("ok", f"atomic.temperature → {raw_val}")
+                msg = f"atomic.temperature → {raw_val}"
+                display.print_event("ok", msg)
             elif sub_key == "max_tokens":
                 self.atomic_llm.max_tokens = int(raw_val)
-                display.print_event("ok", f"atomic.max_tokens → {raw_val}")
+                msg = f"atomic.max_tokens → {raw_val}"
+                display.print_event("ok", msg)
             else:
-                display.print_event("warn", f"Unknown atomic key: {key}")
-            return
+                self.atomic_llm.extra_params[sub_key] = raw_val
+                msg = f"atomic.{sub_key} → {raw_val!r} (saved to extra_params)"
+                display.print_event("ok", msg)
+            return msg
 
-        display.print_event("warn", f"Unknown config key: {key!r}. Run /set for a full list.")
+        # Fallback to LLM extra_params for unknown keys (like 'thinking')
+        # Try to parse as int/float/bool if possible
+        val_parsed: Any = raw_val
+        if raw_val.lower() in ("true", "on", "yes"):
+            val_parsed = True
+        elif raw_val.lower() in ("false", "off", "no"):
+            val_parsed = False
+        else:
+            try:
+                val_parsed = int(raw_val)
+            except ValueError:
+                try:
+                    val_parsed = float(raw_val)
+                except ValueError:
+                    pass
+                    
+        self.llm.extra_params[key] = val_parsed
+        msg = f"{key} → {val_parsed!r} (saved to extra_params)"
+        display.print_event("ok", msg)
+        return msg
 
     # ------------------------------------------------------------------
     # /config helpers

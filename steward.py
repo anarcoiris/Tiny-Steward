@@ -113,6 +113,7 @@ def main():
         temperature=orch_cfg.get("temperature", 0.15),
         top_p=orch_cfg.get("top_p", 0.9),
         repeat_penalty=orch_cfg.get("repeat_penalty", 1.05),
+        extra_params={k: v for k, v in orch_cfg.items() if k not in ["base_url", "api", "model", "ctx", "max_tokens", "temperature", "top_p", "repeat_penalty"]},
     )
 
     # Initialize atomic/subagent LLM (optional)
@@ -126,6 +127,7 @@ def main():
             temperature=at_cfg.get("temperature", 0.1),
             top_p=at_cfg.get("top_p", 0.9),
             repeat_penalty=at_cfg.get("repeat_penalty", 1.05),
+            extra_params={k: v for k, v in at_cfg.items() if k not in ["base_url", "api", "model", "ctx", "max_tokens", "temperature", "top_p", "repeat_penalty"]},
         )
 
     # Initialize embedder
@@ -186,6 +188,10 @@ def main():
 
     # Runtime
     context_budget = int(orch_cfg.get("ctx", 32768) * 0.8)
+    shortcuts = ui_cfg.get("shortcuts", {
+        "send": "escape, enter",
+        "newline": "c-j"
+    })
     runtime = Runtime(
         llm=llm,
         help_engine=help_engine,
@@ -196,6 +202,7 @@ def main():
         checkpoint_every=checkpoint_every,
         context_budget=context_budget,
         atomic_llm=atomic_llm,
+        shortcuts=shortcuts,
     )
     runtime.session_manager = session_mgr
 

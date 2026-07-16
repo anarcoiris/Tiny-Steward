@@ -1,0 +1,24 @@
+skill_id,expected_domain,notes
+analyzing-threat-landscape-with-misp,threat_intelligence,cape must not match landscape
+detecting-container-escape-attempts,container_and_kubernetes_security,cape must not match escape
+detecting-container-escape-with-falco-rules,container_and_kubernetes_security,cape must not match escape
+performing-soc2-type2-audit-preparation,compliance_and_grc,c2 must not match inside soc2
+exploiting-server-side-request-forgery,application_and_api_security,ssrf synonym
+implementing-canary-tokens-for-network-intrusion,deception_technology,canary-tokens synonym
+implementing-immutable-backup-with-restic,endpoint_security_and_hardening,
+implementing-policy-as-code-with-open-policy-agent,supply_chain_and_devsecops,
+building-detection-rules-with-sigma,detection_engineering_and_threat_hunting,
+analyzing-security-logs-with-splunk,detection_engineering_and_threat_hunting,
+performing-threat-hunting-with-elastic-siem,detection_engineering_and_threat_hunting,
+implementing-siem-use-cases-for-detection,detection_engineering_and_threat_hunting,
+exploiting-jwt-algorithm-confusion-attack,application_and_api_security,
+analyzing-android-malware-with-apktool,mobile_security,mobile wins over malware (specificity order)
+abusing-dpapi-for-credential-access,active_directory_and_identity_attacks,
+achieving-cmmc-level-2-compliance,compliance_and_grc,
+analyzing-ethereum-smart-contract-vulnerabilities,web3_and_smart_contract_security,
+deploying-honeytokens-and-canarytokens,deception_technology,
+building-c2-infrastructure-with-sliver-framework,offensive_security_and_red_teaming,bounded c2 token
+detecting-malicious-npm-packages,supply_chain_and_devsecops,
+defending-llms-with-guardrails,ai_and_llm_security,llms plural synonym
+generating-and-analyzing-sboms,supply_chain_and_devsecops,sboms plural synonym
+implementing-security-information-sharing-with-stix2,threat_intelligence,stix2 synonym

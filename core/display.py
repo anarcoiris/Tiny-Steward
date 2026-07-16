@@ -160,9 +160,9 @@ _THINK_RE  = re.compile(r"<think>.*?</think>", re.DOTALL)
 
 
 def _clean_response(text: str) -> str:
-    """Remove action tags and internal <think> blocks for display."""
-    text = _THINK_RE.sub("", text)
+    """Remove action/tool-call tags for display; keep <think> visible."""
     text = _ACTION_RE.sub("\x1b[2m[action]\x1b[0m", text)
+    text = re.sub(r"<tool_call>.*?</tool_call>", "\x1b[2m[tool_call]\x1b[0m", text, flags=re.DOTALL)
     return text.strip()
 
 

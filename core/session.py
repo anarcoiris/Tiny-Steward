@@ -24,8 +24,11 @@ class Session:
     discovered_skills: list[str] = field(default_factory=list)  # slugs used during session
     metadata: dict[str, Any] = field(default_factory=dict)
 
-    def add_message(self, role: str, content: str):
-        self.messages.append({"role": role, "content": content})
+    def add_message(self, role: str, content: str, *, name: str | None = None):
+        msg: dict[str, Any] = {"role": role, "content": content}
+        if name is not None:
+            msg["name"] = name
+        self.messages.append(msg)
         self.updated_at = time.time()
 
     def record_skill(self, slug: str):
@@ -41,6 +44,20 @@ class SessionManager:
         self.dir = Path(sessions_dir).expanduser().resolve()
         self.dir.mkdir(parents=True, exist_ok=True)
         self.current: Session | None = None
+        self._cleanup_temp_dir()
+
+    def _cleanup_temp_dir(self):
+        temp_dir = self.dir / ".temp"
+        if not temp_dir.exists():
+            return
+        now = time.time()
+        for f in temp_dir.glob("*.txt"):
+            try:
+                # remove files older than 6 hours
+                if now - f.stat().st_mtime > 6 * 3600:
+                    f.unlink()
+            except Exception:
+                pass
 
     def _session_path(self, name: str) -> Path:
         safe_name = "".join(c if c.isalnum() or c in "-_" else "_" for c in name)

@@ -6,7 +6,7 @@ llm:
     base_url: "http://127.0.0.1:11440"
     api: "openai"                      # llamacpp /v1/chat/completions
     model: "qwythos-9b-96k"
-    ctx: 32768
+    ctx: 98304
     max_tokens: 4096
     temperature: 0.6
     top_p: 0.95
@@ -15,7 +15,7 @@ llm:
     base_url: "http://127.0.0.1:11439"
     api: "openai"
     model: "qwen3-4b-instruct-96k"
-    ctx: 16384
+    ctx: 98304
     max_tokens: 2048
     temperature: 0.1
 
@@ -42,5 +42,5 @@ ui:
   streaming: true          # stream LLM tokens to terminal in real time
   markdown: true           # render Markdown in assistant responses
   stats: true              # show per-turn token + timing stats line
-  checkpoint_every: 5      # auto-save session checkpoint every N turns (0 = off)
+  checkpoint_every: 10      # auto-save session checkpoint every N turns (0 = off)
 

@@ -316,3 +316,70 @@ PRIMITIVES = {
 }
 
 PRIMITIVE_NAMES = list(PRIMITIVES.keys()) + ["help"]
+
+# Primary argument per tool — popped into action["body"] by extract_actions()
+PRIMARY_ARGS: dict[str, str | None] = {
+    "pwsh": "command",
+    "bash": "command",
+    "python": "code",
+    "read": "path",
+    "write": "content",
+    "append": "content",
+    "mkdir": "path",
+    "ls": "path",
+    "grep": "pattern",
+    "http": "body",
+    "mcp": "body",
+    "help": "query",
+    "delegate": "task",
+    "checkpoint": "note",
+    "set": None,
+}
+
+
+def _fn(name: str, description: str, properties: dict, required: list[str] | None = None) -> dict:
+    return {
+        "type": "function",
+        "function": {
+            "name": name,
+            "description": description,
+            "parameters": {
+                "type": "object",
+                "properties": properties,
+                "required": required or [],
+            },
+        },
+    }
+
+
+PRIMITIVES_TOOLS: list[dict] = [
+    _fn("pwsh", "Execute a PowerShell command.", {"command": {"type": "string"}, "cwd": {"type": "string"}}, ["command"]),
+    _fn("bash", "Execute a bash command (WSL on Windows).", {"command": {"type": "string"}, "cwd": {"type": "string"}}, ["command"]),
+    _fn("python", "Execute a Python snippet.", {"code": {"type": "string"}}, ["code"]),
+    _fn("read", "Read file contents (capped to 500 lines).", {
+        "path": {"type": "string"},
+        "start_line": {"type": "integer"},
+        "end_line": {"type": "integer"},
+    }, ["path"]),
+    _fn("write", "Create or overwrite a file.", {"path": {"type": "string"}, "content": {"type": "string"}}, ["path", "content"]),
+    _fn("append", "Append to a file.", {"path": {"type": "string"}, "content": {"type": "string"}}, ["path", "content"]),
+    _fn("mkdir", "Create a directory.", {"path": {"type": "string"}}, ["path"]),
+    _fn("ls", "List directory contents.", {"path": {"type": "string"}}),
+    _fn("grep", "Search for text in files.", {"pattern": {"type": "string"}, "path": {"type": "string"}}, ["pattern"]),
+    _fn("http", "Make an HTTP request.", {
+        "method": {"type": "string"},
+        "url": {"type": "string"},
+        "body": {"type": "string"},
+    }, ["method", "url"]),
+    _fn("mcp", "Execute a tool on the nina-mcp server.", {"tool": {"type": "string"}, "body": {"type": "string"}}, ["tool"]),
+    _fn("delegate", "Delegate a task to a specialist micro-agent.", {
+        "agent": {"type": "string"},
+        "task": {"type": "string"},
+    }, ["agent", "task"]),
+    _fn("help", "Discover capabilities for a problem or error.", {"query": {"type": "string"}}, ["query"]),
+    _fn("set", "Tweak runtime config (temperature, max_tokens, etc.).", {
+        "key": {"type": "string"},
+        "value": {"type": "string"},
+    }, ["key", "value"]),
+    _fn("checkpoint", "Save session state with a steering note.", {"note": {"type": "string"}}, ["note"]),
+]

@@ -1,0 +1,217 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://domainspec.dev/schema/v2/domainspec.schema.json",
+  "title": "DomainSpec v2 front matter",
+  "description": "Validates the YAML front-matter block of a .domain.md, .skill.md, persona, or policy file.",
+  "type": "object",
+  "required": ["id", "type", "version"],
+  "properties": {
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z0-9_.]+$",
+      "description": "Unique node id, e.g. 'git' or 'git.repo.trunk_based_workflow'"
+    },
+    "type": {
+      "type": "string",
+      "enum": ["domain", "skill", "persona", "policy"]
+    },
+    "version": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+\\.\\d+$"
+    },
+    "deprecated_since": {
+      "type": ["string", "null"]
+    },
+    "superseded_by": {
+      "type": ["string", "null"]
+    },
+    "purpose": {
+      "type": "string"
+    },
+    "extends": {
+      "type": "array",
+      "items": { "type": "string" },
+      "default": []
+    },
+    "concepts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "name"],
+        "properties": {
+          "id": { "type": "string" },
+          "name": { "type": "string" },
+          "description": { "type": "string" }
+        }
+      }
+    },
+    "tools": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id"],
+        "properties": {
+          "id": { "type": "string" },
+          "preference_rank": { "type": "integer", "minimum": 1 },
+          "precondition": { "type": "string" }
+        }
+      }
+    },
+    "rules": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "statement", "severity"],
+        "properties": {
+          "id": { "type": "string" },
+          "statement": { "type": "string" },
+          "severity": { "type": "string", "enum": ["hard", "soft"] },
+          "scope": { "type": "string" },
+          "rationale": { "type": "string" }
+        }
+      }
+    },
+    "heuristics": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "statement"],
+        "properties": {
+          "id": { "type": "string" },
+          "statement": { "type": "string" },
+          "weight": { "type": "number" },
+          "applies_when": { "type": "string" }
+        }
+      }
+    },
+    "hooks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "when", "apply"],
+        "properties": {
+          "id": { "type": "string" },
+          "when": {
+            "type": "object",
+            "required": ["stage"],
+            "properties": {
+              "stage": {
+                "type": "string",
+                "enum": [
+                  "session_start",
+                  "pre_plan",
+                  "tool_selection",
+                  "pre_action",
+                  "post_action",
+                  "on_error",
+                  "on_conflict",
+                  "session_end"
+                ]
+              },
+              "event": { "type": "string" }
+            }
+          },
+          "priority": { "type": "integer", "default": 100 },
+          "scope": { "type": "string" },
+          "apply": {
+            "type": "object",
+            "minProperties": 1,
+            "properties": {
+              "rule_refs": { "type": "array", "items": { "type": "string" } },
+              "heuristic_refs": { "type": "array", "items": { "type": "string" } },
+              "checklist": { "type": "array", "items": { "type": "string" } },
+              "procedure_ref": { "type": "string" }
+            }
+          }
+        }
+      }
+    },
+    "procedures": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "kind", "title"],
+        "properties": {
+          "id": { "type": "string" },
+          "kind": {
+            "type": "string",
+            "enum": ["linear", "conditional", "recovery", "entrypoint"]
+          },
+          "title": { "type": "string" },
+          "trigger": {
+            "type": "string",
+            "description": "Required when kind == recovery: the on_error condition that invokes this procedure"
+          },
+          "entry": {
+            "type": "string",
+            "description": "Step id to start at, required when kind == conditional"
+          },
+          "steps": {
+            "description": "Either an ordered array of strings (linear shorthand) or an array of step nodes (graph form)",
+            "oneOf": [
+              { "type": "array", "items": { "type": "string" } },
+              {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": ["id", "action"],
+                  "properties": {
+                    "id": { "type": "string" },
+                    "action": { "type": "string" },
+                    "next": { "type": ["string", "null"] },
+                    "branches": {
+                      "type": "object",
+                      "additionalProperties": { "type": "string" }
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        }
+      }
+    },
+    "memory_refs": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "policies_imported": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "persona_config": {
+      "type": "object",
+      "description": "Only used when type == persona",
+      "properties": {
+        "domains": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["id", "priority"],
+            "properties": {
+              "id": { "type": "string" },
+              "priority": { "type": "integer" }
+            }
+          }
+        },
+        "skills": { "type": "array", "items": { "type": "string" } },
+        "policies_imported": { "type": "array", "items": { "type": "string" } },
+        "pinned": { "type": "array", "items": { "type": "string" } },
+        "overrides": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["target", "effect"],
+            "properties": {
+              "target": { "type": "string" },
+              "effect": { "type": "string", "enum": ["disable", "reprioritize"] },
+              "new_priority": { "type": "integer" }
+            }
+          }
+        },
+        "style": { "type": "string" }
+      }
+    }
+  },
+  "additionalProperties": true
+}
