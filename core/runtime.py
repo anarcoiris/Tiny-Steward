@@ -78,7 +78,9 @@ You are Tiny Steward, a task executor with a minimal set of primitive actions.
 Emit native Qwen/Qwythos tool calls (one at a time). Schema is also sent via the
 tools payload on the first turn of a session — do not invent alternate XML.
 
-Example:
+Parameters MUST use <parameter=NAME>…</parameter> (never bare <path> or <content> tags).
+
+Example (list dir):
 
 <tool_call>
 <function=ls>
@@ -88,8 +90,23 @@ skills/_policy
 </function>
 </tool_call>
 
-ls takes a directory path only — do not pass cwd. Use pwsh/bash when you need cwd.
+Example (write file — path AND content are both parameters):
+
+<tool_call>
+<function=write>
+<parameter=path>
+task.md
+</parameter>
+<parameter=content>
+# Task title
+Notes here.
+</parameter>
+</function>
+</tool_call>
+
+Workspace home is the process cwd (typically the Tiny Steward repo root). Prefer relative paths from that home. ls takes a directory path only — do not pass cwd. Use pwsh/bash when you need cwd.
 For delegate(agent, task): task must be a complete problem statement (or path to one), never a placeholder.
+Long transcripts: the user should /attach <path> instead of pasting; you may also read() the path.
 
 ## When to use help()
 
@@ -122,9 +139,24 @@ TOOL_CALL_RE = re.compile(r"<tool_call>(.*?)</tool_call>", re.DOTALL)
 LEGACY_RESULT_RE = re.compile(r"^\[Result of (?P<name>[^\]]+)\]\n(?P<content>[\s\S]*)$")
 THINK_RE = re.compile(r"<think>.*?</think>", re.DOTALL)
 QWEN_PARAM_RE = re.compile(r"<parameter=([^>]+)>\n?(.*?)\n?</parameter>", re.DOTALL)
+# Model drift: bare <path>…</path> / <command>…</command> instead of <parameter=…>
+BARE_PARAM_RE = re.compile(r"<([a-zA-Z_][\w]*)>\n?(.*?)\n?</\1>", re.DOTALL)
+# Hybrid drift seen in the wild: <path>…</parameter> (open bare, close parameter)
+DRIFT_PARAM_RE = re.compile(
+    r"<(path|content|command|code|pattern|url|method|query|agent|task|note|key|value|tool|body)>"
+    r"\n?(.*?)\n?</(?:parameter|\1)>",
+    re.DOTALL | re.IGNORECASE,
+)
+# Tags that are structural, not tool arguments
+_BARE_PARAM_SKIP = frozenset({
+    "tool_call", "function", "think", "thinking", "parameter",
+    "tool_response", "tools", "system", "user", "assistant",
+})
 
 # Soft cap so RULES.md cannot blow the system prefix (chars ≈ tokens*4 heuristic).
 RULES_MAX_CHARS = 6000
+# Soft cap for /attach and @path injection into the conversation.
+ATTACH_MAX_CHARS = 48_000
 
 
 def load_rules_text(
@@ -250,6 +282,13 @@ def _parse_qwythos_tool_call(inner: str) -> dict[str, Any] | None:
     args: dict[str, Any] = {}
     for param_match in QWEN_PARAM_RE.finditer(inner):
         args[param_match.group(1).strip()] = param_match.group(2).strip()
+    # Fallback: bare <path>…</path> / hybrid <path>…</parameter>
+    if not args or (name in ("write", "append", "read", "mkdir", "ls") and "path" not in args):
+        for bare in list(BARE_PARAM_RE.finditer(inner)) + list(DRIFT_PARAM_RE.finditer(inner)):
+            key = bare.group(1).strip()
+            if key.lower() in _BARE_PARAM_SKIP or key.lower().startswith("parameter"):
+                continue
+            args.setdefault(key, bare.group(2).strip())
     return _args_to_action(name, args)
 
 
@@ -639,6 +678,11 @@ class Runtime:
                 if handled:
                     continue
 
+            # Expand @"path" / @path references into capped attachments (link, don't paste).
+            user_input, attach_notes = self._expand_at_attachments(user_input)
+            for note in attach_notes:
+                display.print_event("info", note)
+
             # Add user message
             messages.append({"role": "user", "content": user_input})
             self.session.add_message("user", user_input)
@@ -652,6 +696,7 @@ class Runtime:
             outcome = "unknown"
             errors_in_turn = 0
             help_calls = 0
+            think_only_nudges = 0
             task_start_time = time.monotonic()
             
             for turn in range(1, self.max_turns + 1):
@@ -700,6 +745,26 @@ class Runtime:
 
                 actions = extract_actions(response)
                 if not actions:
+                    # Think-only / prose-only: nudge once to emit a real tool_call
+                    if (
+                        think_only_nudges < 2
+                        and (
+                            THINK_RE.search(response or "")
+                            or "tool_call" in (response or "").lower()
+                            or "I need to" in (response or "")
+                        )
+                    ):
+                        think_only_nudges += 1
+                        nudge = (
+                            "You reasoned but did not execute a valid tool call. "
+                            "Emit exactly one <tool_call> now using "
+                            "<parameter=NAME>…</parameter> (never bare <path> tags). "
+                            "If the task is finished, reply DONE with a short summary."
+                        )
+                        messages.append({"role": "user", "name": "steward_nudge", "content": nudge})
+                        self.session.add_message("user", nudge, name="steward_nudge")
+                        display.print_event("warn", f"Think-only response — nudge {think_only_nudges}/2")
+                        continue
                     outcome = "success"
                     break
 
@@ -1075,13 +1140,26 @@ class Runtime:
                 path = attrs.get("path") or ""
                 content = body if body else attrs.get("content", "")
                 if not path:
-                    return {"error": "Missing path for write"}
+                    return {
+                        "error": (
+                            "Missing path for write. Use "
+                            "<parameter=path>…</parameter> and "
+                            "<parameter=content>…</parameter> "
+                            "(not bare <path> tags)."
+                        )
+                    }
                 return primitive(path, content)
             elif name == "append":
                 path = attrs.get("path") or ""
                 content = body if body else attrs.get("content", "")
                 if not path:
-                    return {"error": "Missing path for append"}
+                    return {
+                        "error": (
+                            "Missing path for append. Use "
+                            "<parameter=path>…</parameter> and "
+                            "<parameter=content>…</parameter>."
+                        )
+                    }
                 return primitive(path, content)
             elif name == "mkdir":
                 return primitive(attrs.get("path") or body)
@@ -1521,6 +1599,32 @@ class Runtime:
                 self._print_config_table()
             return True
 
+        # ── /attach <path> ─────────────────────────────────────────────
+        if command == "/attach":
+            if not arg:
+                display.print_event(
+                    "info",
+                    "Usage: /attach <path> — inject a file by reference (capped). "
+                    "Also: mention @path or @\"C:\\...\\file\" in a normal message.",
+                )
+                return True
+            text, err = self._read_attachment(arg)
+            if err:
+                display.print_event("error", err)
+                return True
+            injected = (
+                f"[Attached file: {arg} — {len(text)} chars]\n"
+                f"Do not ask the user to paste this again; use this content or read() the path.\n"
+                f"---\n{text}"
+            )
+            messages.append({"role": "user", "name": "attachment", "content": injected})
+            self.session.add_message("user", injected, name="attachment")
+            display.print_event(
+                "ok",
+                f"Attached {arg} ({len(text)} chars, cap {ATTACH_MAX_CHARS}). Prefer this over pasting transcripts.",
+            )
+            return True
+
         # ── /mail <session> <text> ─────────────────────────────────────
         if command == "/mail":
             if not arg or " " not in arg:
@@ -1561,6 +1665,52 @@ class Runtime:
             return True
 
         return False
+
+    def _read_attachment(self, raw_path: str) -> tuple[str, str | None]:
+        """Read a file for /attach or @path. Returns (text, error_or_None)."""
+        cleaned = raw_path.strip().strip('"').strip("'")
+        if cleaned.startswith("@"):
+            cleaned = cleaned[1:].strip().strip('"').strip("'")
+        try:
+            p = Path(cleaned).expanduser()
+            if not p.is_file():
+                return "", f"File not found: {cleaned}"
+            data = p.read_text(encoding="utf-8", errors="replace")
+        except OSError as e:
+            return "", f"Cannot read {cleaned}: {e}"
+        if len(data) > ATTACH_MAX_CHARS:
+            data = (
+                data[:ATTACH_MAX_CHARS]
+                + f"\n\n[… truncated at {ATTACH_MAX_CHARS} chars; "
+                f"use read('{cleaned}', start_line, end_line) for more …]"
+            )
+        return data, None
+
+    def _expand_at_attachments(self, user_input: str) -> tuple[str, list[str]]:
+        """Replace @path / @\"path\" mentions with capped file bodies + notes.
+
+        Only expands quoted paths, absolute paths, or relative paths under
+        ``./``, ``../``, ``sessions/``, ``plans/`` — avoids eating email addresses.
+        """
+        pattern = re.compile(
+            r'@(?:"([^"]+)"|\'([^\']+)\'|'
+            r'((?:[A-Za-z]:)?[\\/][^\s]+)|'
+            r'((?:\.{1,2}[\\/]|sessions[\\/]|plans[\\/]|core[\\/]|skills[\\/])[^\s]+))',
+            re.IGNORECASE,
+        )
+        notes: list[str] = []
+
+        def _repl(m: re.Match) -> str:
+            path = next(g for g in m.groups() if g)
+            text, err = self._read_attachment(path)
+            if err:
+                notes.append(err)
+                return m.group(0)
+            notes.append(f"Expanded @{path} ({len(text)} chars)")
+            return f"\n[Attached via @ ref: {path}]\n---\n{text}\n---\n"
+
+        expanded = pattern.sub(_repl, user_input)
+        return expanded, notes
 
     # ------------------------------------------------------------------
     # /set handler
@@ -1630,7 +1780,15 @@ class Runtime:
 
         # Thinking / chat_template_kwargs (KV-breaking when toggled mid-session)
         if key in ("enable_thinking", "preserve_thinking"):
-            new_val = raw_val.lower() in ("on", "1", "true", "yes")
+            low = raw_val.lower()
+            if low not in ("on", "1", "true", "yes", "off", "0", "false", "no"):
+                msg = (
+                    f"Invalid value {raw_val!r} for {key}. "
+                    "Use on|true|yes|1 or off|false|no|0 (not 'medium')."
+                )
+                display.print_event("error", msg)
+                return f"ERROR: {msg}"
+            new_val = low in ("on", "1", "true", "yes")
             self.llm.set_template_kwarg(key, new_val)
             display.print_event(
                 "warn",

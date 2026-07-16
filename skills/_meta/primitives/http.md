@@ -14,18 +14,14 @@ Make HTTP requests to APIs and web services.
 ## Usage
 
 ```xml
-<action name="http" method="GET" url="https://api.github.com/repos/octocat/Hello-World"></action>
-<action name="http" method="POST" url="http://localhost:8080/api/data">{"key": "value"}</action>
+<tool_call>
+<function=http>
+<parameter=method>
+GET
+</parameter>
+<parameter=url>
+https://httpbin.org/get
+</parameter>
+</function>
+</tool_call>
 ```
-
-## Attributes
-
-- `method`: GET, POST, PUT, DELETE, PATCH, HEAD
-- `url`: target URL
-- Body (between tags): sent as JSON if parseable, raw text otherwise
-
-## Notes
-
-- Response body capped at 8000 characters
-- 30 second timeout
-- For complex requests (headers, auth), use `python` with `httpx` or `requests`

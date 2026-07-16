@@ -14,12 +14,35 @@ Read the contents of a text file.
 ## Usage
 
 ```xml
-<action name="read" path="config.yaml"></action>
-<action name="read" path="C:\Users\soyko\Documents\notes.md"></action>
+<tool_call>
+<function=read>
+<parameter=path>
+config.yaml
+</parameter>
+</function>
+</tool_call>
+```
+
+Optional line range:
+
+```xml
+<tool_call>
+<function=read>
+<parameter=path>
+core/runtime.py
+</parameter>
+<parameter=start_line>
+1
+</parameter>
+<parameter=end_line>
+50
+</parameter>
+</function>
+</tool_call>
 ```
 
 ## Notes
 
-- Returns full file contents as UTF-8 text
-- Use for config files, source code, documentation
-- For binary files, use pwsh: `[Convert]::ToBase64String([IO.File]::ReadAllBytes("file.bin"))`
+- Returns UTF-8 text (capped ~500 lines by default)
+- Prefer relative paths from the Tiny Steward workspace cwd
+- For binary files, use pwsh base64 helpers

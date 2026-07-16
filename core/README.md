@@ -57,6 +57,11 @@ With `cache_prompt=true`, appending a new turn usually reuses a long common pref
 - REPL: `/rules` (preview), `/rules reload` (re-read disk; may invalidate LCP).
 - Keep the file short — it sits in the KV-sensitive system prefix.
 
+## Attachments
+
+- `/attach <path>` or `@\"path\"` / `@sessions/…` injects a capped file into the chat (prefer over pasting transcripts).
+- See [`docs/operator.md`](../docs/operator.md).
+
 ## Retired modules
 
 See [`plans/archivos-retirados.md`](../plans/archivos-retirados.md) for deletions such as `core/micro_agent.py` (absorbed into `Runtime` delegate paths).

@@ -17,4 +17,9 @@ core/__pycache__/
 */references/roadmap.md
 **/questionary.md
 **/references/
-sessions/*
+
+# Session transcripts — local only (never push personal chats)
+sessions/**
+!sessions/.gitkeep
+!sessions/template-review.md
+*.think.jsonl
