@@ -47,7 +47,7 @@ You are Tiny Steward, a task executor with a minimal set of primitive actions.
 - pwsh(command): execute a PowerShell command (primary shell)
 - bash(command): execute a bash command (via WSL on Windows)
 - python(code): execute a Python snippet
-- read(path): read file contents
+- read(path, start_line?, end_line?): read file contents (default capped to 500 lines)
 - write(path, content): create/overwrite a file
 - append(path, content): append to a file
 - mkdir(path): create directory
@@ -57,18 +57,20 @@ You are Tiny Steward, a task executor with a minimal set of primitive actions.
 - mcp(tool, body?): execute a tool on the nina-mcp server
 - delegate(agent, task): delegate a task to a specialist micro-agent (e.g. nda_review)
 - help(query): discover capabilities for a problem or error
+- checkpoint(note): manually save your state and write a steering note before a complex or risky task
 
 ## How to act
 
 Respond with actions using XML tags:
 
 <action name="pwsh">Get-ChildItem -Recurse</action>
-<action name="read" path="config.yaml"></action>
+<action name="read" path="config.yaml" start_line="1" end_line="50"></action>
 <action name="write" path="output.txt">file content here</action>
 <action name="http" method="POST" url="http://example.com">{{"key": "value"}}</action>
 <action name="mcp" tool="nina_camera_capture">{{"duration": 1, "save": false}}</action>
 <action name="delegate" agent="nda_review">Review the Acme NDA text below...</action>
 <action name="help">container won't start</action>
+<action name="checkpoint">I am about to rewrite the index, if I crash I will retry with smaller chunks.</action>
 
 ## When to use help()
 
@@ -93,12 +95,7 @@ You can call help() multiple times with narrower queries.
 # ------------------------------------------------------------------
 # Action parsing
 # ------------------------------------------------------------------
-ACTION_PATTERN = re.compile(
-    r'<action\s+name="(\w+)"'    # name attribute
-    r'(?:\s+(\w+)="([^"]*)")*'   # optional extra attributes
-    r'\s*>(.*?)</action>',
-    re.DOTALL,
-)
+
 
 # More flexible: capture all attributes
 ATTR_PATTERN = re.compile(r'(\w+)="([^"]*)"')
@@ -139,7 +136,7 @@ class Runtime:
         session: Session,
         *,
         max_turns: int = 50,
-        context_budget: int = 68000,        # tokens, leave room below 32k
+        context_budget: int = 26000,        # tokens, leave room below 32k
         use_streaming: bool = True,
         use_markdown: bool = True,
         show_stats: bool = True,
@@ -489,6 +486,14 @@ class Runtime:
                             self.session.record_skill(skill_name.lower().replace(" ", "_"))
             return {"content": result}
 
+        if name == "checkpoint":
+            if self.session_manager:
+                self.session.metadata["last_checkpoint_note"] = body
+                self._save_checkpoint()
+                return {"content": f"Checkpoint saved with note: {body}"}
+            else:
+                return {"error": "Session manager not available, cannot save checkpoint."}
+
         if name == "delegate":
             agent_slug = attrs.get("agent") or attrs.get("skill") or body
             problem = body
@@ -540,7 +545,9 @@ class Runtime:
                 return primitive(body)
             elif name == "read":
                 path = attrs.get("path") or body
-                return primitive(path)
+                start_line = int(attrs["start_line"]) if "start_line" in attrs else None
+                end_line = int(attrs["end_line"]) if "end_line" in attrs else None
+                return primitive(path, start_line, end_line)
             elif name == "write":
                 path = attrs.get("path", "")
                 return primitive(path, body)

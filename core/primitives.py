@@ -117,11 +117,28 @@ def python(code: str, *, cwd: str | None = None, timeout: float = 60.0) -> dict[
 # File I/O primitives
 # ------------------------------------------------------------------
 
-def read(path: str) -> dict[str, Any]:
-    """Read file contents."""
+def read(path: str, start_line: int | None = None, end_line: int | None = None) -> dict[str, Any]:
+    """Read file contents, with optional line range and a 500-line safety cap."""
     try:
         p = Path(path).expanduser().resolve()
-        content = p.read_text(encoding="utf-8")
+        lines = p.read_text(encoding="utf-8").splitlines()
+        
+        start = max(1, start_line) if start_line is not None else 1
+        end = min(len(lines), end_line) if end_line is not None else len(lines)
+        
+        # 500 lines cap
+        if (end - start + 1) > 500:
+            end = start + 499
+            truncated = True
+        else:
+            truncated = False
+            
+        selected_lines = lines[start - 1 : end]
+        content = "\n".join(selected_lines)
+        
+        if truncated:
+            content += f"\n\n[Warning: File truncated at 500 lines. Use start_line/end_line to read more of '{p.name}']"
+            
         return {"content": content}
     except FileNotFoundError:
         return {"error": f"File not found: {path}"}

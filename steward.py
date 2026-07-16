@@ -185,6 +185,7 @@ def main():
     session = session_mgr.switch(args.session)
 
     # Runtime
+    context_budget = int(orch_cfg.get("ctx", 32768) * 0.8)
     runtime = Runtime(
         llm=llm,
         help_engine=help_engine,
@@ -193,6 +194,7 @@ def main():
         use_markdown=use_markdown,
         show_stats=show_stats,
         checkpoint_every=checkpoint_every,
+        context_budget=context_budget,
         atomic_llm=atomic_llm,
     )
     runtime.session_manager = session_mgr
