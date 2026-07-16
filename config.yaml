@@ -32,8 +32,15 @@ help:
 skills:
   root: "./skills"
   index: "./skills/_index.json"
-  rebuild_on_start: true
+  rebuild_on_start: false
 
 sessions:
   dir: "./sessions"
   auto_save: true
+
+ui:
+  streaming: true          # stream LLM tokens to terminal in real time
+  markdown: true           # render Markdown in assistant responses
+  stats: true              # show per-turn token + timing stats line
+  checkpoint_every: 5      # auto-save session checkpoint every N turns (0 = off)
+

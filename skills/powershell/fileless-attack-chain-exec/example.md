@@ -1,8 +1,6 @@
 ---
-
-📌 *Autor: KOLIRIO | Fecha: 2025*  
-📌 *Tema: Ciberseguridad, Ataques Fileless, PowerShell, Base64*
-
+autor: "KOLIRIO | Fecha: 2025"
+tema: "Ciberseguridad, Ataques Fileless, PowerShell, Base64"
 ---
 # 📚 Ejemplo Didáctico: Ataque Fileless con PowerShell (Base64 + Ejecución en Memoria)
 

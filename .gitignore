@@ -4,3 +4,10 @@ __pycache__/
 .vscode/
 .idea/
 *.log
+
+# Environment — never commit real env files
+.env
+# Committing .env.example (template without secrets) is fine
+
+# Generated skill index — rebuilt on demand
+skills/_index.json

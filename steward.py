@@ -19,7 +19,20 @@ import argparse
 import sys
 from pathlib import Path
 
-# Force UTF-8 stdout/stderr on Windows to support emojis in console
+# ---------------------------------------------------------------------------
+# Load .env before anything else so PYTHONUTF8 / PYTHONIOENCODING are set
+# for every subprocess we spawn (python, pwsh, bash, mcp …).
+# Falls back gracefully when python-dotenv is not installed.
+# ---------------------------------------------------------------------------
+try:
+    from dotenv import load_dotenv
+    _env_path = Path(__file__).resolve().parent / ".env"
+    load_dotenv(_env_path, override=False)  # don't clobber shell-level exports
+except ImportError:
+    pass  # python-dotenv optional; env vars can also be set in the shell
+
+# Belt-and-suspenders: reconfigure stdout/stderr to UTF-8 for the current
+# process (covers rich / print output even without PYTHONUTF8).
 if hasattr(sys.stdout, "reconfigure"):
     try:
         sys.stdout.reconfigure(encoding="utf-8")
@@ -36,6 +49,7 @@ from core.skill_loader import build_index, SkillIndex
 from core.help import HelpEngine
 from core.session import SessionManager
 from core.runtime import Runtime
+import core.display as display
 
 
 def load_config(path: str = "config.yaml") -> dict:
@@ -52,16 +66,16 @@ def check_health(llm: LLMClient, embedder: Embedder) -> bool:
     """Verify endpoints are reachable."""
     ok = True
     if not llm.health():
-        print(f"  [warn] Orchestrator LLM not reachable at {llm.base_url}")
+        display.print_health("Orchestrator LLM", llm.base_url, ok=False)
         ok = False
     else:
-        print(f"  [ok] Orchestrator LLM: {llm.base_url}")
+        display.print_health("Orchestrator LLM", llm.base_url, ok=True)
 
     if not embedder.health():
-        print(f"  [warn] Embedder not reachable at {embedder.base_url}")
+        display.print_health("Embedder", embedder.base_url, ok=False)
         ok = False
     else:
-        print(f"  [ok] Embedder: {embedder.base_url}")
+        display.print_health("Embedder", embedder.base_url, ok=True)
 
     return ok
 
@@ -76,12 +90,21 @@ def main():
     parser.add_argument("--build-index", action="store_true", help="Rebuild skill index")
     parser.add_argument("--list-skills", action="store_true", help="List all indexed skills")
     parser.add_argument("--no-health-check", action="store_true", help="Skip endpoint health checks")
+    parser.add_argument("--no-stream", action="store_true", help="Disable streaming output")
+    parser.add_argument("--no-color", action="store_true", help="Disable color output")
     args = parser.parse_args()
 
     # Load config
     config = load_config(args.config)
 
-    # Initialize clients
+    # UI config
+    ui_cfg = config.get("ui", {})
+    use_streaming = ui_cfg.get("streaming", True) and not args.no_stream
+    use_markdown  = ui_cfg.get("markdown", True)
+    show_stats    = ui_cfg.get("stats", True)
+    checkpoint_every = ui_cfg.get("checkpoint_every", 5)
+
+    # Initialize orchestrator LLM
     orch_cfg = config["llm"]["orchestrator"]
     llm = LLMClient(
         base_url=orch_cfg["base_url"],
@@ -92,6 +115,20 @@ def main():
         repeat_penalty=orch_cfg.get("repeat_penalty", 1.05),
     )
 
+    # Initialize atomic/subagent LLM (optional)
+    atomic_llm: LLMClient | None = None
+    if "atomic" in config.get("llm", {}):
+        at_cfg = config["llm"]["atomic"]
+        atomic_llm = LLMClient(
+            base_url=at_cfg["base_url"],
+            model=at_cfg["model"],
+            max_tokens=at_cfg.get("max_tokens", 2048),
+            temperature=at_cfg.get("temperature", 0.1),
+            top_p=at_cfg.get("top_p", 0.9),
+            repeat_penalty=at_cfg.get("repeat_penalty", 1.05),
+        )
+
+    # Initialize embedder
     emb_cfg = config["embeddings"]
     embedder = Embedder(
         base_url=emb_cfg["base_url"],
@@ -102,7 +139,8 @@ def main():
     if not args.no_health_check:
         print()
         if not check_health(llm, embedder):
-            print("\n  [warn] Some endpoints are not reachable. Continuing anyway...\n")
+            display.print_event("warn", "Some endpoints are not reachable. Continuing anyway…")
+        print()
 
     # Skills
     skills_cfg = config["skills"]
@@ -111,28 +149,23 @@ def main():
 
     # Build index if requested or if it doesn't exist
     if args.build_index or not index_path.exists() or skills_cfg.get("rebuild_on_start"):
-        print("\n  Building skill index...")
+        display.print_event("info", "Building skill index…")
         skill_index = build_index(skills_root, embedder)
         skill_index.save(index_path)
-        print(f"  Saved index: {index_path.resolve()}\n")
+        display.print_event("ok", f"Saved index: {index_path.resolve()}")
 
         if args.build_index:
-            # Just build and exit
-            for s in skill_index.skills:
-                t = "🗂️" if s.skill_type == "hub" else "📖"
-                print(f"  {t} {s.slug:30s} [{', '.join(s.tags)}]")
+            display.print_skills_table(skill_index.skills)
             print(f"\n  Total: {skill_index.size} skills")
             return
     else:
-        print(f"\n  Loading skill index from {index_path} ...")
+        display.print_event("info", f"Loading skill index from {index_path} …")
         skill_index = SkillIndex.load(index_path, skills_root)
-        print(f"  Loaded {skill_index.size} skills")
+        display.print_event("ok", f"Loaded {skill_index.size} skills")
 
     # List skills
     if args.list_skills:
-        for s in skill_index.skills:
-            t = "🗂️" if s.skill_type == "hub" else "📖"
-            print(f"  {t} {s.slug:30s} [{', '.join(s.tags)}]  {s.description[:50]}")
+        display.print_skills_table(skill_index.skills)
         print(f"\n  Total: {skill_index.size} skills")
         return
 
@@ -156,21 +189,24 @@ def main():
         llm=llm,
         help_engine=help_engine,
         session=session,
+        use_streaming=use_streaming,
+        use_markdown=use_markdown,
+        show_stats=show_stats,
+        checkpoint_every=checkpoint_every,
+        atomic_llm=atomic_llm,
     )
-    # Attach session manager for /sessions command
     runtime.session_manager = session_mgr
 
     # Execute
     if args.task:
-        result = runtime.run_task(args.task)
-        # Auto-save
+        runtime.run_task(args.task)
         session_mgr.save()
     else:
         try:
             runtime.run_interactive()
         finally:
             session_mgr.save()
-            print(f"  Session '{session.name}' saved.")
+            display.print_event("session", f"Session '{session.name}' saved.")
 
 
 if __name__ == "__main__":

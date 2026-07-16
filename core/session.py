@@ -70,7 +70,14 @@ class SessionManager:
         if not path.exists():
             raise FileNotFoundError(f"Session '{name}' not found at {path}")
         data = json.loads(path.read_text(encoding="utf-8"))
-        session = Session(**data)
+        # Force the session name to be the loaded session name to keep filename and internal name aligned
+        data["name"] = name
+        
+        from dataclasses import fields
+        valid_keys = {f.name for f in fields(Session)}
+        filtered_data = {k: v for k, v in data.items() if k in valid_keys}
+        
+        session = Session(**filtered_data)
         self.current = session
         return session
 

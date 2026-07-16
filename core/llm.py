@@ -91,6 +91,66 @@ class LLMClient:
                 except (json.JSONDecodeError, KeyError, IndexError):
                     continue
 
+    def chat_stream_with_usage(
+        self,
+        messages: list[dict[str, str]],
+        *,
+        max_tokens: int | None = None,
+        temperature: float | None = None,
+    ) -> Generator[str, None, dict[str, int] | None]:
+        """Stream a chat completion and capture usage stats from the final chunk.
+
+        Yields text chunks just like chat_stream(). On return (StopIteration),
+        the ``value`` attribute of the StopIteration exception holds a dict
+        ``{"prompt_tokens": int, "completion_tokens": int}`` if the server
+        sent usage data, or ``None`` otherwise.
+
+        Typical usage::
+
+            gen = llm.chat_stream_with_usage(messages)
+            try:
+                while True:
+                    chunk = next(gen)
+                    print(chunk, end="")
+            except StopIteration as e:
+                usage = e.value   # dict or None
+        """
+        body = self._build_body(
+            messages,
+            stream=True,
+            max_tokens=max_tokens,
+            temperature=temperature,
+        )
+        usage: dict[str, int] | None = None
+
+        with self._client.stream("POST", "/v1/chat/completions", json=body) as resp:
+            resp.raise_for_status()
+            for line in resp.iter_lines():
+                if not line.startswith("data: "):
+                    continue
+                payload = line[6:]
+                if payload.strip() == "[DONE]":
+                    break
+                try:
+                    chunk = json.loads(payload)
+                    # Capture usage if the server includes it (common in
+                    # llamacpp ≥ b3200 with --log-disable disabled)
+                    if "usage" in chunk and chunk["usage"]:
+                        u = chunk["usage"]
+                        usage = {
+                            "prompt_tokens": u.get("prompt_tokens"),
+                            "completion_tokens": u.get("completion_tokens"),
+                        }
+                    delta = chunk["choices"][0].get("delta", {})
+                    text = delta.get("content", "")
+                    if text:
+                        yield text
+                except (json.JSONDecodeError, KeyError, IndexError):
+                    continue
+
+        return usage
+
+
     # ------------------------------------------------------------------
     # Health check
     # ------------------------------------------------------------------

@@ -35,13 +35,28 @@ class MicroAgent:
         Returns:
             The micro-agent's response/solution
         """
-        # Extract system prompt from skill metadata
-        system_prompt = getattr(skill, "system_prompt", None) or (
-            f"You are a {skill.name} specialist. "
-            f"Solve the problem using your expertise. "
-            f"Available tools: {', '.join(skill.requires)}. "
-            f"Be concise and actionable."
+        # Build specialist system prompt combining system_prompt and markdown body guidelines
+        prompt_parts = []
+        if getattr(skill, "system_prompt", None):
+            prompt_parts.append(skill.system_prompt)
+        else:
+            prompt_parts.append(f"You are a specialist agent executing the skill: {skill.name}.")
+            if skill.description:
+                prompt_parts.append(skill.description)
+
+        prompt_parts.append(
+            f"Here are your step-by-step instructions, guidelines, and output formatting rules:\n"
+            f"==================================================\n"
+            f"{skill.body}\n"
+            f"=================================================="
         )
+
+        if skill.requires:
+            prompt_parts.append(f"Available tools / primitives: {', '.join(skill.requires)}")
+
+        prompt_parts.append("Adhere strictly to the guidelines and templates. Be extremely concise, professional, and actionable.")
+
+        system_prompt = "\n\n".join(prompt_parts)
 
         messages = [
             {"role": "system", "content": system_prompt},

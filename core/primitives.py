@@ -31,6 +31,8 @@ def _run_shell(
             [shell_exe, *shell_args, command],
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             timeout=timeout,
             cwd=cwd,
         )
@@ -85,12 +87,20 @@ def bash(command: str, *, cwd: str | None = None, timeout: float = 60.0) -> dict
 def python(code: str, *, cwd: str | None = None, timeout: float = 60.0) -> dict[str, Any]:
     """Execute a Python snippet."""
     try:
+        # Inherit the current environment and ensure PYTHONUTF8 is set for
+        # the child process so print() doesn't crash on non-ASCII characters.
+        env = os.environ.copy()
+        env.setdefault("PYTHONUTF8", "1")
+        env.setdefault("PYTHONIOENCODING", "utf-8")
         result = subprocess.run(
             ["python", "-c", code],
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             timeout=timeout,
             cwd=cwd,
+            env=env,
         )
         return {
             "stdout": result.stdout,
@@ -180,7 +190,7 @@ def grep(pattern: str, path: str) -> dict[str, Any]:
     try:
         p = Path(path).expanduser().resolve()
         if p.is_file():
-            # Search single file
+            # Search single file natively — no shell, no encoding issues
             lines = p.read_text(encoding="utf-8").split("\n")
             matches = [
                 f"{i+1}: {line}"
@@ -191,9 +201,15 @@ def grep(pattern: str, path: str) -> dict[str, Any]:
                 return {"content": "\n".join(matches)}
             return {"content": f"No matches for '{pattern}' in {path}"}
         elif p.is_dir():
-            # Use Select-String for recursive search
+            # Escape single-quotes inside the pattern to avoid PowerShell injection.
+            safe_pattern = pattern.replace("'", "''")
+            # Use -Pattern with a single-quoted string so the regex pipe char (|)
+            # and other special chars are handled correctly by Select-String.
             result = pwsh(
-                f'Get-ChildItem -Recurse -File "{p}" | Select-String -Pattern "{pattern}" -SimpleMatch | Select-Object -First 50 | Format-Table -AutoSize Path, LineNumber, Line'
+                f"Get-ChildItem -Recurse -File '{p}' "
+                f"| Select-String -Pattern '{safe_pattern}' "
+                f"| Select-Object -First 50 "
+                f"| Format-Table -AutoSize Path, LineNumber, Line"
             )
             return result
         else:

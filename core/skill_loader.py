@@ -19,6 +19,7 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
+import yaml
 
 
 @dataclass
@@ -36,6 +37,8 @@ class Skill:
     children: list[str] = field(default_factory=list)  # for hub type
     description: str = ""               # first paragraph
     body: str = ""                      # full markdown body (no frontmatter)
+    system_prompt: str = ""             # custom system prompt for agents
+
 
     @property
     def embed_text(self) -> str:
@@ -48,7 +51,7 @@ class Skill:
         return " — ".join(parts)
 
 
-def parse_frontmatter(content: str) -> tuple[dict[str, Any], str]:
+def parse_frontmatter(content: str, filepath: Path | None = None) -> tuple[dict[str, Any], str]:
     """Parse YAML frontmatter from a markdown file.
 
     Returns (frontmatter_dict, body_text).
@@ -62,30 +65,14 @@ def parse_frontmatter(content: str) -> tuple[dict[str, Any], str]:
     fm_text = match.group(1)
     body = match.group(2)
 
-    # Simple YAML parser for our frontmatter (avoids pyyaml import in hot path)
-    # Supports: key: value, key: [list], key: "string"
-    fm: dict[str, Any] = {}
-    for line in fm_text.split("\n"):
-        line = line.strip()
-        if not line or line.startswith("#"):
-            continue
-        if ":" not in line:
-            continue
-        key, _, value = line.partition(":")
-        key = key.strip()
-        value = value.strip()
-
-        # List: [item1, item2]
-        if value.startswith("[") and value.endswith("]"):
-            items = value[1:-1].split(",")
-            fm[key] = [i.strip().strip("'\"") for i in items if i.strip()]
-        # Quoted string
-        elif (value.startswith('"') and value.endswith('"')) or (
-            value.startswith("'") and value.endswith("'")
-        ):
-            fm[key] = value[1:-1]
-        else:
-            fm[key] = value
+    try:
+        fm = yaml.safe_load(fm_text)
+        if not isinstance(fm, dict):
+            fm = {}
+    except Exception as e:
+        context = f" in {filepath}" if filepath else ""
+        print(f"  [warn] Failed to parse frontmatter YAML{context}: {e}")
+        fm = {}
 
     return fm, body
 
@@ -116,7 +103,7 @@ def extract_first_paragraph(body: str) -> str:
 def load_skill(filepath: Path, skills_root: Path) -> Skill:
     """Load a single skill from a markdown file."""
     content = filepath.read_text(encoding="utf-8")
-    fm, body = parse_frontmatter(content)
+    fm, body = parse_frontmatter(content, filepath)
 
     name = fm.get("name", filepath.stem)
     slug = fm.get("slug", filepath.stem)
@@ -127,13 +114,14 @@ def load_skill(filepath: Path, skills_root: Path) -> Skill:
         slug=slug,
         path=rel_path,
         skill_type=fm.get("type", "skill"),
-        requires=fm.get("requires", []) if isinstance(fm.get("requires"), list) else [],
-        provides=fm.get("provides", []) if isinstance(fm.get("provides"), list) else [],
-        tags=fm.get("tags", []) if isinstance(fm.get("tags"), list) else [],
-        related=fm.get("related", []) if isinstance(fm.get("related"), list) else [],
-        children=fm.get("children", []) if isinstance(fm.get("children"), list) else [],
+        requires=[str(x) for x in fm.get("requires", [])] if isinstance(fm.get("requires"), list) else [],
+        provides=[str(x) for x in fm.get("provides", [])] if isinstance(fm.get("provides"), list) else [],
+        tags=[str(x) for x in fm.get("tags", [])] if isinstance(fm.get("tags"), list) else [],
+        related=[str(x) for x in fm.get("related", [])] if isinstance(fm.get("related"), list) else [],
+        children=[str(x) for x in fm.get("children", [])] if isinstance(fm.get("children"), list) else [],
         description=extract_first_paragraph(body),
         body=body.strip(),
+        system_prompt=str(fm.get("system_prompt", "")) if fm.get("system_prompt") is not None else "",
     )
 
 
@@ -141,8 +129,8 @@ def discover_skills(skills_root: Path) -> list[Skill]:
     """Walk the skills/ directory and parse all .md files."""
     skills: list[Skill] = []
     for md_file in sorted(skills_root.rglob("*.md")):
-        # Skip index/readme files
-        if md_file.name.startswith("_") or md_file.name.lower() == "readme.md":
+        # Skip index/readme/claude files
+        if md_file.name.startswith("_") or md_file.name.lower() in ("readme.md", "claude.md"):
             continue
         try:
             skill = load_skill(md_file, skills_root)
