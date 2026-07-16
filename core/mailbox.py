@@ -15,6 +15,7 @@ from typing import Any
 
 
 PRIORITY_ORDER = {"urgent": 0, "high": 1, "normal": 2, "low": 3}
+DEFAULT_MAX_BYTES = 256_000
 
 
 class Mailbox:
@@ -62,17 +63,51 @@ class Mailbox:
         tmp.replace(final)
         return final
 
-    def drain(self) -> list[dict[str, Any]]:
-        """Read and delete all inbox messages, ordered by priority then timestamp."""
+    def drain(
+        self,
+        *,
+        skip_types: frozenset[str] | set[str] | None = None,
+        max_bytes: int = DEFAULT_MAX_BYTES,
+    ) -> list[dict[str, Any]]:
+        """Read and delete inbox messages, ordered by blocking → priority → ts.
+
+        Messages whose ``type`` is in ``skip_types`` are left on disk (e.g.
+        ``delegate_result`` for the parent wait loop). Corrupt JSON is logged
+        and moved aside instead of silent drop.
+        """
+        skip = set(skip_types or ())
         messages: list[dict[str, Any]] = []
         files = sorted(self.inbox.glob("*.json"))
         for path in files:
             try:
-                data = json.loads(path.read_text(encoding="utf-8"))
-                if isinstance(data, dict):
-                    messages.append(data)
-            except (json.JSONDecodeError, OSError):
-                pass
+                raw = path.read_text(encoding="utf-8")
+            except OSError as e:
+                print(f"  [warn] mailbox: cannot read {path.name}: {e}")
+                continue
+
+            if len(raw.encode("utf-8")) > max_bytes:
+                print(
+                    f"  [warn] mailbox: {path.name} exceeds {max_bytes} bytes — quarantined"
+                )
+                self._quarantine(path, reason="too_large")
+                continue
+
+            try:
+                data = json.loads(raw)
+            except json.JSONDecodeError as e:
+                print(f"  [warn] mailbox: corrupt JSON in {path.name}: {e}")
+                self._quarantine(path, reason="corrupt_json")
+                continue
+
+            if not isinstance(data, dict):
+                print(f"  [warn] mailbox: non-object JSON in {path.name} — quarantined")
+                self._quarantine(path, reason="not_object")
+                continue
+
+            if str(data.get("type", "")) in skip:
+                continue
+
+            messages.append(data)
             try:
                 path.unlink(missing_ok=True)
             except OSError:
@@ -80,11 +115,22 @@ class Mailbox:
 
         messages.sort(
             key=lambda m: (
+                0 if m.get("blocking") else 1,
                 PRIORITY_ORDER.get(str(m.get("priority", "normal")), 2),
                 float(m.get("ts", 0)),
             )
         )
         return messages
+
+    def _quarantine(self, path: Path, *, reason: str) -> None:
+        dest = path.with_suffix(path.suffix + f".{reason}")
+        try:
+            path.replace(dest)
+        except OSError:
+            try:
+                path.unlink(missing_ok=True)
+            except OSError:
+                pass
 
     def peek(self) -> list[dict[str, Any]]:
         """List messages without deleting them."""

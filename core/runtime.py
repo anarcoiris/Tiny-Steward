@@ -41,8 +41,17 @@ _OS_PATH_RULE = (
 )
 
 # ------------------------------------------------------------------
-# System prompt — intentionally tiny (~600 tokens)
+# System prompt — intentionally tiny
 # ------------------------------------------------------------------
+# Stub that must never be used as a live delegate task (see _execute_action).
+DELEGATE_EXAMPLE_STUB = "Review the Acme NDA text below..."
+
+# Default search order for global rules (first existing wins unless config overrides).
+DEFAULT_RULES_CANDIDATES = (
+    Path("RULES.md"),
+    Path("sessions") / "RULES.md",
+)
+
 SYSTEM_PROMPT = f"""\
 You are Tiny Steward, a task executor with a minimal set of primitive actions.
 
@@ -59,14 +68,17 @@ You are Tiny Steward, a task executor with a minimal set of primitive actions.
 - grep(pattern, path): search for text in files
 - http(method, url, body?): make an HTTP request
 - mcp(tool, body?): execute a tool on the nina-mcp server
-- delegate(agent, task): delegate a task to a specialist micro-agent (e.g. nda_review)
+- delegate(agent, task): delegate a full task statement to a specialist micro-agent
 - help(query): discover capabilities for a problem or error
-- set(key, value): tweak config parameters dynamically (e.g. temperature, max_tokens, thinking)
+- set(key, value): tweak config (temperature, max_tokens, enable_thinking, thinking_budget_tokens)
 - checkpoint(note): manually save your state and write a steering note before a complex or risky task
 
 ## How to act
 
-Respond with native tool calls (one at a time). Examples:
+Emit native Qwen/Qwythos tool calls (one at a time). Schema is also sent via the
+tools payload on the first turn of a session — do not invent alternate XML.
+
+Example:
 
 <tool_call>
 <function=ls>
@@ -76,48 +88,8 @@ skills/_policy
 </function>
 </tool_call>
 
-<tool_call>
-<function=mkdir>
-<parameter=path>
-skills/_policy/references
-</parameter>
-</function>
-</tool_call>
-
-<tool_call>
-<function=read>
-<parameter=path>
-config.yaml
-</parameter>
-<parameter=start_line>
-1
-</parameter>
-<parameter=end_line>
-50
-</parameter>
-</function>
-</tool_call>
-
-<tool_call>
-<function=pwsh>
-<parameter=command>
-Get-ChildItem -Recurse
-</parameter>
-</function>
-</tool_call>
-
-<tool_call>
-<function=delegate>
-<parameter=agent>
-nda_review
-</parameter>
-<parameter=task>
-Review the Acme NDA text below...
-</parameter>
-</function>
-</tool_call>
-
 ls takes a directory path only — do not pass cwd. Use pwsh/bash when you need cwd.
+For delegate(agent, task): task must be a complete problem statement (or path to one), never a placeholder.
 
 ## When to use help()
 
@@ -151,14 +123,76 @@ LEGACY_RESULT_RE = re.compile(r"^\[Result of (?P<name>[^\]]+)\]\n(?P<content>[\s
 THINK_RE = re.compile(r"<think>.*?</think>", re.DOTALL)
 QWEN_PARAM_RE = re.compile(r"<parameter=([^>]+)>\n?(.*?)\n?</parameter>", re.DOTALL)
 
+# Soft cap so RULES.md cannot blow the system prefix (chars ≈ tokens*4 heuristic).
+RULES_MAX_CHARS = 6000
+
+
+def load_rules_text(
+    path: str | Path | None = None,
+    *,
+    enabled: bool = True,
+    max_chars: int = RULES_MAX_CHARS,
+) -> str:
+    """Load global RULES.md text, or "" if disabled / missing.
+
+    Search order when ``path`` is None: ``./RULES.md``, ``./sessions/RULES.md``.
+    """
+    if not enabled:
+        return ""
+    candidates: list[Path]
+    if path:
+        candidates = [Path(path)]
+    else:
+        candidates = list(DEFAULT_RULES_CANDIDATES)
+    for candidate in candidates:
+        try:
+            p = candidate.expanduser().resolve()
+        except OSError:
+            continue
+        if not p.is_file():
+            continue
+        try:
+            text = p.read_text(encoding="utf-8").strip()
+        except OSError:
+            continue
+        if not text:
+            return ""
+        if len(text) > max_chars:
+            text = text[:max_chars].rstrip() + "\n\n[… RULES.md truncated …]"
+        return text
+    return ""
+
+
+def compose_system_prompt(rules_text: str = "") -> str:
+    """Built-in SYSTEM_PROMPT plus optional global rules block."""
+    base = SYSTEM_PROMPT.rstrip()
+    rules = (rules_text or "").strip()
+    if not rules:
+        return base
+    return (
+        f"{base}\n\n"
+        "## Global rules (RULES.md)\n\n"
+        "Follow these project rules in addition to the above:\n\n"
+        f"{rules}"
+    )
+
 
 def strip_think_from_text(text: str) -> str:
     """Remove <think> blocks (for LLM context only)."""
     return THINK_RE.sub("", text).strip()
 
 
-def normalize_messages_for_llm(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Prepare messages for the backend: legacy result conversion + think pruning."""
+def normalize_messages_for_llm(
+    messages: list[dict[str, Any]],
+    *,
+    preserve_thinking: bool = False,
+) -> list[dict[str, Any]]:
+    """Prepare messages for the backend: legacy result conversion + think pruning.
+
+    When ``preserve_thinking`` is False (default), strip ``<think>`` from assistant
+    content and drop ``reasoning_content`` so prior CoT does not inflate the prompt.
+    Session storage keeps the raw assistant text; only the outbound LLM view is pruned.
+    """
     out: list[dict[str, Any]] = []
     for msg in messages:
         m = dict(msg)
@@ -172,8 +206,11 @@ def normalize_messages_for_llm(messages: list[dict[str, Any]]) -> list[dict[str,
                     "name": legacy.group("name"),
                     "content": legacy.group("content"),
                 }
-        if m.get("role") == "assistant" and isinstance(m.get("content"), str):
-            m["content"] = strip_think_from_text(m["content"])
+        if m.get("role") == "assistant":
+            if not preserve_thinking:
+                if isinstance(m.get("content"), str):
+                    m["content"] = strip_think_from_text(m["content"])
+                m.pop("reasoning_content", None)
         out.append(m)
     return out
 
@@ -275,6 +312,8 @@ class Runtime:
         max_delegate_turns: int = 10,
         delegate_terminal: str = "auto",
         config_path: str = "config.yaml",
+        rules_path: str | Path | None = "RULES.md",
+        rules_enabled: bool = True,
     ):
         self.llm = llm
         self.help_engine = help_engine
@@ -289,6 +328,8 @@ class Runtime:
         self.max_delegate_turns = max_delegate_turns
         self.delegate_terminal = delegate_terminal
         self.config_path = config_path
+        self.rules_path = Path(rules_path) if rules_path else None
+        self.rules_enabled = rules_enabled
         self.shortcuts = shortcuts or {
             "send": "escape, enter",
             "newline": "c-j"
@@ -303,6 +344,31 @@ class Runtime:
         # Ensure session manager's directory is available for InteractionLog
         log_dir = session.name  # fallback placeholder
         self.interaction_log = None  # Will be initialized once we know log_dir
+        # Explicit flag for out-of-process / child delegate sessions (not inferred).
+        self._is_delegate_child = bool((session.metadata or {}).get("delegate_child"))
+        self._rules_text = load_rules_text(self.rules_path, enabled=self.rules_enabled)
+        self._system_prompt = compose_system_prompt(self._rules_text)
+
+    def reload_rules(self) -> str:
+        """Reload RULES.md from disk (KV-breaking if content changed). Returns status."""
+        self._rules_text = load_rules_text(self.rules_path, enabled=self.rules_enabled)
+        self._system_prompt = compose_system_prompt(self._rules_text)
+        if not self.rules_enabled:
+            return "rules disabled"
+        if not self._rules_text:
+            return f"no RULES.md found (looked at {self.rules_path or DEFAULT_RULES_CANDIDATES})"
+        n = len(self._rules_text)
+        return f"loaded {n} chars from rules (editing mid-session may invalidate KV prefix)"
+
+    def _fresh_system_messages(self) -> list[dict[str, Any]]:
+        return [{"role": "system", "content": self._system_prompt}]
+
+    def mark_delegate_child(self, parent: str | None = None) -> None:
+        """Mark this runtime as a delegate child (set by --delegate-mode)."""
+        self._is_delegate_child = True
+        self.session.metadata["delegate_child"] = True
+        if parent:
+            self.session.metadata["parent"] = parent
 
     def _init_interaction_log(self):
         if not self.interaction_log and self.session_manager:
@@ -318,7 +384,7 @@ class Runtime:
         box = self._mailbox()
         if not box:
             return 0
-        drained = box.drain()
+        drained = box.drain(skip_types={"delegate_result"})
         for msg in drained:
             sender = str(msg.get("from", "unknown"))
             content = str(msg.get("content", ""))
@@ -426,8 +492,8 @@ class Runtime:
 
             display.print_result(action["name"], result_text, is_error=is_error)
             # Avoid polluting the parent session during in-process secondary loops.
-            # Child sessions (metadata.parent set) persist their own tool results.
-            persist = backend != "secondary" or bool(self.session.metadata.get("parent"))
+            # Child sessions persist their own tool results via explicit flag.
+            persist = backend != "secondary" or self._is_delegate_child
             self._append_tool_result(messages, action["name"], result_text, persist=persist)
 
             if is_error:
@@ -442,7 +508,7 @@ class Runtime:
     # ------------------------------------------------------------------
     def run_task(self, task: str) -> str:
         """Execute a task through the reasoning loop."""
-        messages = [{"role": "system", "content": SYSTEM_PROMPT}]
+        messages = self._fresh_system_messages()
 
         if self.session.messages:
             history = self.session.messages[-20:]
@@ -466,8 +532,7 @@ class Runtime:
             if response is None:
                 return "[LLM error]"
 
-            messages.append({"role": "assistant", "content": response})
-            self.session.add_message("assistant", response)
+            self._record_assistant_turn(messages, response)
 
             self._emit_stats(
                 turn=turn,
@@ -477,6 +542,9 @@ class Runtime:
                 usage=usage,
                 compaction_triggered=compaction_triggered,
             )
+
+            if usage and usage.get("aborted"):
+                return response
 
             if "DONE" in response and not extract_actions(response):
                 return response
@@ -497,12 +565,14 @@ class Runtime:
             skills_count=self.help_engine.index.size,
         )
 
-        messages = [{"role": "system", "content": SYSTEM_PROMPT}]
+        messages = self._fresh_system_messages()
 
         if self.session.messages:
             recent = self.session.messages[-20:]
             messages.extend(recent)
             display.print_event("info", f"Restored {len(recent)} messages from session '{self.session.name}'")
+        if self._rules_text:
+            display.print_event("info", f"Global RULES.md loaded ({len(self._rules_text)} chars)")
 
         if estimate_messages_tokens(messages) > self.context_budget:
             messages = self._compact_messages(messages)
@@ -600,8 +670,7 @@ class Runtime:
                 if response is None:
                     break
 
-                messages.append({"role": "assistant", "content": response})
-                self.session.add_message("assistant", response)
+                self._record_assistant_turn(messages, response)
 
                 # Stats + optional auto-checkpoint
                 budget_used = token_est / self.context_budget
@@ -614,6 +683,10 @@ class Runtime:
                     compaction_triggered=compaction_triggered,
                     context_budget_used=budget_used,
                 )
+
+                if usage and usage.get("aborted"):
+                    outcome = "aborted"
+                    break
                 
                 # Meta Guidance
                 hints = self.guidance_engine.evaluate(
@@ -679,7 +752,8 @@ class Runtime:
             elif self._should_send_tools(backend):
                 tools = PRIMITIVES_TOOLS
 
-        llm_messages = normalize_messages_for_llm(messages)
+        preserve = bool(client.chat_template_kwargs.get("preserve_thinking", False))
+        llm_messages = normalize_messages_for_llm(messages, preserve_thinking=preserve)
         t0 = time.monotonic()
         usage: dict | None = None
 
@@ -699,6 +773,60 @@ class Runtime:
         elapsed = time.monotonic() - t0
         return response, usage, elapsed
 
+    def _record_assistant_turn(
+        self,
+        messages: list[dict[str, Any]],
+        response: str,
+        *,
+        client: LLMClient | None = None,
+        persist_session: bool = True,
+    ) -> None:
+        """Append raw assistant text to in-memory history, session, and think mirror."""
+        llm = client or self.llm
+        reasoning = getattr(llm, "_last_reasoning", "") or ""
+        msg: dict[str, Any] = {"role": "assistant", "content": response}
+        if reasoning:
+            msg["reasoning_content"] = reasoning
+        messages.append(msg)
+        if persist_session:
+            self.session.add_message(
+                "assistant",
+                response,
+                reasoning_content=reasoning or None,
+            )
+        self._append_think_log(response, reasoning)
+
+    def _append_think_log(self, content: str, reasoning: str) -> None:
+        """Append-only mirror of assistant CoT under sessions/<name>.think.jsonl."""
+        if not self.session_manager:
+            return
+        import datetime
+        path = self.session_manager.dir / f"{self.session.name}.think.jsonl"
+        # Prefer explicit reasoning; else extract embedded <think> for the log.
+        think_text = (reasoning or "").strip()
+        if not think_text and content:
+            m = THINK_RE.search(content)
+            if m:
+                think_text = m.group(0)
+                if think_text.startswith("<think>"):
+                    think_text = think_text[len("<think>"):]
+                if think_text.endswith("</think>"):
+                    think_text = think_text[: -len("</think>")]
+                think_text = think_text.strip()
+        if not think_text:
+            return
+        record = {
+            "ts": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+            "session": self.session.name,
+            "reasoning": think_text,
+            "content_preview": strip_think_from_text(content)[:500],
+        }
+        try:
+            with path.open("a", encoding="utf-8") as f:
+                f.write(json.dumps(record, ensure_ascii=False) + "\n")
+        except OSError:
+            pass
+
     def _stream_response(
         self,
         messages: list[dict[str, Any]],
@@ -706,31 +834,84 @@ class Runtime:
         client: LLMClient | None = None,
         tools: list[dict] | None = None,
     ) -> str:
-        """Stream the LLM response token-by-token, render it, and return full text."""
+        """Stream the LLM response token-by-token, render it, and return full text.
+
+        Ctrl+C aborts the HTTP stream (frees the llama.cpp slot) and returns
+        whatever was received so far — without exiting the REPL.
+        """
+        from core.llm import merge_reasoning_into_content
+
         llm = client or self.llm
         display.print_response_stream_start()
-        chunks: list[str] = []
+        content_chunks: list[str] = []
+        reasoning_chunks: list[str] = []
         usage: dict | None = None
+        saw_reasoning = False
+        aborted = False
 
-        gen = llm.chat_stream_with_usage(messages, tools=tools)
+        gen = llm.chat_stream_parts(messages, tools=tools)
         try:
             while True:
-                chunk = next(gen)
-                display.print_stream_chunk(chunk)
-                chunks.append(chunk)
+                kind, chunk = next(gen)
+                if kind == "reasoning":
+                    if not saw_reasoning:
+                        display.print_stream_reasoning_chunk("<think>\n")
+                        saw_reasoning = True
+                    display.print_stream_reasoning_chunk(chunk)
+                    reasoning_chunks.append(chunk)
+                else:
+                    if saw_reasoning and not content_chunks:
+                        display.print_stream_reasoning_chunk("\n</think>\n\n")
+                    display.print_stream_chunk(chunk)
+                    content_chunks.append(chunk)
         except StopIteration as e:
             usage = e.value
+        except KeyboardInterrupt:
+            aborted = True
+            llm.abort_active_stream()
+            try:
+                gen.close()
+            except Exception:
+                pass
+            display.print_stream_end()
+            display.print_event(
+                "warn",
+                "Aborted mid-generation (Ctrl+C) — HTTP stream closed so the llama.cpp slot can free",
+            )
 
-        display.print_stream_end()
-        full_response = "".join(chunks)
+        if not aborted:
+            if saw_reasoning and not content_chunks:
+                display.print_stream_reasoning_chunk("\n</think>\n")
+            display.print_stream_end()
+
+        content = "".join(content_chunks)
+        reasoning = "".join(reasoning_chunks) or getattr(llm, "_last_reasoning", "")
+        full_response = merge_reasoning_into_content(content, reasoning)
+        if aborted and full_response:
+            full_response = full_response.rstrip() + "\n\n[aborted]"
+        elif aborted:
+            full_response = "[aborted]"
 
         # If markdown mode, re-render the cleaned text nicely after streaming
-        if self.use_markdown:
+        if self.use_markdown and full_response and not aborted:
             from core.display import _clean_response, _RICH, _console
             from rich.markdown import Markdown  # type: ignore
             clean = _clean_response(full_response)
             if clean and _RICH and _console:
                 _console.print(Markdown(clean, code_theme="monokai"))
+
+        if usage is None:
+            usage = {}
+        if aborted:
+            usage = dict(usage)
+            usage["aborted"] = True
+        # Merge timings captured on the client even if usage chunk lacked them.
+        timings = getattr(llm, "_last_timings", None) or {}
+        if timings:
+            usage = dict(usage)
+            for key in ("cache_n", "prompt_n", "predicted_n"):
+                if key in timings and key not in usage:
+                    usage[key] = timings[key]
 
         self._last_usage = usage  # stash for _emit_stats
         return full_response
@@ -755,6 +936,8 @@ class Runtime:
 
         real_prompt = usage.get("prompt_tokens") if usage else None
         real_completion = usage.get("completion_tokens") if usage else None
+        cache_n = usage.get("cache_n") if usage else None
+        prompt_n = usage.get("prompt_n") if usage else None
 
         # Auto-checkpoint check
         checkpoint_saved = False
@@ -776,6 +959,9 @@ class Runtime:
             compaction_triggered=compaction_triggered,
             checkpoint_saved=checkpoint_saved,
             context_budget_used=context_budget_used,
+            cache_n=cache_n if isinstance(cache_n, int) else None,
+            prompt_n=prompt_n if isinstance(prompt_n, int) else None,
+            aborted=bool(usage.get("aborted")) if usage else False,
         )
 
         if self.show_stats:
@@ -822,8 +1008,19 @@ class Runtime:
         if name == "delegate":
             if not allow_delegate:
                 return {"error": "Nested delegate not allowed in micro-agent"}
-            agent_slug = attrs.get("agent") or attrs.get("skill") or body
-            problem = body
+            agent_slug = attrs.get("agent") or attrs.get("skill") or ""
+            problem = (attrs.get("task") or body or "").strip()
+            if not agent_slug:
+                return {"error": "delegate requires agent=<skill-slug>."}
+            if not problem or problem == DELEGATE_EXAMPLE_STUB or problem.startswith(
+                DELEGATE_EXAMPLE_STUB.rstrip(".")
+            ):
+                return {
+                    "error": (
+                        "delegate task must be a complete problem statement "
+                        "(text or path) — not empty or the system-prompt stub."
+                    )
+                }
             skill = self.help_engine.index.get_by_slug(agent_slug)
             if not skill:
                 skill = self.help_engine.index.get_by_name(agent_slug)
@@ -875,11 +1072,17 @@ class Runtime:
                 end_line = int(attrs["end_line"]) if "end_line" in attrs else None
                 return primitive(path, start_line, end_line)
             elif name == "write":
-                path = attrs.get("path", "")
-                return primitive(path, body)
+                path = attrs.get("path") or ""
+                content = body if body else attrs.get("content", "")
+                if not path:
+                    return {"error": "Missing path for write"}
+                return primitive(path, content)
             elif name == "append":
-                path = attrs.get("path", "")
-                return primitive(path, body)
+                path = attrs.get("path") or ""
+                content = body if body else attrs.get("content", "")
+                if not path:
+                    return {"error": "Missing path for append"}
+                return primitive(path, content)
             elif name == "mkdir":
                 return primitive(attrs.get("path") or body)
             elif name == "ls":
@@ -968,8 +1171,24 @@ class Runtime:
             problem=str(problem_path),
         )
         spawn_info = spawn_child(mode, argv, cwd=Path.cwd())
-        if spawn_info.get("kind") == "in_process":
+        kind = spawn_info.get("kind")
+        if kind == "in_process":
+            # Do not leave an orphan out-of-process child session on disk.
+            self._abandon_orphan_child(child_name)
             return self._run_delegate_loop(skill, problem, context_text)
+
+        proc = spawn_info.get("process")
+        if proc is not None:
+            # Fail-fast if the child dies immediately (bad argv / missing python).
+            time.sleep(0.35)
+            rc = proc.poll()
+            if rc is not None:
+                err = f"[Delegate spawn failed: child process exited immediately (code {rc})]"
+                self.session_manager.update_session_metadata(child_name, {
+                    "status": "error",
+                    "result": err,
+                })
+                return err
 
         if self.session_manager:
             self.session_manager.update_session_metadata(child_name, {
@@ -983,6 +1202,19 @@ class Runtime:
             f"Spawned child session '{child_name}' via {spawn_info.get('kind')} — waiting for result…",
         )
         return self._wait_for_delegate_result(child_name, timeout_s=3600.0)
+
+    def _abandon_orphan_child(self, child_name: str) -> None:
+        """Mark a provisioned child as cancelled when we fall back to in-process."""
+        if not self.session_manager:
+            return
+        self.session_manager.update_session_metadata(child_name, {
+            "status": "cancelled",
+            "result": "[Abandoned: spawn fell back to in_process]",
+        })
+        display.print_event(
+            "warn",
+            f"Child '{child_name}' not spawned out-of-process — running delegate in-process.",
+        )
 
     def _wait_for_delegate_result(self, child_name: str, *, timeout_s: float = 3600.0) -> str:
         """Block until child marks done or mails a delegate_result."""
@@ -1078,9 +1310,12 @@ class Runtime:
                 return "[Delegate LLM error]"
 
             final_response = response
-            messages.append({"role": "assistant", "content": response})
-            if self.session.metadata.get("parent"):
-                self.session.add_message("assistant", response)
+            self._record_assistant_turn(
+                messages,
+                response,
+                client=self.atomic_llm,
+                persist_session=self._is_delegate_child,
+            )
 
             if "DONE" in response and not extract_actions(response):
                 break
@@ -1200,10 +1435,29 @@ class Runtime:
                 self.session = new_session
                 # Reload messages into conversation
                 messages.clear()
-                messages.append({"role": "system", "content": SYSTEM_PROMPT})
+                messages.extend(self._fresh_system_messages())
                 if new_session.messages:
                     messages.extend(new_session.messages[-20:])
                 display.print_event("session", f"Switched to session '{arg}'")
+            return True
+
+        # ── /rules ─────────────────────────────────────────────────────
+        if command == "/rules":
+            if arg.lower() in ("reload", "refresh"):
+                msg = self.reload_rules()
+                display.print_event("warn", "Reloading RULES.md may invalidate the KV prompt prefix")
+                display.print_event("ok", msg)
+                # Refresh live system message if caller passes messages list
+                if messages and messages[0].get("role") == "system":
+                    messages[0]["content"] = self._system_prompt
+                return True
+            if not self.rules_enabled:
+                display.print_event("info", "rules disabled in config")
+            elif self._rules_text:
+                preview = self._rules_text[:500]
+                display.print_event("info", f"RULES.md ({len(self._rules_text)} chars):\n{preview}")
+            else:
+                display.print_event("info", "No RULES.md loaded")
             return True
 
         # ── /skills ────────────────────────────────────────────────────
@@ -1324,10 +1578,16 @@ class Runtime:
         "stats":            "Show per-turn token stats (on/off)",
         "model":            "Orchestrator model name (hot-swap, no restart)",
         "base_url":         "Orchestrator base URL (hot-swap)",
+        "enable_thinking":  "Qwythos chat_template_kwargs.enable_thinking (KV-breaking)",
+        "preserve_thinking": "Qwythos chat_template_kwargs.preserve_thinking (KV-breaking)",
+        "thinking_budget_tokens": "Sampler think budget (-1 uncapped; KV-safe)",
+        "cache_prompt":     "Reuse prompt KV prefix (keep true; KV policy)",
         "atomic.model":     "Atomic/subagent model name",
         "atomic.base_url":  "Atomic/subagent base URL",
         "atomic.temperature":   "Atomic LLM temperature",
         "atomic.max_tokens":    "Atomic LLM max_tokens",
+        "atomic.enable_thinking": "Atomic chat_template_kwargs.enable_thinking",
+        "atomic.thinking_budget_tokens": "Atomic thinking_budget_tokens",
     }
 
     def _handle_set(self, arg: str):
@@ -1343,8 +1603,16 @@ class Runtime:
 
         key, raw_val = parts[0].lower(), parts[1].strip()
 
+        # Alias: /set thinking on → enable_thinking (not flat extra_params)
+        if key == "thinking":
+            key = "enable_thinking"
+            display.print_event(
+                "warn",
+                "Alias: 'thinking' → 'enable_thinking' (chat_template_kwargs; may invalidate KV prefix)",
+            )
+
         # Boolean keys
-        if key in ("streaming", "markdown", "stats"):
+        if key in ("streaming", "markdown", "stats", "cache_prompt"):
             new_val = raw_val.lower() in ("on", "1", "true", "yes")
             if key == "streaming":
                 self.use_streaming = new_val
@@ -1352,7 +1620,35 @@ class Runtime:
                 self.use_markdown = new_val
             elif key == "stats":
                 self.show_stats = new_val
+            elif key == "cache_prompt":
+                self.llm.cache_prompt = new_val
+                if not new_val:
+                    display.print_event("warn", "cache_prompt=false forces full prompt recompute")
             msg = f"{key} → {new_val}"
+            display.print_event("ok", msg)
+            return msg
+
+        # Thinking / chat_template_kwargs (KV-breaking when toggled mid-session)
+        if key in ("enable_thinking", "preserve_thinking"):
+            new_val = raw_val.lower() in ("on", "1", "true", "yes")
+            self.llm.set_template_kwarg(key, new_val)
+            display.print_event(
+                "warn",
+                "KV prefix may invalidate — chat_template_kwargs changed mid-session",
+            )
+            msg = f"{key} → {new_val} (chat_template_kwargs)"
+            display.print_event("ok", msg)
+            return msg
+
+        if key == "thinking_budget_tokens":
+            try:
+                new_int = int(raw_val)
+            except ValueError:
+                msg = f"Expected integer for {key}, got: {raw_val!r}"
+                display.print_event("error", msg)
+                return f"ERROR: {msg}"
+            self.llm.thinking_budget_tokens = new_int
+            msg = f"{key} → {new_int} (KV-safe)"
             display.print_event("ok", msg)
             return msg
 
@@ -1431,14 +1727,26 @@ class Runtime:
                 self.atomic_llm.max_tokens = int(raw_val)
                 msg = f"atomic.max_tokens → {raw_val}"
                 display.print_event("ok", msg)
+            elif sub_key in ("enable_thinking", "preserve_thinking"):
+                new_val = raw_val.lower() in ("on", "1", "true", "yes")
+                self.atomic_llm.set_template_kwarg(sub_key, new_val)
+                display.print_event(
+                    "warn",
+                    "KV prefix may invalidate — atomic chat_template_kwargs changed",
+                )
+                msg = f"atomic.{sub_key} → {new_val}"
+                display.print_event("ok", msg)
+            elif sub_key == "thinking_budget_tokens":
+                self.atomic_llm.thinking_budget_tokens = int(raw_val)
+                msg = f"atomic.thinking_budget_tokens → {raw_val}"
+                display.print_event("ok", msg)
             else:
                 self.atomic_llm.extra_params[sub_key] = raw_val
                 msg = f"atomic.{sub_key} → {raw_val!r} (saved to extra_params)"
                 display.print_event("ok", msg)
             return msg
 
-        # Fallback to LLM extra_params for unknown keys (like 'thinking')
-        # Try to parse as int/float/bool if possible
+        # Fallback to LLM extra_params for unknown sampling/ops keys
         val_parsed: Any = raw_val
         if raw_val.lower() in ("true", "on", "yes"):
             val_parsed = True
@@ -1452,7 +1760,7 @@ class Runtime:
                     val_parsed = float(raw_val)
                 except ValueError:
                     pass
-                    
+
         self.llm.extra_params[key] = val_parsed
         msg = f"{key} → {val_parsed!r} (saved to extra_params)"
         display.print_event("ok", msg)
@@ -1476,6 +1784,10 @@ class Runtime:
             "stats":            self.show_stats,
             "model":            self.llm.model,
             "base_url":         self.llm.base_url,
+            "enable_thinking":  self.llm.chat_template_kwargs.get("enable_thinking"),
+            "preserve_thinking": self.llm.chat_template_kwargs.get("preserve_thinking"),
+            "thinking_budget_tokens": self.llm.thinking_budget_tokens,
+            "cache_prompt":     self.llm.cache_prompt,
         }
         if self.atomic_llm:
             mapping.update({
@@ -1483,6 +1795,8 @@ class Runtime:
                 "atomic.base_url":    self.atomic_llm.base_url,
                 "atomic.temperature": self.atomic_llm.temperature,
                 "atomic.max_tokens":  self.atomic_llm.max_tokens,
+                "atomic.enable_thinking": self.atomic_llm.chat_template_kwargs.get("enable_thinking"),
+                "atomic.thinking_budget_tokens": self.atomic_llm.thinking_budget_tokens,
             })
         return mapping.get(key, "?")
 

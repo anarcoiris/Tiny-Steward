@@ -7,10 +7,15 @@ llm:
     api: "openai"                      # llamacpp /v1/chat/completions
     model: "qwythos-9b-96k"
     ctx: 131072
-    max_tokens: 8192
+    max_tokens: 16384
     temperature: 0.6
     top_p: 0.95
     repeat_penalty: 1.05
+    # Qwythos chat-template / reasoning (stable per session — toggling kwargs breaks LCP)
+    enable_thinking: true
+    preserve_thinking: false
+    thinking_budget_tokens: -1         # -1 = uncapped; KV-safe to change mid-session
+    cache_prompt: true
   atomic:
     base_url: "http://127.0.0.1:11439"
     api: "openai"
@@ -18,6 +23,11 @@ llm:
     ctx: 98304
     max_tokens: 4192
     temperature: 0.15
+    # Prefer TTFT for micro-agents; budget 0 disables sampler-side think
+    enable_thinking: false
+    preserve_thinking: false
+    thinking_budget_tokens: 0
+    cache_prompt: true
 
 embeddings:
   base_url: "http://127.0.0.1:11438"
@@ -38,6 +48,12 @@ sessions:
   dir: "./sessions"
   auto_save: true
 
+# Global RULES.md — injected after the built-in system prompt on every new
+# conversation build (not persisted into session.json history). Keep short.
+rules:
+  enabled: true
+  path: "./RULES.md"          # fallback search: ./sessions/RULES.md
+
 ui:
   streaming: true          # stream LLM tokens to terminal in real time
   markdown: true           # render Markdown in assistant responses
@@ -54,6 +70,7 @@ ui:
 # - orchestrator (:11440) qwythos-9b-96k: --parallel 1, -c 262144 (server),
 #   while config.yaml ctx: 98304 is the budget Tiny Steward uses for compaction.
 # - Raise atomic --parallel N before relying on multiple out-of-process delegates.
-# - Mid-generation abort is not used; mailbox drains between turns only.
+# - Mid-generation abort: Ctrl+C during stream closes HTTP (frees slot); REPL stays up.
+# - Stats show LCP from llama.cpp timings.cache_n / prompt_n when present.
 # ---------------------------------------------------------------------------
 

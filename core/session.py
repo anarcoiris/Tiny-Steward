@@ -24,10 +24,19 @@ class Session:
     discovered_skills: list[str] = field(default_factory=list)  # slugs used during session
     metadata: dict[str, Any] = field(default_factory=dict)
 
-    def add_message(self, role: str, content: str, *, name: str | None = None):
+    def add_message(
+        self,
+        role: str,
+        content: str,
+        *,
+        name: str | None = None,
+        reasoning_content: str | None = None,
+    ):
         msg: dict[str, Any] = {"role": role, "content": content}
         if name is not None:
             msg["name"] = name
+        if reasoning_content:
+            msg["reasoning_content"] = reasoning_content
         self.messages.append(msg)
         self.updated_at = time.time()
 

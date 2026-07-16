@@ -125,12 +125,38 @@ def load_skill(filepath: Path, skills_root: Path) -> Skill:
     )
 
 
+# OpenClaw contamination under skills/_meta — exclude from semantic index.
+# Keep on disk; still index _meta/primitives and _meta/troubleshooting.
+OPENCLAW_META_EXCLUDE = frozenset({
+    "delegation-gate",
+    "delegate-router",
+    "pulse-routing",
+    "nomic-local",
+    "paid-bash-security-v1-1",
+})
+
+
 def discover_skills(skills_root: Path) -> list[Skill]:
-    """Walk the skills/ directory and parse all .md files."""
+    """Walk the skills/ directory and parse all .md files.
+
+    Foreign OpenClaw packs under ``_meta/<name>/`` listed in
+    :data:`OPENCLAW_META_EXCLUDE` are kept on disk but not indexed.
+    ``_meta/primitives`` and ``_meta/troubleshooting`` remain discoverable.
+    """
     skills: list[Skill] = []
     for md_file in sorted(skills_root.rglob("*.md")):
         # Skip index/readme/claude files
         if md_file.name.startswith("_") or md_file.name.lower() in ("readme.md", "claude.md"):
+            continue
+        try:
+            rel_parts = md_file.relative_to(skills_root).parts
+        except ValueError:
+            continue
+        if (
+            len(rel_parts) >= 2
+            and rel_parts[0] == "_meta"
+            and rel_parts[1] in OPENCLAW_META_EXCLUDE
+        ):
             continue
         try:
             skill = load_skill(md_file, skills_root)

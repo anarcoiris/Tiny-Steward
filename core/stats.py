@@ -57,6 +57,15 @@ class TurnStats:
     context_budget_used: float = 0.0
     """Fraction of context budget used (0.0 to 1.0+)."""
 
+    cache_n: Optional[int] = None
+    """Tokens reused from KV cache (llama.cpp timings.cache_n)."""
+
+    prompt_n: Optional[int] = None
+    """New prompt tokens evaluated this turn (llama.cpp timings.prompt_n)."""
+
+    aborted: bool = False
+    """True if the user aborted mid-generation."""
+
     @property
     def total_tokens_est(self) -> int:
         return self.prompt_tokens_est + self.completion_tokens_est
@@ -71,6 +80,16 @@ class TurnStats:
     def tokens_per_sec(self) -> float:
         toks = self.completion_tokens_real if self.completion_tokens_real is not None else self.completion_tokens_est
         return toks / self.elapsed_s if self.elapsed_s > 0 else 0.0
+
+    @property
+    def lcp_ratio(self) -> Optional[float]:
+        """Approximate longest-common-prefix hit rate: cache_n / (cache_n + prompt_n)."""
+        if self.cache_n is None or self.prompt_n is None:
+            return None
+        denom = self.cache_n + self.prompt_n
+        if denom <= 0:
+            return None
+        return self.cache_n / denom
 
 
 
@@ -103,6 +122,9 @@ class SessionStats:
         compaction_triggered: bool = False,
         checkpoint_saved: bool = False,
         context_budget_used: float = 0.0,
+        cache_n: Optional[int] = None,
+        prompt_n: Optional[int] = None,
+        aborted: bool = False,
     ) -> TurnStats:
         """Record a completed turn and return its TurnStats."""
         # Prefer real counts for session totals when available
@@ -131,6 +153,9 @@ class SessionStats:
             checkpoint_saved=checkpoint_saved,
             elapsed_s=elapsed_s,
             context_budget_used=context_budget_used,
+            cache_n=cache_n,
+            prompt_n=prompt_n,
+            aborted=aborted,
         )
 
     def record_compaction(self):

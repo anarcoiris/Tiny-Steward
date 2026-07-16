@@ -129,6 +129,7 @@ def banner(session_name: str, skills_count: int, *, color: bool = True):
         f"[{_C.BRAND}]/sessions[/{_C.BRAND}]  "
         f"[{_C.BRAND}]/set[/{_C.BRAND}]  "
         f"[{_C.BRAND}]/stats[/{_C.BRAND}]  "
+        f"[{_C.BRAND}]/rules[/{_C.BRAND}]  "
         f"[{_C.BRAND}]/checkpoint[/{_C.BRAND}]  "
         f"[{_C.BRAND}]/skills[/{_C.BRAND}]  "
         f"[{_C.BRAND}]/help[/{_C.BRAND}] [dim]<query>[/dim]  "
@@ -156,7 +157,6 @@ def prompt_text() -> str:
 # ---------------------------------------------------------------------------
 # Strip <action …>…</action> tags, replace with a dim placeholder
 _ACTION_RE = re.compile(r"<action\s+.*?>.*?</action>", re.DOTALL)
-_THINK_RE  = re.compile(r"<think>.*?</think>", re.DOTALL)
 
 
 def _clean_response(text: str) -> str:
@@ -201,6 +201,14 @@ def print_stream_chunk(chunk: str):
     """Print a single streaming token chunk (no newline flushing)."""
     if _RICH:
         _console.print(chunk, end="", markup=False, highlight=False)
+    else:
+        print(chunk, end="", flush=True)
+
+
+def print_stream_reasoning_chunk(chunk: str):
+    """Print a streaming reasoning/think token in dim style."""
+    if _RICH:
+        _console.print(chunk, end="", style=_C.DIM, markup=False, highlight=False)
     else:
         print(chunk, end="", flush=True)
 
@@ -340,8 +348,16 @@ def print_stats(stats: "TurnStats"):
         context_part,
         f"[dim]{stats.elapsed_s:.1f}s[/dim]",
     ]
+    if stats.cache_n is not None and stats.prompt_n is not None:
+        ratio = stats.lcp_ratio
+        pct = f"{int(ratio * 100)}%" if ratio is not None else "?"
+        parts.append(
+            f"[{_C.INFO}]LCP {stats.cache_n}+{stats.prompt_n} ({pct})[/{_C.INFO}]"
+        )
     if stats.compaction_triggered:
         parts.append(f"[{_C.WARN}]⚡ compacted[/{_C.WARN}]")
+    if stats.aborted:
+        parts.append(f"[{_C.WARN}]✂ aborted[/{_C.WARN}]")
         
     _console.print("  " + f"  [dim]│[/dim]  ".join(parts), markup=True)
 

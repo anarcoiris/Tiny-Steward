@@ -96,6 +96,25 @@ class TestExecuteActionDispatch(unittest.TestCase):
         self.assertIn("error", result)
         self.assertTrue(result["error"].startswith("Not a directory:"))
 
+    def test_write_uses_attrs_path(self):
+        target = self.temp / "out.txt"
+        result = self.runtime._execute_action({
+            "name": "write",
+            "body": "payload",
+            "attrs": {"path": str(target)},
+        })
+        self.assertNotIn("error", result)
+        self.assertEqual(target.read_text(encoding="utf-8"), "payload")
+
+    def test_write_missing_path_errors(self):
+        result = self.runtime._execute_action({
+            "name": "write",
+            "body": "payload",
+            "attrs": {},
+        })
+        self.assertIn("error", result)
+        self.assertIn("Missing path", result["error"])
+
     def test_benign_fs_error_does_not_force_tools_resend(self):
         missing = self.temp / "nope"
         messages: list = []

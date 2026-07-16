@@ -1,20 +1,42 @@
 """LLM client for llamacpp / OpenAI-compatible endpoints.
 
 Talks to Qwythos (:11440) and Atomic (:11439) via /v1/chat/completions.
-Handles streaming, retry on 503 (slot busy), and token estimation.
+Handles streaming, reasoning_content, retry on 503 (slot busy), and token estimation.
 """
 
 from __future__ import annotations
 
 import json
 import time
-from typing import Any, Generator
+from typing import Any, Generator, Literal
 
 import httpx
+
+StreamPartKind = Literal["reasoning", "content"]
+
+
+def merge_reasoning_into_content(content: str, reasoning: str) -> str:
+    """Embed separate reasoning_content as <think>…</think> when content lacks it."""
+    content = content or ""
+    reasoning = (reasoning or "").strip()
+    if not reasoning:
+        return content
+    if "<think>" in content:
+        return content
+    if content:
+        return f"<think>\n{reasoning}\n</think>\n\n{content}"
+    return f"<think>\n{reasoning}\n</think>"
 
 
 class LLMClient:
     """Thin wrapper around a llamacpp / OpenAI-compatible chat endpoint."""
+
+    # Keys that belong on LLMClient attrs / nested kwargs — not flat extra_params.
+    _RESERVED_CFG = frozenset({
+        "base_url", "api", "model", "ctx", "max_tokens", "temperature", "top_p",
+        "repeat_penalty", "chat_template_kwargs", "thinking_budget_tokens",
+        "cache_prompt", "enable_thinking", "preserve_thinking", "add_vision_id",
+    })
 
     def __init__(
         self,
@@ -25,6 +47,10 @@ class LLMClient:
         top_p: float = 0.9,
         repeat_penalty: float = 1.05,
         timeout: float = 300.0,
+        *,
+        chat_template_kwargs: dict[str, Any] | None = None,
+        thinking_budget_tokens: int | None = -1,
+        cache_prompt: bool = True,
         extra_params: dict[str, Any] | None = None,
     ):
         self.base_url = base_url.rstrip("/")
@@ -33,11 +59,50 @@ class LLMClient:
         self.temperature = temperature
         self.top_p = top_p
         self.repeat_penalty = repeat_penalty
-        self.extra_params = extra_params or {}
+        self.chat_template_kwargs: dict[str, Any] = dict(chat_template_kwargs or {})
+        self.thinking_budget_tokens = thinking_budget_tokens
+        self.cache_prompt = cache_prompt
+        self.extra_params = {
+            k: v for k, v in (extra_params or {}).items()
+            if k not in self._RESERVED_CFG
+        }
+        self._last_reasoning: str = ""
+        self._last_timings: dict[str, Any] = {}
+        self._active_resp: Any = None
         self._client = httpx.Client(
             base_url=self.base_url,
             timeout=httpx.Timeout(timeout, connect=15.0),
         )
+
+    @classmethod
+    def from_lane_config(cls, cfg: dict[str, Any], **overrides: Any) -> "LLMClient":
+        """Build a client from a config.yaml llm.orchestrator / llm.atomic block."""
+        kwargs = dict(cfg.get("chat_template_kwargs") or {})
+        for key in ("enable_thinking", "preserve_thinking", "add_vision_id"):
+            if key in cfg and key not in kwargs:
+                kwargs[key] = cfg[key]
+        budget = cfg.get("thinking_budget_tokens", -1)
+        cache = cfg.get("cache_prompt", True)
+        known = {
+            "base_url", "api", "model", "ctx", "max_tokens", "temperature", "top_p",
+            "repeat_penalty", "chat_template_kwargs", "thinking_budget_tokens",
+            "cache_prompt", "enable_thinking", "preserve_thinking", "add_vision_id",
+        }
+        extra = {k: v for k, v in cfg.items() if k not in known}
+        params = {
+            "base_url": cfg["base_url"],
+            "model": cfg["model"],
+            "max_tokens": cfg.get("max_tokens", 4096),
+            "temperature": cfg.get("temperature", 0.15),
+            "top_p": cfg.get("top_p", 0.9),
+            "repeat_penalty": cfg.get("repeat_penalty", 1.05),
+            "chat_template_kwargs": kwargs,
+            "thinking_budget_tokens": budget,
+            "cache_prompt": cache,
+            "extra_params": extra,
+        }
+        params.update(overrides)
+        return cls(**params)
 
     # ------------------------------------------------------------------
     # Chat completion (non-streaming)
@@ -50,7 +115,7 @@ class LLMClient:
         temperature: float | None = None,
         tools: list[dict] | None = None,
     ) -> str:
-        """Send a chat completion request. Returns the assistant message text."""
+        """Send a chat completion request. Returns assistant text (think-merged)."""
         body = self._build_body(
             messages,
             stream=False,
@@ -59,7 +124,13 @@ class LLMClient:
             tools=tools,
         )
         data = self._post("/v1/chat/completions", body)
-        return data["choices"][0]["message"]["content"]
+        msg = data["choices"][0]["message"]
+        content = msg.get("content") or ""
+        reasoning = msg.get("reasoning_content") or ""
+        self._last_reasoning = reasoning
+        timings = data.get("timings") if isinstance(data.get("timings"), dict) else {}
+        self._last_timings = timings or {}
+        return merge_reasoning_into_content(content, reasoning)
 
     # ------------------------------------------------------------------
     # Chat completion (streaming)
@@ -72,7 +143,22 @@ class LLMClient:
         temperature: float | None = None,
         tools: list[dict] | None = None,
     ) -> Generator[str, None, None]:
-        """Stream a chat completion. Yields text chunks."""
+        """Stream content chunks only (reasoning accumulated on self._last_reasoning)."""
+        for kind, text in self.chat_stream_parts(
+            messages, max_tokens=max_tokens, temperature=temperature, tools=tools
+        ):
+            if kind == "content":
+                yield text
+
+    def chat_stream_parts(
+        self,
+        messages: list[dict[str, str]],
+        *,
+        max_tokens: int | None = None,
+        temperature: float | None = None,
+        tools: list[dict] | None = None,
+    ) -> Generator[tuple[StreamPartKind, str], None, dict[str, Any] | None]:
+        """Stream (kind, text) parts. StopIteration.value is usage/timings dict or None."""
         body = self._build_body(
             messages,
             stream=True,
@@ -80,21 +166,64 @@ class LLMClient:
             temperature=temperature,
             tools=tools,
         )
-        with self._stream_request("/v1/chat/completions", body) as resp:
-            for line in resp.iter_lines():
-                if not line.startswith("data: "):
-                    continue
-                payload = line[6:]
-                if payload.strip() == "[DONE]":
-                    break
-                try:
-                    chunk = json.loads(payload)
-                    delta = chunk["choices"][0].get("delta", {})
-                    text = delta.get("content", "")
-                    if text:
-                        yield text
-                except (json.JSONDecodeError, KeyError, IndexError):
-                    continue
+        usage: dict[str, Any] | None = None
+        reasoning_parts: list[str] = []
+        timings: dict[str, Any] = {}
+
+        try:
+            with self._stream_request("/v1/chat/completions", body) as resp:
+                self._active_resp = resp
+                for line in resp.iter_lines():
+                    if not line.startswith("data: "):
+                        continue
+                    payload = line[6:]
+                    if payload.strip() == "[DONE]":
+                        break
+                    try:
+                        chunk = json.loads(payload)
+                        if "usage" in chunk and chunk["usage"]:
+                            u = chunk["usage"]
+                            usage = {
+                                "prompt_tokens": u.get("prompt_tokens"),
+                                "completion_tokens": u.get("completion_tokens"),
+                            }
+                        if isinstance(chunk.get("timings"), dict):
+                            timings = chunk["timings"]
+                        choices = chunk.get("choices") or []
+                        if not choices:
+                            continue
+                        delta = choices[0].get("delta", {})
+                        reasoning = delta.get("reasoning_content") or ""
+                        if reasoning:
+                            reasoning_parts.append(reasoning)
+                            yield ("reasoning", reasoning)
+                        text = delta.get("content") or ""
+                        if text:
+                            yield ("content", text)
+                    except (json.JSONDecodeError, KeyError, IndexError, TypeError):
+                        continue
+        finally:
+            self._active_resp = None
+
+        self._last_reasoning = "".join(reasoning_parts)
+        self._last_timings = timings
+        if timings:
+            usage = dict(usage or {})
+            for key in ("cache_n", "prompt_n", "predicted_n", "predicted_ms", "prompt_ms"):
+                if key in timings and timings[key] is not None:
+                    usage[key] = timings[key]
+        return usage
+
+    def abort_active_stream(self) -> None:
+        """Best-effort close of an in-flight streaming response (frees llama.cpp slot)."""
+        resp = getattr(self, "_active_resp", None)
+        if resp is None:
+            return
+        try:
+            resp.close()
+        except Exception:
+            pass
+        self._active_resp = None
 
     def chat_stream_with_usage(
         self,
@@ -103,59 +232,26 @@ class LLMClient:
         max_tokens: int | None = None,
         temperature: float | None = None,
         tools: list[dict] | None = None,
-    ) -> Generator[str, None, dict[str, int] | None]:
-        """Stream a chat completion and capture usage stats from the final chunk.
+    ) -> Generator[str, None, dict[str, Any] | None]:
+        """Stream content chunks; capture usage + reasoning on return.
 
         Yields text chunks just like chat_stream(). On return (StopIteration),
-        the ``value`` attribute of the StopIteration exception holds a dict
-        ``{"prompt_tokens": int, "completion_tokens": int}`` if the server
-        sent usage data, or ``None`` otherwise.
-
-        Typical usage::
-
-            gen = llm.chat_stream_with_usage(messages)
-            try:
-                while True:
-                    chunk = next(gen)
-                    print(chunk, end="")
-            except StopIteration as e:
-                usage = e.value   # dict or None
+        the ``value`` attribute holds usage/timings dict or None. Reasoning text is on
+        ``self._last_reasoning`` and is also merged by callers via
+        :func:`merge_reasoning_into_content`.
         """
-        body = self._build_body(
-            messages,
-            stream=True,
-            max_tokens=max_tokens,
-            temperature=temperature,
-            tools=tools,
+        gen = self.chat_stream_parts(
+            messages, max_tokens=max_tokens, temperature=temperature, tools=tools
         )
-        usage: dict[str, int] | None = None
-
-        with self._stream_request("/v1/chat/completions", body) as resp:
-            for line in resp.iter_lines():
-                if not line.startswith("data: "):
-                    continue
-                payload = line[6:]
-                if payload.strip() == "[DONE]":
-                    break
-                try:
-                    chunk = json.loads(payload)
-                    # Capture usage if the server includes it (common in
-                    # llamacpp ≥ b3200 with --log-disable disabled)
-                    if "usage" in chunk and chunk["usage"]:
-                        u = chunk["usage"]
-                        usage = {
-                            "prompt_tokens": u.get("prompt_tokens"),
-                            "completion_tokens": u.get("completion_tokens"),
-                        }
-                    delta = chunk["choices"][0].get("delta", {})
-                    text = delta.get("content", "")
-                    if text:
-                        yield text
-                except (json.JSONDecodeError, KeyError, IndexError):
-                    continue
-
+        usage: dict[str, Any] | None = None
+        try:
+            while True:
+                kind, text = next(gen)
+                if kind == "content":
+                    yield text
+        except StopIteration as e:
+            usage = e.value
         return usage
-
 
     # ------------------------------------------------------------------
     # Health check
@@ -180,7 +276,7 @@ class LLMClient:
         temperature: float | None,
         tools: list[dict] | None = None,
     ) -> dict[str, Any]:
-        body = {
+        body: dict[str, Any] = {
             "model": self.model,
             "messages": messages,
             "max_tokens": max_tokens or self.max_tokens,
@@ -188,11 +284,24 @@ class LLMClient:
             "top_p": self.top_p,
             "repeat_penalty": self.repeat_penalty,
             "stream": stream,
+            "cache_prompt": self.cache_prompt,
         }
+        if self.chat_template_kwargs:
+            body["chat_template_kwargs"] = dict(self.chat_template_kwargs)
+        if self.thinking_budget_tokens is not None:
+            body["thinking_budget_tokens"] = self.thinking_budget_tokens
         if tools is not None:
             body["tools"] = tools
-        body.update(self.extra_params)
+        # extra_params last but must not clobber nested kwargs accidentally
+        for k, v in self.extra_params.items():
+            if k in ("chat_template_kwargs", "thinking_budget_tokens", "cache_prompt"):
+                continue
+            body[k] = v
         return body
+
+    def set_template_kwarg(self, key: str, value: Any) -> None:
+        """Update a chat_template_kwargs entry (may invalidate LCP)."""
+        self.chat_template_kwargs[key] = value
 
     def _post(
         self,
@@ -281,6 +390,9 @@ def estimate_messages_tokens(messages: list[dict[str, str]]) -> int:
     """Estimate total tokens across all messages."""
     total = 0
     for msg in messages:
-        total += estimate_tokens(msg.get("content", ""))
+        total += estimate_tokens(msg.get("content", "") or "")
+        rc = msg.get("reasoning_content")
+        if isinstance(rc, str):
+            total += estimate_tokens(rc)
         total += 4  # role + formatting overhead
     return total

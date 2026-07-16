@@ -7,6 +7,11 @@ Entry point. Provides:
   - Session management (--session <name>)
   - Out-of-process delegate child (--delegate-mode)
 
+See also:
+  - RULES.md — global rules injected into the system prompt
+  - plans/archivos-retirados.md — deleted/absorbed modules (e.g. micro_agent.py)
+  - plans/fuera-de-alcance.md — next-cycle backlog (F3+)
+
 Usage:
   python steward.py                          # interactive REPL, default session
   python steward.py --session deploy-flask   # resume named session
@@ -111,31 +116,15 @@ def main():
     checkpoint_every = ui_cfg.get("checkpoint_every", 5)
     delegate_terminal = ui_cfg.get("delegate_terminal", "auto")
 
-    # Initialize orchestrator LLM
+    # Initialize orchestrator LLM (Qwythos: thinking on by default)
     orch_cfg = config["llm"]["orchestrator"]
-    llm = LLMClient(
-        base_url=orch_cfg["base_url"],
-        model=orch_cfg["model"],
-        max_tokens=orch_cfg.get("max_tokens", 4096),
-        temperature=orch_cfg.get("temperature", 0.15),
-        top_p=orch_cfg.get("top_p", 0.9),
-        repeat_penalty=orch_cfg.get("repeat_penalty", 1.05),
-        extra_params={k: v for k, v in orch_cfg.items() if k not in ["base_url", "api", "model", "ctx", "max_tokens", "temperature", "top_p", "repeat_penalty"]},
-    )
+    llm = LLMClient.from_lane_config(orch_cfg)
 
-    # Initialize atomic/subagent LLM (optional)
+    # Initialize atomic/subagent LLM (optional; thinking off by default)
     atomic_llm: LLMClient | None = None
     if "atomic" in config.get("llm", {}):
         at_cfg = config["llm"]["atomic"]
-        atomic_llm = LLMClient(
-            base_url=at_cfg["base_url"],
-            model=at_cfg["model"],
-            max_tokens=at_cfg.get("max_tokens", 2048),
-            temperature=at_cfg.get("temperature", 0.1),
-            top_p=at_cfg.get("top_p", 0.9),
-            repeat_penalty=at_cfg.get("repeat_penalty", 1.05),
-            extra_params={k: v for k, v in at_cfg.items() if k not in ["base_url", "api", "model", "ctx", "max_tokens", "temperature", "top_p", "repeat_penalty"]},
-        )
+        atomic_llm = LLMClient.from_lane_config(at_cfg)
 
     # Initialize embedder
     emb_cfg = config["embeddings"]
@@ -203,6 +192,7 @@ def main():
         "send": "escape, enter",
         "newline": "c-j"
     })
+    rules_cfg = config.get("rules") or {}
     # Delegate children always use the atomic lane as their primary LLM client.
     runtime_llm = atomic_llm if (args.delegate_mode and atomic_llm) else llm
     runtime = Runtime(
@@ -218,6 +208,8 @@ def main():
         shortcuts=shortcuts,
         delegate_terminal=delegate_terminal,
         config_path=args.config,
+        rules_path=rules_cfg.get("path", "RULES.md"),
+        rules_enabled=bool(rules_cfg.get("enabled", True)),
     )
     runtime.session_manager = session_mgr
 
@@ -242,6 +234,7 @@ def main():
             context_text = str(blob.get("context", ""))
 
         try:
+            runtime.mark_delegate_child(parent=args.parent)
             runtime.run_delegate_child(skill, problem, context_text)
         finally:
             session_mgr.save()

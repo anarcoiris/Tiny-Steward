@@ -561,78 +561,6 @@
     "system_prompt": ""
   },
   {
-    "name": "delegate-router",
-    "slug": "SKILL",
-    "path": "_meta/delegate-router/SKILL.md",
-    "skill_type": "skill",
-    "requires": [],
-    "provides": [],
-    "tags": [],
-    "related": [],
-    "children": [],
-    "description": "Apply only when agent id is **main**. Do not classify — pass full user intent to **router** for multi-step work.",
-    "system_prompt": ""
-  },
-  {
-    "name": "delegation-gate",
-    "slug": "SKILL",
-    "path": "_meta/delegation-gate/SKILL.md",
-    "skill_type": "skill",
-    "requires": [],
-    "provides": [],
-    "tags": [],
-    "related": [],
-    "children": [],
-    "description": "Apply only when agent id is **main**. Do not apply on worker agents.",
-    "system_prompt": ""
-  },
-  {
-    "name": "nomic-local",
-    "slug": "SKILL",
-    "path": "_meta/nomic-local/SKILL.md",
-    "skill_type": "skill",
-    "requires": [],
-    "provides": [],
-    "tags": [],
-    "related": [],
-    "children": [],
-    "description": "Read `/home/openclaw/.openclaw/workspace/docs/nomic-local.md` for full setup.",
-    "system_prompt": ""
-  },
-  {
-    "name": "skill-card",
-    "slug": "skill-card",
-    "path": "_meta/paid-bash-security-v1-1/skill-card.md",
-    "skill_type": "skill",
-    "requires": [],
-    "provides": [],
-    "tags": [],
-    "related": [],
-    "children": [],
-    "description": "23-validator bash security chain validated in production Claude Code deployments. Every check closed a real attack vector. <br>",
-    "system_prompt": ""
-  },
-  {
-    "name": "Bash Security Validator — Production OpenClaw Shell Safety",
-    "slug": "bash-security-validator-production-openclaw-shell-safety",
-    "path": "_meta/paid-bash-security-v1-1/SKILL.md",
-    "skill_type": "skill",
-    "requires": [],
-    "provides": [],
-    "tags": [
-      "security",
-      "production",
-      "engineering",
-      "hardening",
-      "bash",
-      "clawhavoc"
-    ],
-    "related": [],
-    "children": [],
-    "description": "> **Understand the threat model first?** Read the free primer: > [OpenClaw Bash Safety — Why Your Agent Is a Security Risk](https://clawhub.ai/skills/free-bash-safety-primer) > It covers what ClawHavoc exploited, why text-pattern matching alone fails, and > why this validator exists.",
-    "system_prompt": ""
-  },
-  {
     "name": "append",
     "slug": "append",
     "path": "_meta/primitives/append.md",
@@ -902,19 +830,6 @@
     "system_prompt": ""
   },
   {
-    "name": "pulse-routing",
-    "slug": "SKILL",
-    "path": "_meta/pulse-routing/SKILL.md",
-    "skill_type": "skill",
-    "requires": [],
-    "provides": [],
-    "tags": [],
-    "related": [],
-    "children": [],
-    "description": "Apply only when agent id is **main**. No skills fleet, no WhatsApp.",
-    "system_prompt": ""
-  },
-  {
     "name": "disk_full",
     "slug": "disk_full",
     "path": "_meta/troubleshooting/disk_full.md",
@@ -1035,6 +950,19 @@
     ],
     "children": [],
     "description": "Diagnostic tree for port binding errors.",
+    "system_prompt": ""
+  },
+  {
+    "name": "policy",
+    "slug": "policy",
+    "path": "_policy/ai-governance-legal/policy.md",
+    "skill_type": "skill",
+    "requires": [],
+    "provides": [],
+    "tags": [],
+    "related": [],
+    "children": [],
+    "description": "*Tailored for a solo proprietor who uses only open-source tools. Any drift to unlicensed shareware triggers a warning.*",
     "system_prompt": ""
   },
   {
@@ -1220,6 +1148,19 @@
     "system_prompt": ""
   },
   {
+    "name": "policy",
+    "slug": "policy",
+    "path": "_policy/commercial-legal/policy.md",
+    "skill_type": "skill",
+    "requires": [],
+    "provides": [],
+    "tags": [],
+    "related": [],
+    "children": [],
+    "description": "*Tailored for a sole proprietor operating across EU and global markets. Low legal risk by default, aggressive when opportunity arises.*",
+    "system_prompt": ""
+  },
+  {
     "name": "amendment-history",
     "slug": "SKILL",
     "path": "_policy/commercial-legal/skills/amendment-history/SKILL.md",
@@ -1386,6 +1327,19 @@
     "related": [],
     "children": [],
     "description": "VDRs get updated at 11pm the night before a call. This agent watches for new uploads and tells the team what came in. Also runs the closing checklist status on the configured cadence.",
+    "system_prompt": ""
+  },
+  {
+    "name": "policy",
+    "slug": "policy",
+    "path": "_policy/corporate-legal/policy.md",
+    "skill_type": "skill",
+    "requires": [],
+    "provides": [],
+    "tags": [],
+    "related": [],
+    "children": [],
+    "description": "*Tailored for a sole proprietor operating across EU and global markets. Low legal risk by default, aggressive when opportunity arises.*",
     "system_prompt": ""
   },
   {
@@ -1607,6 +1561,19 @@
     "related": [],
     "children": [],
     "description": "Protected-leave regimes run on clocks most attorneys are not watching closely enough. Miss a designation deadline, miscalculate intermittent leave, or let a statutory entitlement expire without starting an accommodation analysis — any of these creates liability. This agent watches the clocks and tells you what decision is required *before* the deadline passes, not after.",
+    "system_prompt": ""
+  },
+  {
+    "name": "policy",
+    "slug": "policy",
+    "path": "_policy/employment-legal/policy.md",
+    "skill_type": "skill",
+    "requires": [],
+    "provides": [],
+    "tags": [],
+    "related": [],
+    "children": [],
+    "description": "*Tailored for a sole proprietor operating across EU and global markets. Low legal risk by default, aggressive when opportunity arises.*",
     "system_prompt": ""
   },
   {
@@ -1883,6 +1850,19 @@
     "system_prompt": ""
   },
   {
+    "name": "policy",
+    "slug": "policy",
+    "path": "_policy/external_plugins/policy.md",
+    "skill_type": "skill",
+    "requires": [],
+    "provides": [],
+    "tags": [],
+    "related": [],
+    "children": [],
+    "description": "*Tailored for a sole proprietor operating across EU and global markets. Low legal risk by default, aggressive when opportunity arises.*",
+    "system_prompt": ""
+  },
+  {
     "name": "ip-renewal-watcher",
     "slug": "ip-renewal-watcher",
     "path": "_policy/ip-legal/agents/ip-renewal-watcher.md",
@@ -1893,6 +1873,19 @@
     "related": [],
     "children": [],
     "description": "Portfolio deadlines only help if someone sees them in time. §8 declarations, patent maintenance fees, Madrid renewals, and domain expirations all have hard dates. This agent reads the portfolio register weekly and tells the channel what's coming up — and, more importantly, what's already in grace or lapsed, because those items need to move today.",
+    "system_prompt": ""
+  },
+  {
+    "name": "policy",
+    "slug": "policy",
+    "path": "_policy/ip-legal/policy.md",
+    "skill_type": "skill",
+    "requires": [],
+    "provides": [],
+    "tags": [],
+    "related": [],
+    "children": [],
+    "description": "*Tailored for a sole proprietor operating across EU and global markets. Low legal risk by default, aggressive when opportunity arises.*",
     "system_prompt": ""
   },
   {
@@ -2049,6 +2042,19 @@
     "related": [],
     "children": [],
     "description": "Three modes. Pick one:",
+    "system_prompt": ""
+  },
+  {
+    "name": "policy",
+    "slug": "policy",
+    "path": "_policy/law-student/policy.md",
+    "skill_type": "skill",
+    "requires": [],
+    "provides": [],
+    "tags": [],
+    "related": [],
+    "children": [],
+    "description": "*Tailored for a sole proprietor operating across EU and global markets. Low legal risk by default, aggressive when opportunity arises.*",
     "system_prompt": ""
   },
   {
@@ -2274,6 +2280,19 @@
     "system_prompt": "You are an NDA Review specialist micro-agent.\nYour goal is to perform fast triage of inbound NDAs into GREEN / YELLOW / RED so the team only spends lawyer time on the ones that need it.\nUse the playbook positions defined in the CLAUDE.md file to determine the classification.\nAdhere strictly to the requested markdown outputs for GREEN/YELLOW/RED triages."
   },
   {
+    "name": "policy",
+    "slug": "policy",
+    "path": "_policy/legal/policy.md",
+    "skill_type": "skill",
+    "requires": [],
+    "provides": [],
+    "tags": [],
+    "related": [],
+    "children": [],
+    "description": "*Tailored for a sole proprietor operating across EU and global markets. Low legal risk by default, aggressive when opportunity arises.*",
+    "system_prompt": ""
+  },
+  {
     "name": "registry-sync",
     "slug": "registry-sync",
     "path": "_policy/legal-builder-hub/agents/registry-sync.md",
@@ -2284,6 +2303,19 @@
     "related": [],
     "children": [],
     "description": "The community ships skills. This agent notices.",
+    "system_prompt": ""
+  },
+  {
+    "name": "policy",
+    "slug": "policy",
+    "path": "_policy/legal-builder-hub/policy.md",
+    "skill_type": "skill",
+    "requires": [],
+    "provides": [],
+    "tags": [],
+    "related": [],
+    "children": [],
+    "description": "*Tailored for a sole proprietor operating across EU and global markets. Low legal risk by default, aggressive when opportunity arises.*",
     "system_prompt": ""
   },
   {
@@ -2440,6 +2472,19 @@
     "related": [],
     "children": [],
     "description": "Run the `uninstall` workflow from the skill-manager reference skill against the named skill.",
+    "system_prompt": ""
+  },
+  {
+    "name": "policy",
+    "slug": "policy",
+    "path": "_policy/legal-clinic/policy.md",
+    "skill_type": "skill",
+    "requires": [],
+    "provides": [],
+    "tags": [],
+    "related": [],
+    "children": [],
+    "description": "*Tailored for a sole proprietor operating across EU and global markets. Low legal risk by default, aggressive when opportunity arises.*",
     "system_prompt": ""
   },
   {
@@ -2687,6 +2732,19 @@
     "related": [],
     "children": [],
     "description": "The docket moves whether or not you're watching it. New filings, orders, and minute entries land while you're working on something else, and every one of them can start a clock. This agent checks every active matter's docket on a schedule, flags what's new, computes candidate deadlines from the filing types, and cross-references against the matter's history and open deliverables.",
+    "system_prompt": ""
+  },
+  {
+    "name": "policy",
+    "slug": "policy",
+    "path": "_policy/litigation-legal/policy.md",
+    "skill_type": "skill",
+    "requires": [],
+    "provides": [],
+    "tags": [],
+    "related": [],
+    "children": [],
+    "description": "*Tailored for a sole proprietor operating across EU and global markets. Low legal risk by default, aggressive when opportunity arises.*",
     "system_prompt": ""
   },
   {
@@ -2947,6 +3005,19 @@
     "related": [],
     "children": [],
     "description": "1. Read the subpoena from provided path. 2. Classify (third-party-docs / third-party-depo / party / CID / grand-jury). 3. If grand jury → stop, escalate per `~/.claude/plugins/config/claude-for-legal/litigation-legal/CLAUDE.md`. Otherwise continue. 4. Load `~/.claude/plugins/config/claude-for-legal/litigation-legal/matters/_log.yaml` for cross-check. Load `~/.claude/plugins/config/claude-for-legal/litigation-legal/CLAUDE.md` → landscape, privilege conventions, escalation norms. 5. Follow the workflow and reference below. 6. Extract key fields, analyze scope/burden/privilege, produce objections framework + compliance plan + deadline calendar. 7. Write `~/.claude/plugins/config/claude-for-legal/litigation-legal/inbound/[slug]/triage.md`. Copy or link subpoena to `~/.claude/plugins/config/claude-for-legal/litigation-legal/inbound/[slug]/incoming.[ext]`. 8. Hand off: `/legal-hold --issue` if hold not in place; `/matter-intake` if materiality warrants; `/matter-briefing [slug]` if party subpoena in existing matter.",
+    "system_prompt": ""
+  },
+  {
+    "name": "policy",
+    "slug": "policy",
+    "path": "_policy/managed-agent-cookbooks/policy.md",
+    "skill_type": "skill",
+    "requires": [],
+    "provides": [],
+    "tags": [],
+    "related": [],
+    "children": [],
+    "description": "*Tailored for a sole proprietor operating across EU and global markets. Low legal risk by default, aggressive when opportunity arises.*",
     "system_prompt": ""
   },
   {
@@ -3233,6 +3304,32 @@
     "related": [],
     "children": [],
     "description": "*Referenced by the Dashboard offer guardrail. Keep dashboards simple and consistent — the value is speed of comprehension, not visual polish.*",
+    "system_prompt": ""
+  },
+  {
+    "name": "questionary",
+    "slug": "questionary",
+    "path": "_policy/references/questionary.md",
+    "skill_type": "skill",
+    "requires": [],
+    "provides": [],
+    "tags": [],
+    "related": [],
+    "children": [],
+    "description": "*Use this to capture facts before any plugin writes outputs. Fill it out interactively or programmatically; the values feed into `company-profile-template.md` and downstream legal deliverables.*",
+    "system_prompt": ""
+  },
+  {
+    "name": "roadmap",
+    "slug": "roadmap",
+    "path": "_policy/references/roadmap.md",
+    "skill_type": "skill",
+    "requires": [],
+    "provides": [],
+    "tags": [],
+    "related": [],
+    "children": [],
+    "description": "We operate under a **conservative legal posture** with an **aggressive financial risk appetite**, meaning: - **Low legal risk by default** — avoid overbundling or excessive liability. - **Aggressive when opportunity arises** — seize IP protection, export compliance, and customer trust advantages. - **Solo proprietor model** — all decisions are personal, but must be legally sound and defensible.",
     "system_prompt": ""
   },
   {
