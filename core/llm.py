@@ -38,6 +38,7 @@ class LLMClient:
         "base_url", "api", "model", "ctx", "max_tokens", "temperature", "top_p",
         "repeat_penalty", "chat_template_kwargs", "thinking_budget_tokens",
         "cache_prompt", "enable_thinking", "preserve_thinking", "add_vision_id",
+        "launch", "id_slot", "provider", "vision",
     })
 
     def __init__(
@@ -56,6 +57,7 @@ class LLMClient:
         extra_params: dict[str, Any] | None = None,
         gate_lane: Literal["orch", "atomic"] = "orch",
         gate_priority: Priority = "interactive",
+        id_slot: int | None = None,
     ):
         self.base_url = base_url.rstrip("/")
         self.model = model
@@ -66,6 +68,7 @@ class LLMClient:
         self.chat_template_kwargs: dict[str, Any] = dict(chat_template_kwargs or {})
         self.thinking_budget_tokens = thinking_budget_tokens
         self.cache_prompt = cache_prompt
+        self.id_slot = int(id_slot) if id_slot is not None else None
         self.extra_params = {
             k: v for k, v in (extra_params or {}).items()
             if k not in self._RESERVED_CFG
@@ -93,8 +96,10 @@ class LLMClient:
             "base_url", "api", "model", "ctx", "max_tokens", "temperature", "top_p",
             "repeat_penalty", "chat_template_kwargs", "thinking_budget_tokens",
             "cache_prompt", "enable_thinking", "preserve_thinking", "add_vision_id",
+            "launch", "id_slot", "provider", "vision",
         }
         extra = {k: v for k, v in cfg.items() if k not in known}
+        id_slot = cfg.get("id_slot", None)
         params = {
             "base_url": cfg["base_url"],
             "model": cfg["model"],
@@ -106,6 +111,7 @@ class LLMClient:
             "thinking_budget_tokens": budget,
             "cache_prompt": cache,
             "extra_params": extra,
+            "id_slot": id_slot,
         }
         params.update(overrides)
         return cls(**params)
@@ -115,7 +121,7 @@ class LLMClient:
     # ------------------------------------------------------------------
     def chat(
         self,
-        messages: list[dict[str, str]],
+        messages: list[dict[str, Any]],
         *,
         max_tokens: int | None = None,
         temperature: float | None = None,
@@ -275,13 +281,14 @@ class LLMClient:
     # ------------------------------------------------------------------
     def _build_body(
         self,
-        messages: list[dict[str, str]],
+        messages: list[dict[str, Any]],
         *,
         stream: bool,
         max_tokens: int | None,
         temperature: float | None,
         tools: list[dict] | None = None,
     ) -> dict[str, Any]:
+        # List-valued content (image_url / text parts) is passed through unchanged.
         body: dict[str, Any] = {
             "model": self.model,
             "messages": messages,
@@ -296,11 +303,13 @@ class LLMClient:
             body["chat_template_kwargs"] = dict(self.chat_template_kwargs)
         if self.thinking_budget_tokens is not None:
             body["thinking_budget_tokens"] = self.thinking_budget_tokens
+        if self.id_slot is not None:
+            body["id_slot"] = self.id_slot
         if tools is not None:
             body["tools"] = tools
         # extra_params last but must not clobber nested kwargs accidentally
         for k, v in self.extra_params.items():
-            if k in ("chat_template_kwargs", "thinking_budget_tokens", "cache_prompt"):
+            if k in ("chat_template_kwargs", "thinking_budget_tokens", "cache_prompt", "id_slot", "launch"):
                 continue
             body[k] = v
         return body
@@ -410,11 +419,28 @@ def estimate_tokens(text: str) -> int:
     return max(1, len(text) // 4)
 
 
-def estimate_messages_tokens(messages: list[dict[str, str]]) -> int:
+def estimate_content_tokens(content: Any) -> int:
+    """Estimate tokens for string or multimodal content parts."""
+    if isinstance(content, list):
+        total = 0
+        for part in content:
+            if not isinstance(part, dict):
+                continue
+            ptype = part.get("type")
+            if ptype == "text":
+                total += estimate_tokens(str(part.get("text") or ""))
+            elif ptype in ("image_ref", "image_url"):
+                # Rough vision-token stand-in; real cost is server-side.
+                total += 512
+        return total
+    return estimate_tokens(content if isinstance(content, str) else str(content or ""))
+
+
+def estimate_messages_tokens(messages: list[dict[str, Any]]) -> int:
     """Estimate total tokens across all messages."""
     total = 0
     for msg in messages:
-        total += estimate_tokens(msg.get("content", "") or "")
+        total += estimate_content_tokens(msg.get("content", "") or "")
         rc = msg.get("reasoning_content")
         if isinstance(rc, str):
             total += estimate_tokens(rc)

@@ -207,6 +207,16 @@ def ls(path: str = ".") -> dict[str, Any]:
 def grep(pattern: str, path: str) -> dict[str, Any]:
     """Search for a pattern in files. Uses PowerShell Select-String on Windows."""
     try:
+        stripped = (path or "").strip()
+        # Reject multi-path strings like "./ ./skills/" — one path per call.
+        # Still allow a single existing path that contains spaces (e.g. Program Files).
+        if len(stripped.split()) > 1 and not Path(stripped).expanduser().exists():
+            return {
+                "error": (
+                    "grep accepts a single path per call "
+                    f"(got {path!r}). For several roots, issue separate grep calls."
+                )
+            }
         p = Path(path).expanduser().resolve()
         if p.is_file():
             # Search single file natively — no shell, no encoding issues
@@ -257,6 +267,20 @@ def http(method: str, url: str, body: str | None = None) -> dict[str, Any]:
         return {"error": str(e)}
 
 
+# Module-level MCP client paths (overridden via configure_mcp from config.yaml).
+_MCP_PYTHON_EXE = r"C:\Users\soyko\Documents\nina-mcp\.venv\Scripts\python.exe"
+_MCP_CLIENT_PY = r"C:\Users\soyko\Documents\nina-mcp\test_client.py"
+
+
+def configure_mcp(*, python_exe: str | None = None, client_py: str | None = None) -> None:
+    """Set nina-mcp launcher paths (from config.yaml mcp: block)."""
+    global _MCP_PYTHON_EXE, _MCP_CLIENT_PY
+    if python_exe:
+        _MCP_PYTHON_EXE = python_exe
+    if client_py:
+        _MCP_CLIENT_PY = client_py
+
+
 def mcp(tool: str, body: str = "") -> dict[str, Any]:
     """Execute an MCP tool on nina-mcp.
 
@@ -265,8 +289,8 @@ def mcp(tool: str, body: str = "") -> dict[str, Any]:
     Body:
       - JSON string containing the tool parameters
     """
-    python_exe = r"C:\Users\soyko\Documents\nina-mcp\.venv\Scripts\python.exe"
-    client_py = r"C:\Users\soyko\Documents\nina-mcp\test_client.py"
+    python_exe = _MCP_PYTHON_EXE
+    client_py = _MCP_CLIENT_PY
 
     cmd = [python_exe, client_py, tool]
     if body:

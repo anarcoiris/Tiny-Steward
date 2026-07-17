@@ -22,3 +22,9 @@ Identify, categorize, and document redundant or duplicate PowerShell scripts wit
 
 ## Long Term mission Goal:
  adding visual projector
+
+## Async Clock Tools / Heartbeat — Build & Integrate
+- Goal: Provide a heartbeat/timer that always inputs a user prompt interaction with instructions on pending awaitings
+- Must work as "while, for, if" loops; if no approved steps require human-in-the-loop, scan `../repo-hygiene/*` (in Documents) for tasks
+- If out of jobs: clone https://github.com/anarcoiris/editorial_anarcoiris and incorporate its skills
+- Add this reminder to task.md so it is not missed or left incomplete

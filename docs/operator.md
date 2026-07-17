@@ -58,6 +58,28 @@ dumps (paste confuses the model and destroys LCP).
 
 Also: `@sessions/…`, `@plans/…`, `@core/…`, absolute paths, or quoted paths.
 
+## Vision / images (F5)
+
+**Host checklist (required before images work):**
+
+1. mmproj GGUF on disk (e.g. `models/mmproj-Qwythos-…-F16.gguf` under the llamacpp tree).
+2. Restart orch with vision: `.\start-qwythos-server.ps1 -WithVision` (args must include `--mmproj`).
+3. Confirm `GET http://127.0.0.1:11440/v1/models` lists **multimodal** in `capabilities` (not only `completion`).
+4. Optional once: OpenAI chat with a tiny PNG `image_url` data-URI returns a description.
+5. Prefer a **new Steward session** after flipping `-WithVision` (KV-breaking vs text-only orch).
+
+Config: `llm.orchestrator.vision: auto` (default) probes on startup; `on` requires multimodal; `off` refuses images. Atomic lane stays text-only (no mmproj).
+
+| Method | Example |
+|--------|---------|
+| Meta | `/image path/to.png` |
+| Attach | `/attach shot.jpg` (image suffixes → vision path) |
+| Inline | `What is in @"sessions/.temp/shot.png"?` |
+
+Session JSON stores **path + mime** refs (not multi-MB base64). Steward re-encodes to `data:image/…;base64,…` on the LLM call (size cap ~6 MB). Without mmproj, attach fails fast with a restart hint.
+
+VRAM: projector adds ~0.9 GB. F8 browser ingest is deferred (not required for F5).
+
 ## Tool-call format (write)
 
 Always:
@@ -112,7 +134,69 @@ assistant messages.
 
 `backends.gate` in `config.yaml` serializes client calls to orch / atomic /
 embed (default 1 slot each). Interactive work outranks `/dream`. This does
-**not** replace llama.cpp `--parallel N` (still F3).
+**not** replace llama.cpp `--parallel N` (still F3 host side).
+
+On startup (unless `--no-health-check`), Steward calls `GET /props` and warns
+if `gate.*_slots` > server `total_slots`, or if yaml `ctx` > server `n_ctx`.
+If yaml `ctx` < server `n_ctx`, that is intentional headroom (info only).
+
+## F3 — `id_slot` and host `--parallel`
+
+**Client (done):** `llm.orchestrator.id_slot: 0` pins orch requests to slot 0.
+Atomic omits `id_slot` (server default `-1` = longest-prefix → LRU pick).
+
+**Host (ops, still pending):** raise `--parallel N` only in
+`~/Documents/Ollama/docker/llamacpp` launch scripts when you need concurrent
+atomic children. Starting conditions before claiming F3 host done:
+
+1. Atomic (and optionally orch) restarted with `--parallel N` (`N` ≥ children).
+2. Set `--cache-ram` and `--cache-idle-slots` explicitly (do not rely on defaults).
+3. Keep orch client pin (`id_slot: 0`); leave atomic at `-1` unless you intentionally pin children.
+4. `GET /props` `total_slots` ≥ `backends.gate.*_slots` and ≥ intended concurrency.
+5. Accept the LCP caveat: with `np>1`, prompt-cache checkpoints are **per slot** — a matching prefix on another slot still misses.
+
+## F4 — slot save/restore (scope)
+
+llama.cpp already recycles KV via longest-prefix / LRU and RAM prompt-cache.
+Steward must **not** reimplement that.
+
+| Layer | Meaning |
+|-------|---------|
+| Server RAM | prompt-cache + idle-slot recycle (always-on ops) |
+| Server disk | `--slot-save-path` + `GET/POST /slots/{id}?action=save\|restore\|erase` — **host ops**, needs F3 multi-slot to be useful |
+| Steward | Session JSON + `/tree` parent→children; `metadata.orch_id_slot` records the pin used |
+
+**Restore a Steward chat** = `/session <name>` (reload messages) and rely on
+server LCP / prompt-cache. Disk slot restore is optional host tooling, not a
+Steward feature in this cycle.
+
+## `/backend` launcher
+
+`llm.*.launch` holds:
+
+| Key | Role |
+|-----|------|
+| `cmd`, `cwd`, `autostart` | Process spawn (default `autostart: false`) |
+| `parallel` | Appended as `-Parallel N` for PowerShell `start-*.ps1` |
+| `profile`, `context` | Optional `-Profile` / `-Context` |
+| `extra_args` | Free-form argv (use once host scripts accept `--cache-ram` etc.) |
+| `cache_ram`, `cache_idle_slots`, `slot_save_path` | Annotations for ops; not sent unless in `extra_args` |
+| `expect_total_slots` | After start, `GET /props` must match (defaults to `parallel`) |
+
+REPL:
+
+- `/backend start\|stop\|status <orch\|atomic>`
+- `/backend props <orch\|atomic>` — live `n_ctx` / `total_slots` vs expect
+
+F3 host raise: set `launch.parallel: N`, `expect_total_slots: N`, and
+`backends.gate.atomic_slots: N` (or orch). Confirm with `/backend props atomic`.
+
+F4 disk: annotate `slot_save_path` only — Steward does **not** call `/slots`.
+
+## MCP paths
+
+`mcp.python_exe` / `mcp.client_py` in `config.yaml` (fallback to historical
+nina-mcp paths if omitted).
 
 ## Dreaming / memory
 

@@ -131,8 +131,10 @@ def banner(session_name: str, skills_count: int, *, color: bool = True):
         f"[{_C.BRAND}]/stats[/{_C.BRAND}]  "
         f"[{_C.BRAND}]/rules[/{_C.BRAND}]  "
         f"[{_C.BRAND}]/attach[/{_C.BRAND}]  "
+        f"[{_C.BRAND}]/image[/{_C.BRAND}]  "
         f"[{_C.BRAND}]/dream[/{_C.BRAND}]  "
         f"[{_C.BRAND}]/memory[/{_C.BRAND}]  "
+        f"[{_C.BRAND}]/backend[/{_C.BRAND}]  "
         f"[{_C.BRAND}]/checkpoint[/{_C.BRAND}]  "
         f"[{_C.BRAND}]/skills[/{_C.BRAND}]  "
         f"[{_C.BRAND}]/help[/{_C.BRAND}] [dim]<query>[/dim]  "
@@ -277,16 +279,21 @@ def print_result(name: str, text: str, *, is_error: bool = False):
         display_text = "\n".join(lines[:max_lines])
         truncated = f"\n[dim]… {len(lines) - max_lines} more lines[/dim]"
 
+    from rich.markup import escape
     from rich.syntax import Syntax
-    # Very basic content-type detection
-    panel_content: str | Syntax = f"[white]{display_text}[/white]"
+    # Escape untrusted tool output so literal [/] / [dim] cannot crash Rich.
+    safe = escape(display_text)
+    panel_content: str | Syntax = f"[white]{safe}[/white]"
     if display_text.strip().startswith("{") and display_text.strip().endswith("}"):
         panel_content = Syntax(display_text, "json", theme="monokai", background_color="default", word_wrap=True)
     elif name == "python" and "Traceback" in display_text:
-        # A bit of manual coloring for tracebacks
-        colored_err = display_text.replace("Traceback (most recent call last):", f"[{_C.ERROR}]Traceback (most recent call last):[/{_C.ERROR}]")
+        # Color after escape — the Traceback header has no brackets.
+        colored_err = safe.replace(
+            "Traceback (most recent call last):",
+            f"[{_C.ERROR}]Traceback (most recent call last):[/{_C.ERROR}]",
+        )
         panel_content = colored_err
-        
+
     if isinstance(panel_content, Syntax) and truncated:
         # We can't easily concat rich Syntax and Text, so we'll just put the truncated string in the panel subtitle
         subtitle = truncated.strip()
@@ -416,7 +423,8 @@ def print_event(kind: str, message: str):
     icon, style = icons.get(kind, ("•", _C.DIM))
 
     if _RICH:
-        _console.print(f"  [{style}]{icon}  {message}[/{style}]")
+        from rich.markup import escape
+        _console.print(f"  [{style}]{icon}  {escape(message)}[/{style}]")
     else:
         print(f"  {icon}  {message}")
 
@@ -509,7 +517,9 @@ def print_session_tree(sessions: list[dict], current_name: str):
         status = s.get("status") or ""
         marker = " ◀" if s["name"] == current_name else ""
         extra = f" [{status}]" if status else ""
-        return f"{s['name']}{extra} ({s.get('messages', 0)} msgs){marker}"
+        slot = s.get("orch_id_slot")
+        pin = f" slot={slot}" if slot is not None else ""
+        return f"{s['name']}{extra}{pin} ({s.get('messages', 0)} msgs){marker}"
 
     if not _RICH:
         print("\n  Session tree:")

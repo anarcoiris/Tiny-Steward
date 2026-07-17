@@ -1,0 +1,8 @@
+I'll list the directory.
+<tool_call>
+<function=pwsh>
+<parameter=command>
+Get-ChildItem
+</parameter>
+</function>
+</tool_call>

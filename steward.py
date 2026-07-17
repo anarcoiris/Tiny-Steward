@@ -126,6 +126,28 @@ def main():
         at_cfg = config["llm"]["atomic"]
         atomic_llm = LLMClient.from_lane_config(at_cfg, gate_lane="atomic")
 
+    from core.backend_launcher import BackendLauncher
+    backend_launcher = BackendLauncher.from_config(
+        config,
+        orch_health=llm.health,
+        atomic_health=(atomic_llm.health if atomic_llm else None),
+    )
+
+    if not args.delegate_mode:
+        for lane in ("orch", "atomic"):
+            cfg = backend_launcher.configs.get(lane)
+            if cfg and cfg.autostart:
+                hf = backend_launcher.health.get(lane)
+                if hf and hf():
+                    display.print_event("info", f"{lane} backend is already healthy, skipping autostart.")
+                else:
+                    display.print_event("info", f"Autostarting {lane} backend…")
+                    res = backend_launcher.start(lane)
+                    if res.get("ok"):
+                        display.print_event("ok", f"{lane} backend ready (pid={res.get('pid')})")
+                    else:
+                        display.print_event("error", f"Failed to autostart {lane}: {res.get('error')}")
+
     # Backend gate (client-side serialization; complements --parallel 1)
     from core.backend_gate import configure_default_gate
 
@@ -137,6 +159,15 @@ def main():
         embed_slots=int(gate_cfg.get("embed_slots", 1)),
     )
 
+    # MCP launcher paths from config (fallback to primitives defaults)
+    mcp_cfg = config.get("mcp") or {}
+    if mcp_cfg:
+        from core.primitives import configure_mcp
+        configure_mcp(
+            python_exe=mcp_cfg.get("python_exe"),
+            client_py=mcp_cfg.get("client_py"),
+        )
+
     # Initialize embedder
     emb_cfg = config["embeddings"]
     embedder = Embedder(
@@ -144,12 +175,42 @@ def main():
         model=emb_cfg["model"],
     )
 
-    # Health check
+    # Health check + /props reconciliation (yaml is reference; never rewritten)
+    vision_enabled = False
+    vision_reason = "skipped (--no-health-check or delegate)"
     if not args.no_health_check:
         print()
         if not check_health(llm, embedder):
             display.print_event("warn", "Some endpoints are not reachable. Continuing anyway…")
+        from core.config_check import verify_config_backends
+        for kind, msg in verify_config_backends(config):
+            display.print_event(kind, msg)
+        # F5: multimodal probe (orch only; atomic stays text-only)
+        from core.vision import resolve_vision_enabled
+        vision_mode = orch_cfg.get("vision", "auto")
+        vision_enabled, vision_reason = resolve_vision_enabled(
+            vision_mode, base_url=llm.base_url,
+        )
+        kind = "ok" if vision_enabled else "info"
+        display.print_event(kind, f"Vision: {'enabled' if vision_enabled else 'disabled'} — {vision_reason}")
+        if orch_cfg.get("vision") in ("on", True, "true", "yes", "1") and not vision_enabled:
+            display.print_event(
+                "warn",
+                "vision=on but orch has no multimodal capability — restart with -WithVision / --mmproj",
+            )
         print()
+    elif not args.delegate_mode:
+        # Still resolve off/on without probe when health checks skipped
+        from core.vision import resolve_vision_enabled
+        mode = str(orch_cfg.get("vision", "auto")).lower()
+        if mode in ("off", "false", "no", "0"):
+            vision_enabled, vision_reason = False, "config vision=off (--no-health-check)"
+        elif mode in ("on", "true", "yes", "1", "require"):
+            # Without probe, trust on but warn
+            vision_enabled, vision_reason = True, "config vision=on (unprobed; --no-health-check)"
+            display.print_event("warn", vision_reason)
+        else:
+            vision_enabled, vision_reason = False, "vision=auto skipped (--no-health-check)"
 
     # Skills
     skills_cfg = config["skills"]
@@ -206,6 +267,17 @@ def main():
     rules_cfg = config.get("rules") or {}
     # Delegate children always use the atomic lane as their primary LLM client.
     runtime_llm = atomic_llm if (args.delegate_mode and atomic_llm) else llm
+
+    orch_provider = str(orch_cfg.get("provider") or "qwythos")
+    atomic_provider = str(
+        (config.get("llm") or {}).get("atomic", {}).get("provider") or "qwen3_json"
+    )
+    # Delegate children run on the atomic lane as their primary client.
+    if args.delegate_mode:
+        primary_provider, secondary_provider = atomic_provider, atomic_provider
+    else:
+        primary_provider, secondary_provider = orch_provider, atomic_provider
+
     runtime = Runtime(
         llm=runtime_llm,
         help_engine=help_engine,
@@ -221,8 +293,17 @@ def main():
         config_path=args.config,
         rules_path=rules_cfg.get("path", "RULES.md"),
         rules_enabled=bool(rules_cfg.get("enabled", True)),
+        backend_launcher=backend_launcher,
+        primary_provider=primary_provider,
+        secondary_provider=secondary_provider,
+        vision_enabled=False if args.delegate_mode else vision_enabled,
     )
     runtime.session_manager = session_mgr
+
+    # F4 metadata: record orch slot pin on the session tree (not a KV dump).
+    if not args.delegate_mode and llm.id_slot is not None:
+        session.metadata["orch_id_slot"] = llm.id_slot
+        session_mgr.save()
 
     # Execute
     if args.delegate_mode:

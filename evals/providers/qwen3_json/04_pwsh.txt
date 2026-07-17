@@ -1,0 +1,3 @@
+<tool_call>
+{"name": "pwsh", "arguments": {"command": "Get-Date"}}
+</tool_call>

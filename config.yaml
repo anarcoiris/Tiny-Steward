@@ -1,25 +1,65 @@
 # Tiny Steward — Semantic Capability Graph
+
 # Endpoints for llamacpp / Ollama local stack
 
+
+
 llm:
+
   orchestrator:
+
     base_url: "http://127.0.0.1:11440"
+
     api: "openai"                      # llamacpp /v1/chat/completions
+
     model: "qwythos-9b-96k"
-    ctx: 131072
+
+    provider: qwythos                  # chat-template dialect (core/providers)
+
+    ctx: 131072                        # client compaction budget (server -c may be larger)
+
     max_tokens: 16384
+
     temperature: 0.6
+
     top_p: 0.95
+
     repeat_penalty: 1.05
+
     # Qwythos chat-template / reasoning (stable per session — toggling kwargs breaks LCP)
+
     enable_thinking: true
+
     preserve_thinking: false
+
     thinking_budget_tokens: -1         # -1 = uncapped; KV-safe to change mid-session
+
     cache_prompt: true
+
+    id_slot: 0                         # F3 client: pin orch KV to slot 0 (-1 = server pick)
+
+    # F5 vision: auto = probe GET /v1/models for multimodal; on = require; off = refuse images.
+    # Server-side --mmproj / -WithVision is the source of truth — this only gates the client.
+    vision: auto
+
+    # When atomic --parallel N>1 later: auto id_slot=-1 can split children across slots and hurt LCP.
+    # F3 host: set launch.parallel / expect_total_slots; raise backends.gate.*_slots to match.
+    # cache_ram / cache_idle_slots / slot_save_path are annotations until host scripts expose them
+    # (pass via extra_args once start-*.ps1 accepts them).
+    launch:
+      cmd: ["powershell", "-File", "C:\\Users\\soyko\\Documents\\Ollama\\docker\\llamacpp\\start-qwythos-server.ps1", "-CudaDevices", "1,2", "-WithVision"]
+      cwd: "C:\\Users\\soyko\\Documents\\Ollama\\docker\\llamacpp"
+      autostart: false
+      parallel: 1
+      expect_total_slots: 1
+      # cache_ram: "8192"
+      # cache_idle_slots: true
+      extra_args: ["--cache-ram", "8192", "--cache-idle-slots"]
   atomic:
     base_url: "http://127.0.0.1:11439"
     api: "openai"
     model: "qwen3-4b-instruct-96k"
+    provider: qwen3_json               # swappable secondary dialect (core/providers)
     ctx: 98304
     max_tokens: 4192
     temperature: 0.15
@@ -28,57 +68,144 @@ llm:
     preserve_thinking: false
     thinking_budget_tokens: 0
     cache_prompt: true
+    # id_slot omitted → server default -1 (auto). Do not pin while --parallel 1.
+    launch:
+      cmd: ["powershell", "-File", "C:\\Users\\soyko\\Documents\\Ollama\\docker\\llamacpp\\start-qwythos-atomic.ps1", "-CudaDevices", "0"]
+      cwd: "C:\\Users\\soyko\\Documents\\Ollama\\docker\\llamacpp"
+      autostart: false
+      # F3 host example: parallel: 2, profile: concurrent2, expect_total_slots: 2
+      # and set backends.gate.atomic_slots: 2 to match.
+      parallel: 1
+      profile: longctx
+      expect_total_slots: 1
+      extra_args: ["--cache-ram", "4096", "--cache-idle-slots"]
+      # slot_save_path: "C:\\Users\\soyko\\Documents\\Ollama\\docker\\llamacpp\\slot-cache"  # F4 host
+
+
 
 embeddings:
+
   base_url: "http://127.0.0.1:11438"
+
   api: "ollama"                        # Ollama /api/embeddings
+
   model: "nomic-embed-text"
 
+
+
 # Client-side lane gate (does not replace llama.cpp --parallel; avoids dream/REPL races)
+
 backends:
+
   gate:
+
     enabled: true
+
     orch_slots: 1
+
     atomic_slots: 1
+
     embed_slots: 1
 
+
+
+# nina-mcp launcher (override if your install path differs)
+
+mcp:
+
+  python_exe: "C:\\Users\\soyko\\Documents\\nina-mcp\\.venv\\Scripts\\python.exe"
+
+  client_py: "C:\\Users\\soyko\\Documents\\nina-mcp\\test_client.py"
+
+
+
 help:
+
   top_k: 5
+
   min_similarity: 0.35
+
   max_inject_tokens: 4000             # budget for skill text injection
 
+
+
 skills:
+
   root: "./skills"
+
   index: "./skills/_index.json"
+
   rebuild_on_start: false
 
+
+
 sessions:
+
   dir: "./sessions"
+
   auto_save: true
 
+
+
 # Global RULES.md — injected after the built-in system prompt on every new
+
 # conversation build (not persisted into session.json history). Keep short.
+
 rules:
+
   enabled: true
+
   path: "./RULES.md"          # fallback search: ./sessions/RULES.md
 
+
+
 ui:
+
   streaming: true          # stream LLM tokens to terminal in real time
+
   markdown: true           # render Markdown in assistant responses
+
   stats: true              # show per-turn token + timing stats line
+
   checkpoint_every: 4      # auto-save session checkpoint every N turns (0 = off)
+
   # Out-of-process delegate terminal: auto | in_process | windows_terminal | tmux | console
+
   # auto → Windows Terminal split if wt.exe present, else new console; Unix + $TMUX → tmux; else in_process
+
   delegate_terminal: auto
 
+
+
 # ---------------------------------------------------------------------------
-# llama.cpp ops notes (verified on this host 2026-07-16):
+
+# llama.cpp ops notes (verified on this host 2026-07-16 / props 2026-07-17):
+
 # - atomic (:11439) qwen3-4b-instruct-96k: --parallel 1, -c 98304
+
 #   → single slot; concurrent child terminals serialize (503 retries help).
+
 # - orchestrator (:11440) qwythos-9b-96k: --parallel 1, -c 262144 (server),
-#   while config.yaml ctx: 98304 is the budget Tiny Steward uses for compaction.
-# - Raise atomic --parallel N before relying on multiple out-of-process delegates.
+
+#   while config.yaml ctx: 131072 is the budget Tiny Steward uses for compaction
+
+#   (intentional headroom vs server n_ctx — not a mismatch to "fix").
+
+# - Raise atomic --parallel N before relying on multiple out-of-process delegates
+
+#   (F3 host; set --cache-ram / --cache-idle-slots explicitly). Keep orch id_slot pinned.
+
+# - F4: do not reimplement KV in Steward — server prompt-cache/LRU owns recycle;
+
+#   session tree (/tree) is Steward-side; disk slot save needs host --slot-save-path.
+
 # - Mid-generation abort: Ctrl+C during stream closes HTTP (frees slot); REPL stays up.
+
 # - Stats show LCP from llama.cpp timings.cache_n / prompt_n when present.
+
+# - /backend start|stop|status|props uses llm.*.launch (autostart false by default).
+#   launch.parallel → -Parallel N; expect_total_slots verified via GET /props after start.
+
 # ---------------------------------------------------------------------------
+
 

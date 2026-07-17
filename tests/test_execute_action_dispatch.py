@@ -118,12 +118,14 @@ class TestExecuteActionDispatch(unittest.TestCase):
     def test_benign_fs_error_does_not_force_tools_resend(self):
         missing = self.temp / "nope"
         messages: list = []
+        # Primary lane uses Qwythos XML dialect
         response = (
             '<tool_call>\n'
-            f'{{"name": "ls", "arguments": {{"path": "{missing.as_posix()}"}}}}\n'
+            '<function=ls>\n'
+            f'<parameter=path>\n{missing.as_posix()}\n</parameter>\n'
+            '</function>\n'
             '</tool_call>'
         )
-        # Escape Windows backslashes for JSON in response — use forward path already
         self.runtime._process_response_actions(response, messages, backend="primary")
         self.assertFalse(
             self.runtime.session.metadata.get("force_tools_payload_primary_next", False)

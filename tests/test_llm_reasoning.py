@@ -69,6 +69,27 @@ class TestBuildBodyKwargs(unittest.TestCase):
         self.assertNotIn("api", client.extra_params)
         self.assertNotIn("ctx", client.extra_params)
 
+    def test_from_lane_config_id_slot_and_launch_excluded(self):
+        cfg = {
+            "base_url": "http://127.0.0.1:11440",
+            "model": "qwythos-9b",
+            "id_slot": 0,
+            "launch": {"cmd": ["echo"], "cwd": ".", "autostart": False},
+            "cache_prompt": True,
+        }
+        client = LLMClient.from_lane_config(cfg)
+        self.assertEqual(client.id_slot, 0)
+        self.assertNotIn("launch", client.extra_params)
+        self.assertNotIn("id_slot", client.extra_params)
+        body = client._build_body([{"role": "user", "content": "hi"}], stream=False, max_tokens=1, temperature=0.1)
+        self.assertEqual(body["id_slot"], 0)
+        self.assertNotIn("launch", body)
+
+    def test_body_omits_id_slot_when_unset(self):
+        client = LLMClient(base_url="http://mock", model="x")
+        body = client._build_body([{"role": "user", "content": "hi"}], stream=False, max_tokens=1, temperature=0.1)
+        self.assertNotIn("id_slot", body)
+
 
 class TestNormalizePreserve(unittest.TestCase):
     def test_strips_think_and_reasoning_by_default(self):

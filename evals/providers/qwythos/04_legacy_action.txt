@@ -1,0 +1,2 @@
+Sure.
+<action name="ls">.</action>

@@ -11,6 +11,8 @@ related: [read, ls, find]
 
 Search for a pattern in a file or directory.
 
+One `path` per call; for several roots, issue separate grep calls.
+
 ## Usage
 
 ```xml

@@ -40,14 +40,16 @@ class TestAttach(unittest.TestCase):
     def test_expand_quoted_at_path(self):
         f = self.temp / "note.md"
         f.write_text("hello attach", encoding="utf-8")
-        out, notes = self.rt._expand_at_attachments(f'Review @"{f}" please')
+        out, notes, refs = self.rt._expand_at_attachments(f'Review @"{f}" please')
         self.assertIn("hello attach", out)
+        self.assertEqual(refs, [])
         self.assertTrue(any("Expanded" in n for n in notes))
 
     def test_email_not_expanded(self):
-        out, notes = self.rt._expand_at_attachments("mail user@example.com thanks")
+        out, notes, refs = self.rt._expand_at_attachments("mail user@example.com thanks")
         self.assertEqual(out, "mail user@example.com thanks")
         self.assertEqual(notes, [])
+        self.assertEqual(refs, [])
 
 
 if __name__ == "__main__":

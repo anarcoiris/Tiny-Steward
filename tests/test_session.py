@@ -65,6 +65,32 @@ class TestSessionManager(unittest.TestCase):
         saved_data = json.loads(mismatched_path.read_text(encoding="utf-8"))
         self.assertEqual(saved_data["name"], "mismatched")
 
+    def test_list_sessions_includes_orch_id_slot(self):
+        session = self.session_mgr.new("pinned")
+        session.metadata["orch_id_slot"] = 0
+        session.metadata["parent"] = None
+        self.session_mgr.save()
+        listed = self.session_mgr.list_sessions()
+        by_name = {s["name"]: s for s in listed}
+        self.assertIn("pinned", by_name)
+        self.assertEqual(by_name["pinned"]["orch_id_slot"], 0)
+
+    def test_list_tree_roots_with_children(self):
+        parent = self.session_mgr.new("parent")
+        parent.metadata["orch_id_slot"] = 0
+        self.session_mgr.save()
+        child = self.session_mgr.new("child")
+        child.metadata["parent"] = "parent"
+        self.session_mgr.save()
+        self.session_mgr.register_child("parent", "child")
+        roots = self.session_mgr.list_tree()
+        root_names = {r["name"] for r in roots}
+        self.assertIn("parent", root_names)
+        self.assertNotIn("child", root_names)
+        parent_row = next(r for r in self.session_mgr.list_sessions() if r["name"] == "parent")
+        self.assertIn("child", parent_row["children"])
+        self.assertEqual(parent_row["orch_id_slot"], 0)
+
 
 if __name__ == "__main__":
     unittest.main()

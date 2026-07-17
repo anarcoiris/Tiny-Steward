@@ -27,11 +27,12 @@ class Session:
     def add_message(
         self,
         role: str,
-        content: str,
+        content: str | list[Any],
         *,
         name: str | None = None,
         reasoning_content: str | None = None,
     ):
+        """Append a message. ``content`` may be a string or multimodal parts list."""
         msg: dict[str, Any] = {"role": role, "content": content}
         if name is not None:
             msg["name"] = name
@@ -130,6 +131,7 @@ class SessionManager:
                     "parent": meta.get("parent"),
                     "status": meta.get("status"),
                     "children": list(meta.get("children") or []),
+                    "orch_id_slot": meta.get("orch_id_slot"),
                 })
             except Exception:
                 continue

@@ -23,18 +23,19 @@ protect them and spend tokens carefully.
 ## Workspace
 
 5. Home is the process cwd (Tiny Steward repo root). Prefer relative paths from that home.
-6. Tool calls must use `<parameter=NAME>…</parameter>` (never bare `<path>` tags).
+6. Tool calls must use `<parameter=NAME>…## Task/Plan Artifacts
 
-## Execution
+- Use `task.md` for any solicitude / user request handling.
+- Use `plan.md` for research or implementation planning.
+- Enforce these usages consistently across all tasks.
 
-7. Prefer native `<tool_call>` primitives; one action at a time; wait for the result.
-8. Do not invent placeholder delegate tasks — pass a complete problem statement.
-9. Prefer verifying with tools (read, shell, tests) over guessing.
+## Review Template Enforcement
 
-## Safety
+- The review template lives in `docs/planning_template.md`.
+- After completing a task chunk, generate a short review using that template.
+- This template is still weak; improve it over time.
 
-10. Do not exfiltrate secrets from the environment or session files.
-11. Ask before destructive ops outside the workspace (delete trees, force-push, mass overwrite).
-- Preserve valuable results in durable artifacts (`task.md`, `plan.md`, `RULES.md`) — never rely on chat memory alone.
-- Anticipate short-, mid-, and long-horizon attention; use tools (clock, python calc) when arithmetic or time comparisons are unreliable.
-- Protect `RULES.md` and related home files; spend tokens carefully.
+## Session Storage Organization
+
+- Each session.json should be inside a homonymous folder (to stop polluting sessions/ folder)
+- Keep each session's task.md or plans.md files inside that same folder

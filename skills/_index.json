@@ -609,7 +609,7 @@
       "permissions"
     ],
     "children": [],
-    "description": "Unix shell. On Windows, runs via WSL (Windows Subsystem for Linux).",
+    "description": "Unix shell. On Windows, runs via WSL when available.",
     "system_prompt": ""
   },
   {
@@ -656,7 +656,7 @@
     ],
     "related": [],
     "children": [],
-    "description": "Search for skills relevant to your current problem. Uses semantic embedding search over the skills/ directory.",
+    "description": "Search for skills relevant to your current problem.",
     "system_prompt": ""
   },
   {

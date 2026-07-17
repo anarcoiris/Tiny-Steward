@@ -48,6 +48,18 @@ class TestPrimitivesSmoke(unittest.TestCase):
         self.assertIn("hello_world", out)
         self.assertIn("ñ", out)
 
+    def test_grep_rejects_multi_path(self):
+        r = primitives.grep("foo", "./ ./skills/ ./core/")
+        self.assertIn("error", r)
+        self.assertIn("single path", r["error"])
+
+    def test_grep_single_file(self):
+        target = self.temp / "a.txt"
+        target.write_text("hello findme world", encoding="utf-8")
+        r = primitives.grep("findme", str(target))
+        self.assertNotIn("error", r)
+        self.assertIn("findme", r["content"])
+
 
 if __name__ == "__main__":
     unittest.main()

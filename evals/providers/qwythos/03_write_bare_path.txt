@@ -1,0 +1,10 @@
+<tool_call>
+<function=write>
+<path>
+task.md
+</path>
+<parameter=content>
+# Hello
+</parameter>
+</function>
+</tool_call>

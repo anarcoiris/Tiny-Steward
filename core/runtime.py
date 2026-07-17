@@ -12,7 +12,6 @@ Legacy <action> tags remain as a parser fallback only.
 from __future__ import annotations
 
 import json
-import re
 import sys
 import time
 import uuid
@@ -20,7 +19,7 @@ from pathlib import Path
 from typing import Any
 
 from core.llm import LLMClient, estimate_messages_tokens, estimate_tokens
-from core.primitives import PRIMITIVES, PRIMITIVES_TOOLS, PRIMARY_ARGS
+from core.primitives import PRIMITIVES, PRIMITIVES_TOOLS
 from core.help import HelpEngine
 from core.session import Session, SessionManager
 from core.stats import SessionStats
@@ -33,9 +32,7 @@ from core.delegate_terminal import (
     spawn_child,
 )
 from core.prompt_hygiene import (
-    EMPTY_ASSISTANT_PLACEHOLDER,
     paste_block_message,
-    scrub_chrome,
     should_block_paste,
     think_content_preview,
 )
@@ -45,6 +42,19 @@ from core.dreaming import (
     memory_summary_for_compact,
     run_dream,
 )
+from core.action_parse import (  # noqa: F401 — re-exported for tests
+    extract_actions,
+    parse_actions,
+)
+from core.runtime_messages import (  # noqa: F401 — re-exported for tests
+    THINK_RE,
+    normalize_messages_for_llm,
+    strip_think_from_text,
+)
+from core.providers import resolve_provider
+from core.providers.base import ProviderProfile
+from core.runtime_delegate import RuntimeDelegateMixin
+from core.runtime_meta import RuntimeMetaMixin
 import core.display as display
 
 
@@ -142,31 +152,6 @@ You can call help() multiple times with narrower queries.
 """
 
 
-# ------------------------------------------------------------------
-# Action parsing
-# ------------------------------------------------------------------
-
-
-# More flexible: capture all attributes
-ATTR_PATTERN = re.compile(r'(\w+)="([^"]*)"')
-TOOL_CALL_RE = re.compile(r"<tool_call>(.*?)</tool_call>", re.DOTALL)
-LEGACY_RESULT_RE = re.compile(r"^\[Result of (?P<name>[^\]]+)\]\n(?P<content>[\s\S]*)$")
-THINK_RE = re.compile(r"<think>.*?</think>", re.DOTALL)
-QWEN_PARAM_RE = re.compile(r"<parameter=([^>]+)>\n?(.*?)\n?</parameter>", re.DOTALL)
-# Model drift: bare <path>…</path> / <command>…</command> instead of <parameter=…>
-BARE_PARAM_RE = re.compile(r"<([a-zA-Z_][\w]*)>\n?(.*?)\n?</\1>", re.DOTALL)
-# Hybrid drift seen in the wild: <path>…</parameter> (open bare, close parameter)
-DRIFT_PARAM_RE = re.compile(
-    r"<(path|content|command|code|pattern|url|method|query|agent|task|note|key|value|tool|body)>"
-    r"\n?(.*?)\n?</(?:parameter|\1)>",
-    re.DOTALL | re.IGNORECASE,
-)
-# Tags that are structural, not tool arguments
-_BARE_PARAM_SKIP = frozenset({
-    "tool_call", "function", "think", "thinking", "parameter",
-    "tool_response", "tools", "system", "user", "assistant",
-})
-
 # Soft cap so RULES.md cannot blow the system prefix (chars ≈ tokens*4 heuristic).
 RULES_MAX_CHARS = 6000
 # Soft cap for /attach and @path injection into the conversation.
@@ -223,140 +208,10 @@ def compose_system_prompt(rules_text: str = "") -> str:
     )
 
 
-def strip_think_from_text(text: str) -> str:
-    """Remove <think> blocks (for LLM context only)."""
-    return THINK_RE.sub("", text).strip()
-
-
-def normalize_messages_for_llm(
-    messages: list[dict[str, Any]],
-    *,
-    preserve_thinking: bool = False,
-) -> list[dict[str, Any]]:
-    """Prepare messages for the backend: legacy result conversion + think pruning.
-
-    When ``preserve_thinking`` is False (default), strip ``<think>`` from assistant
-    content and drop ``reasoning_content`` so prior CoT does not inflate the prompt.
-    Session storage keeps the raw assistant text; only the outbound LLM view is pruned.
-    Also scrubs REPL chrome and replaces empty think-only assistant turns with a
-    placeholder so history never contains blank assistant messages.
-    """
-    out: list[dict[str, Any]] = []
-    for msg in messages:
-        m = dict(msg)
-        role = m.get("role", "")
-        content = m.get("content", "")
-        if role == "user" and isinstance(content, str):
-            legacy = LEGACY_RESULT_RE.match(content)
-            if legacy:
-                m = {
-                    "role": "tool",
-                    "name": legacy.group("name"),
-                    "content": legacy.group("content"),
-                }
-            elif isinstance(m.get("content"), str):
-                m["content"] = scrub_chrome(m["content"])
-        if m.get("role") == "assistant":
-            if not preserve_thinking:
-                if isinstance(m.get("content"), str):
-                    m["content"] = strip_think_from_text(m["content"])
-                m.pop("reasoning_content", None)
-            if isinstance(m.get("content"), str):
-                m["content"] = scrub_chrome(m["content"])
-                if not (m["content"] or "").strip():
-                    m["content"] = EMPTY_ASSISTANT_PLACEHOLDER
-        elif m.get("role") == "tool" and isinstance(m.get("content"), str):
-            # tool results are usually clean; light scrub only if chrome leaked
-            m["content"] = scrub_chrome(m["content"])
-        out.append(m)
-    return out
-
-
-def _args_to_action(name: str, args: dict[str, Any]) -> dict[str, Any]:
-    """Map tool arguments dict to legacy action shape {name, body, attrs}."""
-    primary = PRIMARY_ARGS.get(name)
-    attrs = {k: str(v) if v is not None else "" for k, v in args.items()}
-    body = ""
-    if primary is None:
-        body = ""
-    elif primary in attrs:
-        body = attrs.pop(primary)
-    return {"name": name, "body": body, "attrs": attrs}
-
-
-def _parse_qwen_tool_call(inner: str) -> dict[str, Any] | None:
-    inner = inner.strip()
-    try:
-        data = json.loads(inner)
-        name = data.get("name")
-        args = data.get("arguments", {})
-        if isinstance(args, str):
-            args = json.loads(args)
-        if name and isinstance(args, dict):
-            return _args_to_action(name, args)
-    except (json.JSONDecodeError, TypeError):
-        pass
-    return None
-
-
-def _parse_qwythos_tool_call(inner: str) -> dict[str, Any] | None:
-    fn_match = re.search(r"<function=([^>]+)>", inner)
-    if not fn_match:
-        return None
-    name = fn_match.group(1).strip()
-    args: dict[str, Any] = {}
-    for param_match in QWEN_PARAM_RE.finditer(inner):
-        args[param_match.group(1).strip()] = param_match.group(2).strip()
-    # Fallback: bare <path>…</path> / hybrid <path>…</parameter>
-    if not args or (name in ("write", "append", "read", "mkdir", "ls") and "path" not in args):
-        for bare in list(BARE_PARAM_RE.finditer(inner)) + list(DRIFT_PARAM_RE.finditer(inner)):
-            key = bare.group(1).strip()
-            if key.lower() in _BARE_PARAM_SKIP or key.lower().startswith("parameter"):
-                continue
-            args.setdefault(key, bare.group(2).strip())
-    return _args_to_action(name, args)
-
-
-def parse_actions(text: str) -> list[dict[str, Any]]:
-    """Parse legacy <action> tags from LLM response text."""
-    actions: list[dict[str, Any]] = []
-
-    for match in re.finditer(r'<action\s+(.*?)>(.*?)</action>', text, re.DOTALL):
-        attrs_str = match.group(1)
-        body = match.group(2).strip()
-
-        attrs = dict(ATTR_PATTERN.findall(attrs_str))
-        name = attrs.pop("name", None)
-        if not name:
-            continue
-
-        actions.append({
-            "name": name,
-            "body": body,
-            "attrs": attrs,
-        })
-
-    return actions
-
-
-def extract_actions(text: str) -> list[dict[str, Any]]:
-    """Unified extractor: Qwen JSON / Qwythos XML <tool_call>, then legacy <action>."""
-    if "<tool_call>" in text:
-        actions: list[dict[str, Any]] = []
-        for match in TOOL_CALL_RE.finditer(text):
-            inner = match.group(1)
-            action = _parse_qwen_tool_call(inner) or _parse_qwythos_tool_call(inner)
-            if action:
-                actions.append(action)
-        if actions:
-            return actions
-    return parse_actions(text)
-
-
 # ------------------------------------------------------------------
 # Runtime
 # ------------------------------------------------------------------
-class Runtime:
+class Runtime(RuntimeMetaMixin, RuntimeDelegateMixin):
     """The main reasoning loop."""
 
     def __init__(
@@ -378,6 +233,10 @@ class Runtime:
         config_path: str = "config.yaml",
         rules_path: str | Path | None = "RULES.md",
         rules_enabled: bool = True,
+        backend_launcher: Any = None,
+        primary_provider: str = "qwythos",
+        secondary_provider: str = "qwen3_json",
+        vision_enabled: bool = False,
     ):
         self.llm = llm
         self.help_engine = help_engine
@@ -394,9 +253,18 @@ class Runtime:
         self.config_path = config_path
         self.rules_path = Path(rules_path) if rules_path else None
         self.rules_enabled = rules_enabled
+        self.backend_launcher = backend_launcher
+        # F5: orch multimodal; atomic stays text-only regardless.
+        self.vision_enabled = bool(vision_enabled) and not bool(
+            (session.metadata or {}).get("delegate_child")
+        )
         self.shortcuts = shortcuts or {
             "send": "escape, enter",
             "newline": "c-j"
+        }
+        self.profiles: dict[str, ProviderProfile] = {
+            "primary": resolve_provider(primary_provider, default="qwythos"),
+            "secondary": resolve_provider(secondary_provider, default="qwen3_json"),
         }
 
         # Session stats accumulator
@@ -410,8 +278,16 @@ class Runtime:
         self.interaction_log = None  # Will be initialized once we know log_dir
         # Explicit flag for out-of-process / child delegate sessions (not inferred).
         self._is_delegate_child = bool((session.metadata or {}).get("delegate_child"))
+        if self._is_delegate_child:
+            self.vision_enabled = False
         self._rules_text = load_rules_text(self.rules_path, enabled=self.rules_enabled)
         self._system_prompt = compose_system_prompt(self._rules_text)
+
+    def _profile(self, backend: str = "primary") -> ProviderProfile:
+        return self.profiles.get(backend) or self.profiles["primary"]
+
+    def _extract_actions(self, text: str, *, backend: str = "primary") -> list[dict[str, Any]]:
+        return self._profile(backend).extract_actions(text)
 
     def reload_rules(self) -> str:
         """Reload RULES.md from disk (KV-breaking if content changed). Returns status."""
@@ -442,6 +318,7 @@ class Runtime:
     def mark_delegate_child(self, parent: str | None = None) -> None:
         """Mark this runtime as a delegate child (set by --delegate-mode)."""
         self._is_delegate_child = True
+        self.vision_enabled = False
         self.session.metadata["delegate_child"] = True
         if parent:
             self.session.metadata["parent"] = parent
@@ -546,10 +423,10 @@ class Runtime:
         log_actions: bool = False,
     ) -> tuple[bool, int]:
         """Execute actions from an LLM response. Returns (had_actions, error_count)."""
-        if "<tool_call>" in response and not extract_actions(response):
+        if "<tool_call>" in response and not self._extract_actions(response, backend=backend):
             self._force_tools_resend(backend)
 
-        actions = extract_actions(response)
+        actions = self._extract_actions(response, backend=backend)
         if not actions:
             return False, 0
 
@@ -622,7 +499,7 @@ class Runtime:
             if usage and usage.get("aborted"):
                 return response
 
-            if "DONE" in response and not extract_actions(response):
+            if "DONE" in response and not self._extract_actions(response, backend="primary"):
                 return response
 
             had_actions, _ = self._process_response_actions(response, messages, backend="primary")
@@ -716,22 +593,37 @@ class Runtime:
                     continue
 
             # Expand @"path" / @path references into capped attachments (link, don't paste).
-            user_input, attach_notes = self._expand_at_attachments(user_input)
+            user_input, attach_notes, image_refs = self._expand_at_attachments(user_input)
             for note in attach_notes:
                 display.print_event("info", note)
+
+            if image_refs and not self.vision_enabled:
+                from core.vision import vision_disabled_message
+                display.print_event("error", vision_disabled_message())
+                continue
 
             if should_block_paste(user_input):
                 display.print_event("warn", paste_block_message())
                 continue
 
-            # Add user message
-            messages.append({"role": "user", "content": user_input})
-            self.session.add_message("user", user_input)
+            # Multimodal when @image paths were expanded; else plain text.
+            if image_refs:
+                from core.vision import build_user_image_content, content_text_preview
+                user_content: Any = build_user_image_content(
+                    user_input,
+                    [r["path"] for r in image_refs],
+                    as_refs=True,
+                )
+            else:
+                from core.vision import content_text_preview
+                user_content = user_input
 
-            
+            messages.append({"role": "user", "content": user_content})
+            self.session.add_message("user", user_content)
+
             self._init_interaction_log()
             if self.interaction_log:
-                self.interaction_log.begin_interaction(user_input)
+                self.interaction_log.begin_interaction(content_text_preview(user_content))
 
             # Reasoning loop for this turn
             global_turn = self.session_stats.total_turns
@@ -785,7 +677,7 @@ class Runtime:
                 )
                 display.print_guidance(hints)
 
-                actions = extract_actions(response)
+                actions = self._extract_actions(response, backend="primary")
                 if not actions:
                     # Think-only / prose-only: nudge once to emit a real tool_call
                     if (
@@ -860,7 +752,30 @@ class Runtime:
                 tools = PRIMITIVES_TOOLS
 
         preserve = bool(client.chat_template_kwargs.get("preserve_thinking", False))
-        llm_messages = normalize_messages_for_llm(messages, preserve_thinking=preserve)
+        profile = self._profile(backend)
+        llm_messages = profile.normalize_outbound(messages, preserve_thinking=preserve)
+
+        from core.vision import (
+            materialize_image_refs,
+            messages_have_images,
+            strip_images_for_text_lane,
+            vision_disabled_message,
+        )
+
+        # Atomic / text-only lane: never send images.
+        if getattr(client, "gate_lane", "orch") == "atomic" or backend == "secondary":
+            llm_messages = strip_images_for_text_lane(llm_messages)
+        elif messages_have_images(llm_messages):
+            if not self.vision_enabled:
+                display.print_event("error", vision_disabled_message())
+                return None, None, 0.0
+            llm_messages, img_errs = materialize_image_refs(llm_messages)
+            for err in img_errs:
+                display.print_event("error", err)
+            if img_errs and not messages_have_images(llm_messages):
+                # All images failed to encode — abort rather than silently drop.
+                return None, None, 0.0
+
         t0 = time.monotonic()
         usage: dict | None = None
 
@@ -1230,227 +1145,6 @@ class Runtime:
         except Exception as e:
             return {"error": f"Action {name} failed: {e}"}
 
-    def _build_delegate_system_prompt(self, skill) -> str:
-        prompt_parts = []
-        if getattr(skill, "system_prompt", None):
-            prompt_parts.append(skill.system_prompt)
-        else:
-            prompt_parts.append(f"You are a specialist agent executing the skill: {skill.name}.")
-            if skill.description:
-                prompt_parts.append(skill.description)
-
-        prompt_parts.append(
-            "Here are your step-by-step instructions, guidelines, and output formatting rules:\n"
-            "==================================================\n"
-            f"{skill.body}\n"
-            "=================================================="
-        )
-        if skill.requires:
-            prompt_parts.append(f"Available tools / primitives: {', '.join(skill.requires)}")
-        prompt_parts.append(
-            "Adhere strictly to the guidelines and templates. Be extremely concise, professional, and actionable."
-        )
-        return "\n\n".join(prompt_parts)
-
-    def _delegate_with_terminal(self, skill, problem: str, context_text: str) -> str:
-        """Spawn a child terminal when configured; otherwise run in-process."""
-        mode = resolve_terminal_mode(self.delegate_terminal)
-        if mode == "in_process" or not self.session_manager:
-            return self._run_delegate_loop(skill, problem, context_text)
-
-        child_name = f"{self.session.name}__{skill.slug}_{uuid.uuid4().hex[:8]}"
-        steward_path = Path(__file__).resolve().parent.parent / "steward.py"
-        # Persist problem+context for the child process via a sidecar file.
-        problem_blob = {
-            "problem": problem,
-            "context": context_text,
-            "skill": skill.slug,
-            "parent": self.session.name,
-        }
-        problem_dir = self.session_manager.dir / ".mailbox" / child_name
-        problem_dir.mkdir(parents=True, exist_ok=True)
-        problem_path = problem_dir / "problem.json"
-        problem_path.write_text(json.dumps(problem_blob, ensure_ascii=False, indent=2), encoding="utf-8")
-
-        self.session_manager.update_session_metadata(child_name, {
-            "parent": self.session.name,
-            "status": "running",
-            "skill": skill.slug,
-            "terminal_kind": mode,
-            "problem_path": str(problem_path),
-        })
-        self.session_manager.register_child(self.session.name, child_name)
-
-        argv = build_child_argv(
-            python=sys.executable,
-            steward_path=steward_path,
-            config=self.config_path,
-            session=child_name,
-            parent=self.session.name,
-            skill=skill.slug,
-            problem=str(problem_path),
-        )
-        spawn_info = spawn_child(mode, argv, cwd=Path.cwd())
-        kind = spawn_info.get("kind")
-        if kind == "in_process":
-            # Do not leave an orphan out-of-process child session on disk.
-            self._abandon_orphan_child(child_name)
-            return self._run_delegate_loop(skill, problem, context_text)
-
-        proc = spawn_info.get("process")
-        if proc is not None:
-            # Fail-fast if the child dies immediately (bad argv / missing python).
-            time.sleep(0.35)
-            rc = proc.poll()
-            if rc is not None:
-                err = f"[Delegate spawn failed: child process exited immediately (code {rc})]"
-                self.session_manager.update_session_metadata(child_name, {
-                    "status": "error",
-                    "result": err,
-                })
-                return err
-
-        if self.session_manager:
-            self.session_manager.update_session_metadata(child_name, {
-                "pane_id": spawn_info.get("pane_id"),
-                "pid": spawn_info.get("pid"),
-                "terminal_kind": spawn_info.get("kind"),
-            })
-
-        display.print_event(
-            "delegate",
-            f"Spawned child session '{child_name}' via {spawn_info.get('kind')} — waiting for result…",
-        )
-        return self._wait_for_delegate_result(child_name, timeout_s=3600.0)
-
-    def _abandon_orphan_child(self, child_name: str) -> None:
-        """Mark a provisioned child as cancelled when we fall back to in-process."""
-        if not self.session_manager:
-            return
-        self.session_manager.update_session_metadata(child_name, {
-            "status": "cancelled",
-            "result": "[Abandoned: spawn fell back to in_process]",
-        })
-        display.print_event(
-            "warn",
-            f"Child '{child_name}' not spawned out-of-process — running delegate in-process.",
-        )
-
-    def _wait_for_delegate_result(self, child_name: str, *, timeout_s: float = 3600.0) -> str:
-        """Block until child marks done or mails a delegate_result."""
-        assert self.session_manager is not None
-        deadline = time.monotonic() + timeout_s
-        parent_box = self._mailbox(self.session.name)
-        while time.monotonic() < deadline:
-            meta = self.session_manager.load_metadata(child_name)
-            status = meta.get("status")
-            if status in ("done", "error"):
-                result = meta.get("result")
-                if result:
-                    return str(result)
-                return f"[Delegate {status} with empty result]"
-
-            if parent_box:
-                for path in sorted(parent_box.inbox.glob("*.json")):
-                    try:
-                        data = json.loads(path.read_text(encoding="utf-8"))
-                    except (json.JSONDecodeError, OSError):
-                        continue
-                    if data.get("type") == "delegate_result" and data.get("from") == child_name:
-                        try:
-                            path.unlink(missing_ok=True)
-                        except OSError:
-                            pass
-                        return str(data.get("content", ""))
-
-            time.sleep(0.5)
-
-        return f"[Delegate timeout waiting for child session '{child_name}']"
-
-    def run_delegate_child(self, skill, problem: str, context_text: str = "") -> str:
-        """Entry point for ``--delegate-mode`` child processes."""
-        parent = (self.session.metadata or {}).get("parent")
-        if self.session_manager:
-            self.session_manager.update_session_metadata(self.session.name, {
-                "status": "running",
-                "parent": parent,
-                "skill": skill.slug,
-            })
-
-        try:
-            result = self._run_delegate_loop(skill, problem, context_text)
-            status = "done"
-        except Exception as e:
-            result = f"[Delegate child error: {e}]"
-            status = "error"
-
-        if self.session_manager:
-            self.session_manager.update_session_metadata(self.session.name, {
-                "status": status,
-                "result": result,
-            })
-            self.session_manager.save()
-
-        if parent and self.session_manager:
-            box = mailbox_for(self.session_manager.dir, parent)
-            box.send(
-                from_session=self.session.name,
-                to_session=parent,
-                content=result,
-                msg_type="delegate_result",
-                priority="high",
-            )
-
-        display.print_event("delegate", f"Child session '{self.session.name}' finished ({status}).")
-        return result
-
-    def _run_delegate_loop(self, skill, problem: str, context_text: str) -> str:
-        """Run atomic (Qwen) micro-agent with tool-call loop."""
-        system_prompt = self._build_delegate_system_prompt(skill)
-        messages: list[dict[str, Any]] = [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": f"Problem:\n{problem}\n\nContext:\n{context_text}"},
-        ]
-        skill_tools = self._tools_for_skill(skill)
-        final_response = ""
-
-        for _ in range(self.max_delegate_turns):
-            self._drain_mailbox_into_messages(messages)
-            send_tools = self._should_send_tools("secondary")
-
-            response, _, _ = self._call_llm(
-                messages,
-                turn=0,
-                backend="secondary",
-                llm=self.atomic_llm,
-                tools_override=skill_tools if send_tools else None,
-                force_no_tools=not send_tools,
-            )
-            if response is None:
-                return "[Delegate LLM error]"
-
-            final_response = response
-            self._record_assistant_turn(
-                messages,
-                response,
-                client=self.atomic_llm,
-                persist_session=self._is_delegate_child,
-            )
-
-            if "DONE" in response and not extract_actions(response):
-                break
-
-            had_actions, _ = self._process_response_actions(
-                response,
-                messages,
-                backend="secondary",
-                allow_delegate=False,
-            )
-            if not had_actions:
-                break
-
-        return final_response
-
     # ------------------------------------------------------------------
     # Formatting
     # ------------------------------------------------------------------
@@ -1536,579 +1230,3 @@ class Runtime:
     # ------------------------------------------------------------------
     # Meta commands
     # ------------------------------------------------------------------
-    def _handle_meta_command(self, cmd: str, messages: list[dict[str, str]]) -> bool | str:
-        """Handle /commands. Returns True if handled, 'quit' to exit, False if unknown."""
-        parts = cmd.split(maxsplit=1)
-        command = parts[0].lower()
-        arg = parts[1].strip() if len(parts) > 1 else ""
-
-        # ── /quit /exit /q ─────────────────────────────────────────────
-        if command in ("/quit", "/exit", "/q"):
-            return "quit"
-
-        # ── /help <query> ──────────────────────────────────────────────
-        if command == "/help" and arg:
-            result = self.help_engine.search(arg)
-            display.print_result("help", result)
-            return True
-
-        # ── /sessions ──────────────────────────────────────────────────
-        if command == "/sessions":
-            sessions = self.session_manager.list_sessions() if self.session_manager else []
-            display.print_session_table(sessions, self.session.name if self.session else "")
-            return True
-
-        # ── /session <name> ────────────────────────────────────────────
-        if command == "/session" and arg:
-            if self.session_manager:
-                self.session_manager.save()
-                new_session = self.session_manager.switch(arg)
-                self.session = new_session
-                # Reload messages into conversation
-                messages.clear()
-                messages.extend(self._fresh_system_messages())
-                if new_session.messages:
-                    messages.extend(new_session.messages[-20:])
-                display.print_event("session", f"Switched to session '{arg}'")
-            return True
-
-        # ── /rules ─────────────────────────────────────────────────────
-        if command == "/rules":
-            if arg.lower() in ("reload", "refresh"):
-                msg = self.reload_rules()
-                display.print_event("warn", "Reloading RULES.md may invalidate the KV prompt prefix")
-                display.print_event("ok", msg)
-                # Refresh live system message if caller passes messages list
-                if messages and messages[0].get("role") == "system":
-                    messages[0]["content"] = self._system_prompt
-                return True
-            if not self.rules_enabled:
-                display.print_event("info", "rules disabled in config")
-            elif self._rules_text:
-                preview = self._rules_text[:500]
-                display.print_event("info", f"RULES.md ({len(self._rules_text)} chars):\n{preview}")
-            else:
-                display.print_event("info", "No RULES.md loaded")
-            return True
-
-        # ── /skills ────────────────────────────────────────────────────
-        if command == "/skills":
-            display.print_skills_table(self.help_engine.index.skills)
-            return True
-
-        # ── /review ────────────────────────────────────────────────────
-        if command == "/review":
-            self._init_interaction_log()
-            if self.interaction_log:
-                display.run_review_session(self.interaction_log)
-            else:
-                display.print_event("error", "Interaction log not available (session manager missing).")
-            return True
-
-        # ── /stats ─────────────────────────────────────────────────────
-        if command == "/stats":
-            display.print_session_stats(self.session_stats)
-            return True
-
-        # ── /checkpoint ────────────────────────────────────────────────
-        if command == "/checkpoint":
-            self._save_checkpoint()
-            self.session_stats.record_checkpoint()
-            display.print_event("checkpoint", "Manual checkpoint saved.")
-            return True
-
-        # ── /compact ───────────────────────────────────────────────────
-        if command == "/compact":
-            before = len(messages)
-            messages[:] = self._compact_messages(messages)
-            after = len(messages)
-            display.print_event("compact", f"Manually compacted: {before} → {after} messages")
-            return True
-
-        # ── /dream [session] ───────────────────────────────────────────
-        if command == "/dream":
-            return self._handle_dream(arg, messages)
-
-        # ── /memory ────────────────────────────────────────────────────
-        if command == "/memory":
-            if not self.session_manager:
-                display.print_event("error", "Session manager not available.")
-                return True
-            path = memory_md_path(self.session_manager.dir, self.session.name)
-            if not path.exists():
-                display.print_event(
-                    "info",
-                    "No memory.md yet — run /dream after some thinking turns.",
-                )
-                return True
-            text = path.read_text(encoding="utf-8")
-            preview = text if len(text) <= 2000 else text[:2000] + "\n[…]"
-            display.print_event("info", f"{path.name}:\n{preview}")
-            # Refresh system message memory block
-            if messages and messages[0].get("role") == "system":
-                messages[0]["content"] = self._fresh_system_messages()[0]["content"]
-            return True
-
-        # ── /stream on|off ─────────────────────────────────────────────
-        if command == "/stream":
-            if arg.lower() in ("on", "1", "true", "yes"):
-                self.use_streaming = True
-                display.print_event("ok", "Streaming enabled.")
-            elif arg.lower() in ("off", "0", "false", "no"):
-                self.use_streaming = False
-                display.print_event("ok", "Streaming disabled.")
-            else:
-                state = "on" if self.use_streaming else "off"
-                display.print_event("info", f"Streaming is currently {state}. Use /stream on|off")
-            return True
-
-        # ── /clear ─────────────────────────────────────────────────────
-        if command == "/clear":
-            display.clear_screen()
-            display.banner(self.session.name, self.help_engine.index.size)
-            return True
-
-        # ── /config ────────────────────────────────────────────────────
-        if command == "/config":
-            if arg.lower() == "save":
-                self._save_config_overrides()
-            else:
-                self._print_config_table()
-            return True
-
-        # ── /attach <path> ─────────────────────────────────────────────
-        if command == "/attach":
-            if not arg:
-                display.print_event(
-                    "info",
-                    "Usage: /attach <path> — inject a file by reference (capped). "
-                    "Also: mention @path or @\"C:\\...\\file\" in a normal message.",
-                )
-                return True
-            text, err = self._read_attachment(arg)
-            if err:
-                display.print_event("error", err)
-                return True
-            injected = (
-                f"[Attached file: {arg} — {len(text)} chars]\n"
-                f"Do not ask the user to paste this again; use this content or read() the path.\n"
-                f"---\n{text}"
-            )
-            messages.append({"role": "user", "name": "attachment", "content": injected})
-            self.session.add_message("user", injected, name="attachment")
-            display.print_event(
-                "ok",
-                f"Attached {arg} ({len(text)} chars, cap {ATTACH_MAX_CHARS}). Prefer this over pasting transcripts.",
-            )
-            return True
-
-        # ── /mail <session> <text> ─────────────────────────────────────
-        if command == "/mail":
-            if not arg or " " not in arg:
-                display.print_event("info", "Usage: /mail <session> <message text>")
-                return True
-            target, text = arg.split(maxsplit=1)
-            if not self.session_manager:
-                display.print_event("error", "Session manager not available.")
-                return True
-            box = mailbox_for(self.session_manager.dir, target)
-            box.send(
-                from_session=self.session.name,
-                to_session=target,
-                content=text,
-                msg_type="supervision_question",
-                priority="high",
-            )
-            display.print_event("mail", f"Queued mail to session '{target}'.")
-            return True
-
-        # ── /tree ──────────────────────────────────────────────────────
-        if command == "/tree":
-            if not self.session_manager:
-                display.print_event("error", "Session manager not available.")
-                return True
-            display.print_session_tree(
-                self.session_manager.list_sessions(),
-                self.session.name if self.session else "",
-            )
-            return True
-
-        # ── /set ───────────────────────────────────────────────────────
-        if command == "/set":
-            if not arg:
-                self._print_config_table()
-            else:
-                self._handle_set(arg)
-            return True
-
-        return False
-
-    def _handle_dream(self, arg: str, messages: list[dict[str, Any]]) -> bool:
-        """Run /dream [session] — consolidate think.jsonl into memory artifacts."""
-        if not self.session_manager:
-            display.print_event("error", "Session manager not available.")
-            return True
-        target = (arg or "").strip() or self.session.name
-        llm = self.atomic_llm or self.llm
-        if llm is None:
-            display.print_event("error", "No LLM available for dreaming.")
-            return True
-
-        watermark = None
-        if target == self.session.name:
-            watermark = (self.session.metadata or {}).get("dream_watermark")
-        else:
-            path = self.session_manager._session_path(target)
-            if not path.exists():
-                display.print_event("error", f"Session '{target}' not found.")
-                return True
-            try:
-                data = json.loads(path.read_text(encoding="utf-8"))
-                watermark = (data.get("metadata") or {}).get("dream_watermark")
-            except (OSError, json.JSONDecodeError) as e:
-                display.print_event("error", f"Could not read session '{target}': {e}")
-                return True
-
-        display.print_event("info", f"Dreaming session '{target}' (atomic lane, dream priority)…")
-        result = run_dream(
-            sessions_dir=self.session_manager.dir,
-            session_name=target,
-            llm=llm,
-            watermark=watermark,
-            force_all=False,
-        )
-        if result.get("skipped"):
-            display.print_event("info", result.get("reason", "nothing to dream"))
-            return True
-        if not result.get("ok"):
-            display.print_event("error", result.get("error", "dream failed"))
-            return True
-
-        new_wm = result.get("watermark")
-        if target == self.session.name:
-            self.session.metadata["dream_watermark"] = new_wm
-            self.session_manager.save()
-            if messages and messages[0].get("role") == "system":
-                messages[0]["content"] = self._fresh_system_messages()[0]["content"]
-        else:
-            path = self.session_manager._session_path(target)
-            try:
-                data = json.loads(path.read_text(encoding="utf-8"))
-                meta = data.setdefault("metadata", {})
-                meta["dream_watermark"] = new_wm
-                path.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
-            except (OSError, json.JSONDecodeError) as e:
-                display.print_event("warn", f"Dream wrote memory files but failed to save watermark: {e}")
-
-        counts = result.get("extract_counts") or {}
-        display.print_event(
-            "ok",
-            f"Dreamed {result.get('count', 0)} think entries → {result.get('memory_md')} "
-            f"(facts={counts.get('facts', 0)} validated={counts.get('validated', 0)} "
-            f"hypotheses={counts.get('hypotheses', 0)})",
-        )
-        return True
-
-    def _read_attachment(self, raw_path: str) -> tuple[str, str | None]:
-        """Read a file for /attach or @path. Returns (text, error_or_None)."""
-        cleaned = raw_path.strip().strip('"').strip("'")
-        if cleaned.startswith("@"):
-            cleaned = cleaned[1:].strip().strip('"').strip("'")
-        try:
-            p = Path(cleaned).expanduser()
-            if not p.is_file():
-                return "", f"File not found: {cleaned}"
-            data = p.read_text(encoding="utf-8", errors="replace")
-        except OSError as e:
-            return "", f"Cannot read {cleaned}: {e}"
-        if len(data) > ATTACH_MAX_CHARS:
-            data = (
-                data[:ATTACH_MAX_CHARS]
-                + f"\n\n[… truncated at {ATTACH_MAX_CHARS} chars; "
-                f"use read('{cleaned}', start_line, end_line) for more …]"
-            )
-        return data, None
-
-    def _expand_at_attachments(self, user_input: str) -> tuple[str, list[str]]:
-        """Replace @path / @\"path\" mentions with capped file bodies + notes.
-
-        Only expands quoted paths, absolute paths, or relative paths under
-        ``./``, ``../``, ``sessions/``, ``plans/`` — avoids eating email addresses.
-        """
-        pattern = re.compile(
-            r'@(?:"([^"]+)"|\'([^\']+)\'|'
-            r'((?:[A-Za-z]:)?[\\/][^\s]+)|'
-            r'((?:\.{1,2}[\\/]|sessions[\\/]|plans[\\/]|core[\\/]|skills[\\/])[^\s]+))',
-            re.IGNORECASE,
-        )
-        notes: list[str] = []
-
-        def _repl(m: re.Match) -> str:
-            path = next(g for g in m.groups() if g)
-            text, err = self._read_attachment(path)
-            if err:
-                notes.append(err)
-                return m.group(0)
-            notes.append(f"Expanded @{path} ({len(text)} chars)")
-            return f"\n[Attached via @ ref: {path}]\n---\n{text}\n---\n"
-
-        expanded = pattern.sub(_repl, user_input)
-        return expanded, notes
-
-    # ------------------------------------------------------------------
-    # /set handler
-    # ------------------------------------------------------------------
-    _SET_DOCS: dict[str, str] = {
-        "temperature":      "LLM sampling temperature (0.0–2.0)",
-        "max_tokens":       "Max tokens to generate per call",
-        "top_p":            "Nucleus sampling p (0.0–1.0)",
-        "repeat_penalty":   "Repetition penalty (≥1.0)",
-        "context_budget":   "Context window compaction threshold (tokens)",
-        "max_turns":        "Max reasoning turns per user task",
-        "checkpoint_every": "Auto-checkpoint every N turns (0=off)",
-        "streaming":        "Stream tokens to terminal (on/off)",
-        "markdown":         "Render Markdown in responses (on/off)",
-        "stats":            "Show per-turn token stats (on/off)",
-        "model":            "Orchestrator model name (hot-swap, no restart)",
-        "base_url":         "Orchestrator base URL (hot-swap)",
-        "enable_thinking":  "Qwythos chat_template_kwargs.enable_thinking (KV-breaking)",
-        "preserve_thinking": "Qwythos chat_template_kwargs.preserve_thinking (KV-breaking)",
-        "thinking_budget_tokens": "Sampler think budget (-1 uncapped; KV-safe)",
-        "cache_prompt":     "Reuse prompt KV prefix (keep true; KV policy)",
-        "atomic.model":     "Atomic/subagent model name",
-        "atomic.base_url":  "Atomic/subagent base URL",
-        "atomic.temperature":   "Atomic LLM temperature",
-        "atomic.max_tokens":    "Atomic LLM max_tokens",
-        "atomic.enable_thinking": "Atomic chat_template_kwargs.enable_thinking",
-        "atomic.thinking_budget_tokens": "Atomic thinking_budget_tokens",
-    }
-
-    def _handle_set(self, arg: str):
-        """Parse `/set key value` and apply the override."""
-        parts = arg.split(maxsplit=1)
-        if len(parts) < 2:
-            key = parts[0].lower()
-            doc = self._SET_DOCS.get(key, "Unknown key")
-            val = self._get_config_value(key)
-            msg = f"{key} = {val!r}   [{doc}]"
-            display.print_event("info", msg)
-            return msg
-
-        key, raw_val = parts[0].lower(), parts[1].strip()
-
-        # Alias: /set thinking on → enable_thinking (not flat extra_params)
-        if key == "thinking":
-            key = "enable_thinking"
-            display.print_event(
-                "warn",
-                "Alias: 'thinking' → 'enable_thinking' (chat_template_kwargs; may invalidate KV prefix)",
-            )
-
-        # Boolean keys
-        if key in ("streaming", "markdown", "stats", "cache_prompt"):
-            new_val = raw_val.lower() in ("on", "1", "true", "yes")
-            if key == "streaming":
-                self.use_streaming = new_val
-            elif key == "markdown":
-                self.use_markdown = new_val
-            elif key == "stats":
-                self.show_stats = new_val
-            elif key == "cache_prompt":
-                self.llm.cache_prompt = new_val
-                if not new_val:
-                    display.print_event("warn", "cache_prompt=false forces full prompt recompute")
-            msg = f"{key} → {new_val}"
-            display.print_event("ok", msg)
-            return msg
-
-        # Thinking / chat_template_kwargs (KV-breaking when toggled mid-session)
-        if key in ("enable_thinking", "preserve_thinking"):
-            low = raw_val.lower()
-            if low not in ("on", "1", "true", "yes", "off", "0", "false", "no"):
-                msg = (
-                    f"Invalid value {raw_val!r} for {key}. "
-                    "Use on|true|yes|1 or off|false|no|0 (not 'medium')."
-                )
-                display.print_event("error", msg)
-                return f"ERROR: {msg}"
-            new_val = low in ("on", "1", "true", "yes")
-            self.llm.set_template_kwarg(key, new_val)
-            display.print_event(
-                "warn",
-                "KV prefix may invalidate — chat_template_kwargs changed mid-session",
-            )
-            msg = f"{key} → {new_val} (chat_template_kwargs)"
-            display.print_event("ok", msg)
-            return msg
-
-        if key == "thinking_budget_tokens":
-            try:
-                new_int = int(raw_val)
-            except ValueError:
-                msg = f"Expected integer for {key}, got: {raw_val!r}"
-                display.print_event("error", msg)
-                return f"ERROR: {msg}"
-            self.llm.thinking_budget_tokens = new_int
-            msg = f"{key} → {new_int} (KV-safe)"
-            display.print_event("ok", msg)
-            return msg
-
-        # Integer keys
-        if key in ("max_tokens", "context_budget", "max_turns", "checkpoint_every"):
-            try:
-                new_int = int(raw_val)
-            except ValueError:
-                msg = f"Expected integer for {key}, got: {raw_val!r}"
-                display.print_event("error", msg)
-                return f"ERROR: {msg}"
-            if key == "max_tokens":
-                self.llm.max_tokens = new_int
-            elif key == "context_budget":
-                self.context_budget = new_int
-            elif key == "max_turns":
-                self.max_turns = new_int
-            elif key == "checkpoint_every":
-                self.checkpoint_every = new_int
-            msg = f"{key} → {new_int}"
-            display.print_event("ok", msg)
-            return msg
-
-        # Float keys
-        if key in ("temperature", "top_p", "repeat_penalty"):
-            try:
-                new_float = float(raw_val)
-            except ValueError:
-                msg = f"Expected float for {key}, got: {raw_val!r}"
-                display.print_event("error", msg)
-                return f"ERROR: {msg}"
-            setattr(self.llm, key, new_float)
-            msg = f"{key} → {new_float}"
-            display.print_event("ok", msg)
-            return msg
-
-        # String keys
-        if key == "model":
-            self.llm.model = raw_val
-            msg = f"model → {raw_val!r}"
-            display.print_event("ok", msg)
-            return msg
-
-        if key == "base_url":
-            import httpx
-            self.llm.base_url = raw_val.rstrip("/")
-            self.llm._client = httpx.Client(
-                base_url=self.llm.base_url,
-                timeout=httpx.Timeout(300.0, connect=15.0),
-            )
-            msg = f"base_url → {raw_val!r}  (new HTTP client created)"
-            display.print_event("ok", msg)
-            return msg
-
-        # Atomic/subagent keys
-        if key.startswith("atomic.") and self.atomic_llm:
-            sub_key = key[len("atomic."):]
-            if sub_key == "model":
-                self.atomic_llm.model = raw_val
-                msg = f"atomic.model → {raw_val!r}"
-                display.print_event("ok", msg)
-            elif sub_key == "base_url":
-                import httpx
-                self.atomic_llm.base_url = raw_val.rstrip("/")
-                self.atomic_llm._client = httpx.Client(
-                    base_url=self.atomic_llm.base_url,
-                    timeout=httpx.Timeout(300.0, connect=15.0),
-                )
-                msg = f"atomic.base_url → {raw_val!r}"
-                display.print_event("ok", msg)
-            elif sub_key == "temperature":
-                self.atomic_llm.temperature = float(raw_val)
-                msg = f"atomic.temperature → {raw_val}"
-                display.print_event("ok", msg)
-            elif sub_key == "max_tokens":
-                self.atomic_llm.max_tokens = int(raw_val)
-                msg = f"atomic.max_tokens → {raw_val}"
-                display.print_event("ok", msg)
-            elif sub_key in ("enable_thinking", "preserve_thinking"):
-                new_val = raw_val.lower() in ("on", "1", "true", "yes")
-                self.atomic_llm.set_template_kwarg(sub_key, new_val)
-                display.print_event(
-                    "warn",
-                    "KV prefix may invalidate — atomic chat_template_kwargs changed",
-                )
-                msg = f"atomic.{sub_key} → {new_val}"
-                display.print_event("ok", msg)
-            elif sub_key == "thinking_budget_tokens":
-                self.atomic_llm.thinking_budget_tokens = int(raw_val)
-                msg = f"atomic.thinking_budget_tokens → {raw_val}"
-                display.print_event("ok", msg)
-            else:
-                self.atomic_llm.extra_params[sub_key] = raw_val
-                msg = f"atomic.{sub_key} → {raw_val!r} (saved to extra_params)"
-                display.print_event("ok", msg)
-            return msg
-
-        # Fallback to LLM extra_params for unknown sampling/ops keys
-        val_parsed: Any = raw_val
-        if raw_val.lower() in ("true", "on", "yes"):
-            val_parsed = True
-        elif raw_val.lower() in ("false", "off", "no"):
-            val_parsed = False
-        else:
-            try:
-                val_parsed = int(raw_val)
-            except ValueError:
-                try:
-                    val_parsed = float(raw_val)
-                except ValueError:
-                    pass
-
-        self.llm.extra_params[key] = val_parsed
-        msg = f"{key} → {val_parsed!r} (saved to extra_params)"
-        display.print_event("ok", msg)
-        return msg
-
-    # ------------------------------------------------------------------
-    # /config helpers
-    # ------------------------------------------------------------------
-    def _get_config_value(self, key: str) -> Any:
-        """Return the current runtime value for a config key."""
-        mapping = {
-            "temperature":      self.llm.temperature,
-            "max_tokens":       self.llm.max_tokens,
-            "top_p":            self.llm.top_p,
-            "repeat_penalty":   self.llm.repeat_penalty,
-            "context_budget":   self.context_budget,
-            "max_turns":        self.max_turns,
-            "checkpoint_every": self.checkpoint_every,
-            "streaming":        self.use_streaming,
-            "markdown":         self.use_markdown,
-            "stats":            self.show_stats,
-            "model":            self.llm.model,
-            "base_url":         self.llm.base_url,
-            "enable_thinking":  self.llm.chat_template_kwargs.get("enable_thinking"),
-            "preserve_thinking": self.llm.chat_template_kwargs.get("preserve_thinking"),
-            "thinking_budget_tokens": self.llm.thinking_budget_tokens,
-            "cache_prompt":     self.llm.cache_prompt,
-        }
-        if self.atomic_llm:
-            mapping.update({
-                "atomic.model":       self.atomic_llm.model,
-                "atomic.base_url":    self.atomic_llm.base_url,
-                "atomic.temperature": self.atomic_llm.temperature,
-                "atomic.max_tokens":  self.atomic_llm.max_tokens,
-                "atomic.enable_thinking": self.atomic_llm.chat_template_kwargs.get("enable_thinking"),
-                "atomic.thinking_budget_tokens": self.atomic_llm.thinking_budget_tokens,
-            })
-        return mapping.get(key, "?")
-
-    def _print_config_table(self):
-        """Print a full runtime configuration table."""
-        rows: list[tuple[str, str, str]] = []
-        for key, doc in self._SET_DOCS.items():
-            val = self._get_config_value(key)
-            rows.append((key, str(val), doc))
-        display.print_config_table(rows)
-
-    def _save_config_overrides(self):
-        """Stub: write runtime overrides back to config.yaml."""
-        display.print_event("warn", "/config save not yet implemented — overrides are runtime-only.")

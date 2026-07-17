@@ -1,0 +1,3 @@
+<tool_call>
+{"name": "set", "arguments": {"key": "temperature", "value": "0.2"}}
+</tool_call>

@@ -1,0 +1,10 @@
+[
+  {
+    "name": "set",
+    "body": "",
+    "attrs": {
+      "key": "temperature",
+      "value": "0.2"
+    }
+  }
+]
