@@ -33,7 +33,15 @@ REPL:
 - `/set thinking_budget_tokens N` — sampler-side; safe to change mid-session
 - `/set cache_prompt on|off` — keep `on` unless debugging LCP
 
-Raw assistant text (including `<think>`) is stored in `session.json`; CoT is also mirrored to `sessions/<name>.think.jsonl`. Only the outbound LLM view strips think (unless `preserve_thinking`).
+Raw assistant text (including `<think>`) is stored in `session.json`; CoT is also mirrored to `sessions/<name>.think.jsonl`. Only the outbound LLM view strips think (unless `preserve_thinking`). Think-only turns become `[thinking only — no reply text]` on the wire so history stays non-empty. Pasted REPL chrome is blocked at ingest (`core/prompt_hygiene.py`).
+
+### Backend gate
+
+`backends.gate` in `config.yaml` — client-side semaphores for `orch` / `atomic` / `embed`. Interactive acquires outrank `/dream`. Complements (does not replace) llama.cpp `--parallel`.
+
+### Dreaming
+
+`/dream` consolidates new think rows via the atomic lane into `sessions/<name>.memory.jsonl` + `.memory.md`. `/memory` previews; compaction prefers memory over raw chat snippets.
 
 ### KV-safe vs KV-breaking (client body)
 

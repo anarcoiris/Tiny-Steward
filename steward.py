@@ -118,13 +118,24 @@ def main():
 
     # Initialize orchestrator LLM (Qwythos: thinking on by default)
     orch_cfg = config["llm"]["orchestrator"]
-    llm = LLMClient.from_lane_config(orch_cfg)
+    llm = LLMClient.from_lane_config(orch_cfg, gate_lane="orch")
 
     # Initialize atomic/subagent LLM (optional; thinking off by default)
     atomic_llm: LLMClient | None = None
     if "atomic" in config.get("llm", {}):
         at_cfg = config["llm"]["atomic"]
-        atomic_llm = LLMClient.from_lane_config(at_cfg)
+        atomic_llm = LLMClient.from_lane_config(at_cfg, gate_lane="atomic")
+
+    # Backend gate (client-side serialization; complements --parallel 1)
+    from core.backend_gate import configure_default_gate
+
+    gate_cfg = (config.get("backends") or {}).get("gate") or {}
+    configure_default_gate(
+        enabled=bool(gate_cfg.get("enabled", True)),
+        orch_slots=int(gate_cfg.get("orch_slots", 1)),
+        atomic_slots=int(gate_cfg.get("atomic_slots", 1)),
+        embed_slots=int(gate_cfg.get("embed_slots", 1)),
+    )
 
     # Initialize embedder
     emb_cfg = config["embeddings"]

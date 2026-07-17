@@ -99,6 +99,32 @@ With atomic `--parallel 1`, concurrent children **serialize** (503 retries help)
 
 `/tree` shows parent→children. `/mail <session> <text>` queues supervision.
 
+## Prompt hygiene (do not paste the REPL)
+
+Long messages that look like a terminal dump (box-drawing, `you ›`, `LCP`,
+turn stats) are **blocked** at ingest. Use `/attach` or `@path` instead.
+
+Outbound history also scrubs residual chrome and replaces think-only assistant
+turns with `[thinking only — no reply text]` so the LLM never sees blank
+assistant messages.
+
+## Backend gate
+
+`backends.gate` in `config.yaml` serializes client calls to orch / atomic /
+embed (default 1 slot each). Interactive work outranks `/dream`. This does
+**not** replace llama.cpp `--parallel N` (still F3).
+
+## Dreaming / memory
+
+| Command | Effect |
+|---------|--------|
+| `/dream` | Consolidate new `*.think.jsonl` rows via atomic LLM → `*.memory.jsonl` + `*.memory.md` |
+| `/dream <session>` | Same for another session |
+| `/memory` | Show current `memory.md` and refresh the system “Integrated memories” block |
+
+Watermark: `session.metadata.dream_watermark`. Compaction prefers `memory.md`
+over raw truncated chat. Facts vs hypotheses stay separated in the template.
+
 ## Docs map
 
 | File | Role |

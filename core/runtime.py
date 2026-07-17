@@ -32,7 +32,21 @@ from core.delegate_terminal import (
     resolve_terminal_mode,
     spawn_child,
 )
+from core.prompt_hygiene import (
+    EMPTY_ASSISTANT_PLACEHOLDER,
+    paste_block_message,
+    scrub_chrome,
+    should_block_paste,
+    think_content_preview,
+)
+from core.dreaming import (
+    memory_block_for_prompt,
+    memory_md_path,
+    memory_summary_for_compact,
+    run_dream,
+)
 import core.display as display
+
 
 _OS_PATH_RULE = (
     "- Use relative paths (e.g. `skills/`) or valid Windows paths (e.g. `C:\\...`). Do NOT use Unix-style absolute paths (e.g. `/skills`) as they resolve to `C:\\skills` on Windows."
@@ -224,6 +238,8 @@ def normalize_messages_for_llm(
     When ``preserve_thinking`` is False (default), strip ``<think>`` from assistant
     content and drop ``reasoning_content`` so prior CoT does not inflate the prompt.
     Session storage keeps the raw assistant text; only the outbound LLM view is pruned.
+    Also scrubs REPL chrome and replaces empty think-only assistant turns with a
+    placeholder so history never contains blank assistant messages.
     """
     out: list[dict[str, Any]] = []
     for msg in messages:
@@ -238,11 +254,20 @@ def normalize_messages_for_llm(
                     "name": legacy.group("name"),
                     "content": legacy.group("content"),
                 }
+            elif isinstance(m.get("content"), str):
+                m["content"] = scrub_chrome(m["content"])
         if m.get("role") == "assistant":
             if not preserve_thinking:
                 if isinstance(m.get("content"), str):
                     m["content"] = strip_think_from_text(m["content"])
                 m.pop("reasoning_content", None)
+            if isinstance(m.get("content"), str):
+                m["content"] = scrub_chrome(m["content"])
+                if not (m["content"] or "").strip():
+                    m["content"] = EMPTY_ASSISTANT_PLACEHOLDER
+        elif m.get("role") == "tool" and isinstance(m.get("content"), str):
+            # tool results are usually clean; light scrub only if chrome leaked
+            m["content"] = scrub_chrome(m["content"])
         out.append(m)
     return out
 
@@ -400,7 +425,19 @@ class Runtime:
         return f"loaded {n} chars from rules (editing mid-session may invalidate KV prefix)"
 
     def _fresh_system_messages(self) -> list[dict[str, Any]]:
-        return [{"role": "system", "content": self._system_prompt}]
+        content = self._system_prompt
+        mem = self._memory_prompt_block()
+        if mem:
+            content = f"{content}\n\n{mem}"
+        return [{"role": "system", "content": content}]
+
+    def _memory_prompt_block(self) -> str:
+        if not self.session_manager:
+            return ""
+        return memory_block_for_prompt(
+            memory_md_path(self.session_manager.dir, self.session.name),
+            max_chars=2000,
+        )
 
     def mark_delegate_child(self, parent: str | None = None) -> None:
         """Mark this runtime as a delegate child (set by --delegate-mode)."""
@@ -683,9 +720,14 @@ class Runtime:
             for note in attach_notes:
                 display.print_event("info", note)
 
+            if should_block_paste(user_input):
+                display.print_event("warn", paste_block_message())
+                continue
+
             # Add user message
             messages.append({"role": "user", "content": user_input})
             self.session.add_message("user", user_input)
+
             
             self._init_interaction_log()
             if self.interaction_log:
@@ -884,7 +926,7 @@ class Runtime:
             "ts": datetime.datetime.now(datetime.timezone.utc).isoformat(),
             "session": self.session.name,
             "reasoning": think_text,
-            "content_preview": strip_think_from_text(content)[:500],
+            "content_preview": think_content_preview(content),
         }
         try:
             with path.open("a", encoding="utf-8") as f:
@@ -1466,9 +1508,20 @@ class Runtime:
         dropped = messages[1:-10]
         if dropped:
             summary_parts = []
+            # Prefer durable dream memories over raw truncated chat.
+            mem_summary = ""
+            if self.session_manager:
+                mem_summary = memory_summary_for_compact(
+                    memory_md_path(self.session_manager.dir, self.session.name),
+                    max_chars=1200,
+                )
+            if mem_summary:
+                summary_parts.append("[Integrated memories]\n" + mem_summary)
             for msg in dropped[-5:]:
                 role = msg["role"]
-                content = msg["content"][:200]
+                content = scrub_chrome(msg.get("content", "") or "")[:200]
+                if not content.strip():
+                    continue
                 summary_parts.append(f"[{role}] {content}...")
 
             summary = {
@@ -1572,6 +1625,30 @@ class Runtime:
             display.print_event("compact", f"Manually compacted: {before} → {after} messages")
             return True
 
+        # ── /dream [session] ───────────────────────────────────────────
+        if command == "/dream":
+            return self._handle_dream(arg, messages)
+
+        # ── /memory ────────────────────────────────────────────────────
+        if command == "/memory":
+            if not self.session_manager:
+                display.print_event("error", "Session manager not available.")
+                return True
+            path = memory_md_path(self.session_manager.dir, self.session.name)
+            if not path.exists():
+                display.print_event(
+                    "info",
+                    "No memory.md yet — run /dream after some thinking turns.",
+                )
+                return True
+            text = path.read_text(encoding="utf-8")
+            preview = text if len(text) <= 2000 else text[:2000] + "\n[…]"
+            display.print_event("info", f"{path.name}:\n{preview}")
+            # Refresh system message memory block
+            if messages and messages[0].get("role") == "system":
+                messages[0]["content"] = self._fresh_system_messages()[0]["content"]
+            return True
+
         # ── /stream on|off ─────────────────────────────────────────────
         if command == "/stream":
             if arg.lower() in ("on", "1", "true", "yes"):
@@ -1665,6 +1742,72 @@ class Runtime:
             return True
 
         return False
+
+    def _handle_dream(self, arg: str, messages: list[dict[str, Any]]) -> bool:
+        """Run /dream [session] — consolidate think.jsonl into memory artifacts."""
+        if not self.session_manager:
+            display.print_event("error", "Session manager not available.")
+            return True
+        target = (arg or "").strip() or self.session.name
+        llm = self.atomic_llm or self.llm
+        if llm is None:
+            display.print_event("error", "No LLM available for dreaming.")
+            return True
+
+        watermark = None
+        if target == self.session.name:
+            watermark = (self.session.metadata or {}).get("dream_watermark")
+        else:
+            path = self.session_manager._session_path(target)
+            if not path.exists():
+                display.print_event("error", f"Session '{target}' not found.")
+                return True
+            try:
+                data = json.loads(path.read_text(encoding="utf-8"))
+                watermark = (data.get("metadata") or {}).get("dream_watermark")
+            except (OSError, json.JSONDecodeError) as e:
+                display.print_event("error", f"Could not read session '{target}': {e}")
+                return True
+
+        display.print_event("info", f"Dreaming session '{target}' (atomic lane, dream priority)…")
+        result = run_dream(
+            sessions_dir=self.session_manager.dir,
+            session_name=target,
+            llm=llm,
+            watermark=watermark,
+            force_all=False,
+        )
+        if result.get("skipped"):
+            display.print_event("info", result.get("reason", "nothing to dream"))
+            return True
+        if not result.get("ok"):
+            display.print_event("error", result.get("error", "dream failed"))
+            return True
+
+        new_wm = result.get("watermark")
+        if target == self.session.name:
+            self.session.metadata["dream_watermark"] = new_wm
+            self.session_manager.save()
+            if messages and messages[0].get("role") == "system":
+                messages[0]["content"] = self._fresh_system_messages()[0]["content"]
+        else:
+            path = self.session_manager._session_path(target)
+            try:
+                data = json.loads(path.read_text(encoding="utf-8"))
+                meta = data.setdefault("metadata", {})
+                meta["dream_watermark"] = new_wm
+                path.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+            except (OSError, json.JSONDecodeError) as e:
+                display.print_event("warn", f"Dream wrote memory files but failed to save watermark: {e}")
+
+        counts = result.get("extract_counts") or {}
+        display.print_event(
+            "ok",
+            f"Dreamed {result.get('count', 0)} think entries → {result.get('memory_md')} "
+            f"(facts={counts.get('facts', 0)} validated={counts.get('validated', 0)} "
+            f"hypotheses={counts.get('hypotheses', 0)})",
+        )
+        return True
 
     def _read_attachment(self, raw_path: str) -> tuple[str, str | None]:
         """Read a file for /attach or @path. Returns (text, error_or_None)."""

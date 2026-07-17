@@ -6,11 +6,16 @@ Generates an HTML report for easy viewing.
 """
 
 from __future__ import annotations
+import html
 import json
 import time
 import datetime
 from pathlib import Path
 from typing import Any, Optional
+
+
+def _utc_iso() -> str:
+    return datetime.datetime.now(datetime.timezone.utc).isoformat()
 
 
 class InteractionLog:
@@ -42,7 +47,7 @@ class InteractionLog:
     def begin_interaction(self, user_input: str):
         self.current_interaction = {
             "id": str(time.time()),
-            "ts": datetime.datetime.now().isoformat() + "Z",
+            "ts": _utc_iso(),
             "session": self.session_name,
             "user_input": user_input,
             "turns": 0,
@@ -87,7 +92,7 @@ class InteractionLog:
         
         try:
             with self.log_path.open("a", encoding="utf-8") as f:
-                f.write(json.dumps(self.current_interaction) + "\n")
+                f.write(json.dumps(self.current_interaction, ensure_ascii=False) + "\n")
         except Exception:
             pass
             
@@ -145,7 +150,7 @@ class InteractionLog:
             # Rewrite file
             with self.log_path.open("w", encoding="utf-8") as f:
                 for r in records:
-                    f.write(json.dumps(r) + "\n")
+                    f.write(json.dumps(r, ensure_ascii=False) + "\n")
         except Exception:
             pass
 
@@ -172,26 +177,38 @@ class InteractionLog:
             ".reviewed { opacity: 0.7; }",
             "code { background: #1e1e1e; padding: 2px 5px; border-radius: 3px; color: #ce9178; }",
             "</style></head><body>",
-            f"<h1>Interaction Review: {self.session_name}</h1>"
+            f"<h1>Interaction Review: {html.escape(self.session_name)}</h1>"
         ]
         
         for r in reversed(records):  # Show newest first
-            ts = r.get("ts", "")[:19].replace("T", " ")
+            ts = html.escape(str(r.get("ts", ""))[:19].replace("T", " "))
             status_class = "error" if r.get("outcome") != "success" else ""
             reviewed_class = "reviewed" if r.get("reviewed") else ""
+            user_raw = str(r.get("user_input", ""))
+            user_esc = html.escape(user_raw[:500] + ("…" if len(user_raw) > 500 else ""))
             
             html.append(f"<div class='record {status_class} {reviewed_class}'>")
-            html.append(f"<h3>[{ts}] {r.get('user_input', '')}</h3>")
-            html.append(f"<p><strong>Outcome:</strong> {r.get('outcome')} | <strong>Turns:</strong> {r.get('turns')} | <strong>Elapsed:</strong> {r.get('elapsed_s', 0):.1f}s</p>")
+            html.append(f"<h3>[{ts}] {user_esc}</h3>")
+            html.append(
+                f"<p><strong>Outcome:</strong> {html.escape(str(r.get('outcome')))} | "
+                f"<strong>Turns:</strong> {html.escape(str(r.get('turns')))} | "
+                f"<strong>Elapsed:</strong> {float(r.get('elapsed_s', 0)):.1f}s</p>"
+            )
             
             if r.get("reviewed"):
-                html.append(f"<p><strong>Rating:</strong> {r.get('rating')} | <strong>Notes:</strong> {r.get('notes')}</p>")
+                html.append(
+                    f"<p><strong>Rating:</strong> {html.escape(str(r.get('rating')))} | "
+                    f"<strong>Notes:</strong> {html.escape(str(r.get('notes')))}</p>"
+                )
                 
             if r.get("actions"):
                 html.append("<h4>Actions:</h4><ul>")
                 for a in r.get("actions", []):
                     mark = "❌" if a.get("exit_code") != 0 else "✅"
-                    html.append(f"<li>{mark} {a.get('name')}: <code>{a.get('body_preview')}</code></li>")
+                    html.append(
+                        f"<li>{mark} {html.escape(str(a.get('name')))}: "
+                        f"<code>{html.escape(str(a.get('body_preview')))}</code></li>"
+                    )
                 html.append("</ul>")
                 
             html.append("</div>")

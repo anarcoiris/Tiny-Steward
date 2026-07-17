@@ -12,6 +12,8 @@ from typing import Any, Generator, Literal
 
 import httpx
 
+from core.backend_gate import Priority, get_gate
+
 StreamPartKind = Literal["reasoning", "content"]
 
 
@@ -52,6 +54,8 @@ class LLMClient:
         thinking_budget_tokens: int | None = -1,
         cache_prompt: bool = True,
         extra_params: dict[str, Any] | None = None,
+        gate_lane: Literal["orch", "atomic"] = "orch",
+        gate_priority: Priority = "interactive",
     ):
         self.base_url = base_url.rstrip("/")
         self.model = model
@@ -66,6 +70,8 @@ class LLMClient:
             k: v for k, v in (extra_params or {}).items()
             if k not in self._RESERVED_CFG
         }
+        self.gate_lane: Literal["orch", "atomic"] = gate_lane
+        self.gate_priority: Priority = gate_priority
         self._last_reasoning: str = ""
         self._last_timings: dict[str, Any] = {}
         self._active_resp: Any = None
@@ -303,6 +309,9 @@ class LLMClient:
         """Update a chat_template_kwargs entry (may invalidate LCP)."""
         self.chat_template_kwargs[key] = value
 
+    def _gate_hold(self):
+        return get_gate().hold(self.gate_lane, priority=self.gate_priority)
+
     def _post(
         self,
         path: str,
@@ -311,17 +320,17 @@ class LLMClient:
         max_retries: int = 3,
         retry_delay: float = 2.0,
     ) -> dict[str, Any]:
-        """POST with retry on 503 (slot busy)."""
-        for attempt in range(max_retries):
-            resp = self._client.post(path, json=body)
-            if resp.status_code == 503 and attempt < max_retries - 1:
-                time.sleep(retry_delay * (attempt + 1))
-                continue
+        """POST with gate acquire + retry on 503 (slot busy)."""
+        with self._gate_hold():
+            for attempt in range(max_retries):
+                resp = self._client.post(path, json=body)
+                if resp.status_code == 503 and attempt < max_retries - 1:
+                    time.sleep(retry_delay * (attempt + 1))
+                    continue
+                resp.raise_for_status()
+                return resp.json()
             resp.raise_for_status()
             return resp.json()
-        # Should not reach here, but just in case
-        resp.raise_for_status()
-        return resp.json()
 
     def _stream_request(
         self,
@@ -331,7 +340,12 @@ class LLMClient:
         max_retries: int = 3,
         retry_delay: float = 2.0,
     ):
-        """Open a streaming POST, retrying on 503 (slot busy) before yielding."""
+        """Open a streaming POST under the gate; retry on 503 before yielding.
+
+        The gate slot is held for the lifetime of the returned stream context.
+        """
+        gate_cm = self._gate_hold()
+        gate_cm.__enter__()
         last_exc: Exception | None = None
         for attempt in range(max_retries):
             try:
@@ -343,13 +357,15 @@ class LLMClient:
                     time.sleep(retry_delay * (attempt + 1))
                     continue
                 resp.raise_for_status()
-                return _StreamContext(cm, resp)
+                return _GatedStreamContext(cm, resp, gate_cm)
             except httpx.HTTPStatusError as e:
                 last_exc = e
                 if e.response.status_code == 503 and attempt < max_retries - 1:
                     time.sleep(retry_delay * (attempt + 1))
                     continue
+                gate_cm.__exit__(None, None, None)
                 raise
+        gate_cm.__exit__(None, None, None)
         if last_exc:
             raise last_exc
         raise RuntimeError("stream request failed without exception")
@@ -364,18 +380,26 @@ class LLMClient:
         self.close()
 
 
-class _StreamContext:
-    """Wraps httpx stream context so callers can `with` it after retries."""
+class _GatedStreamContext:
+    """Wraps httpx stream context and releases the backend gate on exit."""
 
-    def __init__(self, cm, resp):
+    def __init__(self, cm, resp, gate_cm):
         self._cm = cm
         self._resp = resp
+        self._gate_cm = gate_cm
 
     def __enter__(self):
         return self._resp
 
     def __exit__(self, *args):
-        return self._cm.__exit__(*args)
+        try:
+            return self._cm.__exit__(*args)
+        finally:
+            self._gate_cm.__exit__(None, None, None)
+
+
+# Keep alias for any external imports
+_StreamContext = _GatedStreamContext
 
 
 # ------------------------------------------------------------------

@@ -51,6 +51,15 @@ class TestMessageNormalization(unittest.TestCase):
         self.assertEqual(out[0]["role"], "user")
         self.assertEqual(out[0]["content"], "list files in core/")
 
+    def test_think_only_becomes_placeholder(self):
+        from core.prompt_hygiene import EMPTY_ASSISTANT_PLACEHOLDER
+
+        messages = [
+            {"role": "assistant", "content": "<think>\nx\n</think>"},
+        ]
+        out = normalize_messages_for_llm(messages)
+        self.assertEqual(out[0]["content"], EMPTY_ASSISTANT_PLACEHOLDER)
+
 
 if __name__ == "__main__":
     unittest.main()

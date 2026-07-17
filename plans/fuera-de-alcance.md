@@ -13,6 +13,12 @@ P0–P8 y F1–F2 **hechos**. También (2026-07-16 noche):
 - Skills `_meta/primitives` en formato `<tool_call>`
 - `sessions/` untracked; playbook de operador
 
+**F7 (2026-07-17) hecho:**
+
+- Prompt hygiene: refuse pasted REPL chrome; scrub outbound; empty think-only placeholder
+- Client `backends.gate` for orch/atomic/embed (interactive > dream)
+- `/dream` + `/memory` → `*.memory.jsonl` / `*.memory.md`; compact prefers memories
+
 ```mermaid
 flowchart TD
   f3[F3_parallel_slots]
@@ -40,6 +46,7 @@ flowchart TD
 - [x] f1-abort-lcp  
 - [x] f2-rules-md  
 - [x] tool-call-write-hardening + attach-by-path + think-nudge + operator docs  
+- [x] f7-prompt-hygiene-gate-dreaming  
 - [ ] f3-parallel-id-slot  
 - [ ] f4-slot-save-restore  
 - [ ] f5-vision-mmproj  

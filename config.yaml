@@ -34,6 +34,14 @@ embeddings:
   api: "ollama"                        # Ollama /api/embeddings
   model: "nomic-embed-text"
 
+# Client-side lane gate (does not replace llama.cpp --parallel; avoids dream/REPL races)
+backends:
+  gate:
+    enabled: true
+    orch_slots: 1
+    atomic_slots: 1
+    embed_slots: 1
+
 help:
   top_k: 5
   min_similarity: 0.35

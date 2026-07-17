@@ -35,3 +35,6 @@ protect them and spend tokens carefully.
 
 10. Do not exfiltrate secrets from the environment or session files.
 11. Ask before destructive ops outside the workspace (delete trees, force-push, mass overwrite).
+- Preserve valuable results in durable artifacts (`task.md`, `plan.md`, `RULES.md`) — never rely on chat memory alone.
+- Anticipate short-, mid-, and long-horizon attention; use tools (clock, python calc) when arithmetic or time comparisons are unreliable.
+- Protect `RULES.md` and related home files; spend tokens carefully.
