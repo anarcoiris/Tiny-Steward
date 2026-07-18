@@ -15,6 +15,7 @@ import json
 import sys
 import time
 import uuid
+import yaml
 from pathlib import Path
 from typing import Any
 
@@ -194,18 +195,48 @@ def load_rules_text(
     return ""
 
 
-def compose_system_prompt(rules_text: str = "") -> str:
-    """Built-in SYSTEM_PROMPT plus optional global rules block."""
-    base = SYSTEM_PROMPT.rstrip()
+def format_os_invariants(invariants: dict) -> str:
+    """Format OS-level invariants for prompt injection."""
+    if not invariants:
+        return ""
+    lines = []
+    lines.append("## OS and Shell Invariants (Layer 0)")
+    os_name = invariants.get("os", "windows")
+    shell_name = invariants.get("shell", "powershell")
+    path_style = invariants.get("path_style", "absolute")
+    lines.append(f"- Operating System: {os_name}")
+    lines.append(f"- Active Shell: {shell_name} (pwsh)")
+    lines.append(f"- Path Style: {path_style}")
+    mandatories = invariants.get("mandatory_primitives", [])
+    if mandatories:
+        lines.append("- Mandatory Primitive Constraints:")
+        for m in mandatories:
+            lines.append(f"  * {m}")
+    return "\n".join(lines)
+
+
+def compose_system_prompt(rules_text: str = "", invariants: dict | None = None) -> str:
+    """Built-in SYSTEM_PROMPT plus invariants prefix and optional global rules block."""
+    parts = []
+    
+    # Layer 0 OS Invariants
+    inv_text = format_os_invariants(invariants or {})
+    if inv_text:
+        parts.append(inv_text)
+        
+    # Persona
+    parts.append(SYSTEM_PROMPT.strip())
+    
+    # Layer 1 RULES.md
     rules = (rules_text or "").strip()
-    if not rules:
-        return base
-    return (
-        f"{base}\n\n"
-        "## Global rules (RULES.md)\n\n"
-        "Follow these project rules in addition to the above:\n\n"
-        f"{rules}"
-    )
+    if rules:
+        parts.append(
+            "## Global rules (RULES.md)\n\n"
+            "Follow these project rules in addition to the above:\n\n"
+            f"{rules}"
+        )
+        
+    return "\n\n".join(parts)
 
 
 # ------------------------------------------------------------------
@@ -280,8 +311,21 @@ class Runtime(RuntimeMetaMixin, RuntimeDelegateMixin):
         self._is_delegate_child = bool((session.metadata or {}).get("delegate_child"))
         if self._is_delegate_child:
             self.vision_enabled = False
+        # Load os_invariants and rethink_enabled from config.yaml if present
+        self.os_invariants = {}
+        self.rethink_enabled = True
+        try:
+            if self.config_path and Path(self.config_path).exists():
+                with open(self.config_path, "r", encoding="utf-8") as f:
+                    cfg = yaml.safe_load(f) or {}
+                    self.os_invariants = cfg.get("os_invariants", {})
+                    ui_cfg = cfg.get("ui", {})
+                    self.rethink_enabled = bool(ui_cfg.get("rethink", True))
+        except Exception:
+            pass
+            
         self._rules_text = load_rules_text(self.rules_path, enabled=self.rules_enabled)
-        self._system_prompt = compose_system_prompt(self._rules_text)
+        self._system_prompt = compose_system_prompt(self._rules_text, self.os_invariants)
 
     def _profile(self, backend: str = "primary") -> ProviderProfile:
         return self.profiles.get(backend) or self.profiles["primary"]
@@ -291,8 +335,21 @@ class Runtime(RuntimeMetaMixin, RuntimeDelegateMixin):
 
     def reload_rules(self) -> str:
         """Reload RULES.md from disk (KV-breaking if content changed). Returns status."""
+        # Reload os_invariants and rethink_enabled from config.yaml as well
+        self.os_invariants = {}
+        self.rethink_enabled = True
+        try:
+            if self.config_path and Path(self.config_path).exists():
+                with open(self.config_path, "r", encoding="utf-8") as f:
+                    cfg = yaml.safe_load(f) or {}
+                    self.os_invariants = cfg.get("os_invariants", {})
+                    ui_cfg = cfg.get("ui", {})
+                    self.rethink_enabled = bool(ui_cfg.get("rethink", True))
+        except Exception:
+            pass
+            
         self._rules_text = load_rules_text(self.rules_path, enabled=self.rules_enabled)
-        self._system_prompt = compose_system_prompt(self._rules_text)
+        self._system_prompt = compose_system_prompt(self._rules_text, self.os_invariants)
         if not self.rules_enabled:
             return "rules disabled"
         if not self._rules_text:
@@ -461,52 +518,105 @@ class Runtime(RuntimeMetaMixin, RuntimeDelegateMixin):
     # ------------------------------------------------------------------
     def run_task(self, task: str) -> str:
         """Execute a task through the reasoning loop."""
-        messages = self._fresh_system_messages()
+        self._update_current_state("busy")
+        try:
+            messages = self._fresh_system_messages()
 
-        if self.session.messages:
-            history = self.session.messages[-20:]
-            messages.extend(history)
+            if self.session.messages:
+                history = self.session.messages[-20:]
+                messages.extend(history)
 
-        if estimate_messages_tokens(messages) > self.context_budget:
-            messages = self._compact_messages(messages)
-
-        messages.append({"role": "user", "content": task})
-        self.session.add_message("user", task)
-
-        for turn in range(1, self.max_turns + 1):
-            compaction_triggered = False
-            token_est = estimate_messages_tokens(messages)
-            if token_est > self.context_budget:
+            if estimate_messages_tokens(messages) > self.context_budget:
                 messages = self._compact_messages(messages)
-                compaction_triggered = True
 
-            self._drain_mailbox_into_messages(messages)
-            response, usage, elapsed = self._call_llm(messages, turn=turn)
-            if response is None:
-                return "[LLM error]"
+            messages.append({"role": "user", "content": task})
+            self.session.add_message("user", task)
 
-            self._record_assistant_turn(messages, response)
+            for turn in range(1, self.max_turns + 1):
+                compaction_triggered = False
+                token_est = estimate_messages_tokens(messages)
+                if token_est > self.context_budget:
+                    messages = self._compact_messages(messages)
+                    compaction_triggered = True
 
-            self._emit_stats(
-                turn=turn,
-                messages_before=messages[:-1],
-                response=response,
-                elapsed=elapsed,
-                usage=usage,
-                compaction_triggered=compaction_triggered,
-            )
+                self._drain_mailbox_into_messages(messages)
+                
+                # Checkpoint checkpoints to support JIT "rethink" rollback
+                session_checkpoint = len(self.session.messages)
+                messages_checkpoint = len(messages)
 
-            if usage and usage.get("aborted"):
-                return response
+                response, usage, elapsed = self._call_llm(messages, turn=turn)
+                if response is None:
+                    return "[LLM error]"
 
-            if "DONE" in response and not self._extract_actions(response, backend="primary"):
-                return response
+                self._record_assistant_turn(messages, response)
 
-            had_actions, _ = self._process_response_actions(response, messages, backend="primary")
-            if not had_actions:
-                return response
+                self._emit_stats(
+                    turn=turn,
+                    messages_before=messages[:-1],
+                    response=response,
+                    elapsed=elapsed,
+                    usage=usage,
+                    compaction_triggered=compaction_triggered,
+                )
 
-        return "[Max turns reached]"
+                if usage and usage.get("aborted"):
+                    return response
+
+                if "DONE" in response and not self._extract_actions(response, backend="primary"):
+                    return response
+
+                had_actions, errors = self._process_response_actions(response, messages, backend="primary")
+                
+                # Rethink branch logic for tool failure
+                if had_actions and errors > 0 and self.rethink_enabled:
+                    rethink_success = False
+                    for retry in range(2):
+                        display.print_event("warn", f"Tool failed. Triggering Rethink loop (retry {retry+1}/2)…")
+                        
+                        # Roll back in-memory session changes for this turn
+                        self.session.messages = self.session.messages[:session_checkpoint]
+                        
+                        # Inject nudge warning to the temporary context
+                        nudge = "The previous tool call failed. Please analyze the stdout/stderr above, rethink your plan, and try a different command or parameter combination."
+                        messages.append({"role": "user", "name": "steward_nudge", "content": nudge})
+                        
+                        response, usage, elapsed = self._call_llm(messages, turn=turn)
+                        if response is None:
+                            break
+                            
+                        self._record_assistant_turn(messages, response)
+                        had_actions, errors = self._process_response_actions(response, messages, backend="primary")
+                        
+                        if not had_actions or errors == 0:
+                            rethink_success = True
+                            display.print_event("ok", "Rethink succeeded! Proceeding with successful path.")
+                            break
+                            
+                    if rethink_success:
+                        # Clean up context history to preserve KV Cache and hide the failed attempts
+                        successful_assistant_msg = messages[-2]
+                        successful_tool_results = messages[-1:]
+                        
+                        # Revert local messages to clean checkpoint
+                        messages = messages[:messages_checkpoint]
+                        self.session.messages = self.session.messages[:session_checkpoint]
+                        
+                        # Re-commit only the successful path
+                        self._record_assistant_turn(messages, successful_assistant_msg["content"], persist_session=True)
+                        for msg in successful_tool_results:
+                            self._append_tool_result(messages, msg["name"], msg["content"], persist=True)
+                    else:
+                        # If all retries failed, roll back the temporary session changes and commit only the final state to history
+                        self.session.messages = self.session.messages[:session_checkpoint]
+                        self._record_assistant_turn(messages[-2:], messages[-2]["content"], persist_session=True)
+                        
+                if not had_actions:
+                    return response
+
+            return "[Max turns reached]"
+        finally:
+            self._update_current_state("offline")
 
     # ------------------------------------------------------------------
     # Public: interactive REPL
@@ -570,160 +680,258 @@ class Runtime(RuntimeMetaMixin, RuntimeDelegateMixin):
         except ImportError:
             prompt_session = None
 
-        while True:
-            try:
-                if prompt_session:
-                    user_input = prompt_session.prompt(ANSI(display.prompt_text())).strip()
-                else:
-                    user_input = input(display.prompt_text()).strip()
-                user_input = user_input.encode('utf-8', 'replace').decode('utf-8')
-            except (EOFError, KeyboardInterrupt):
-                display.print_event("info", "Bye.")
-                break
+        import threading
+        
+        def poll_mailbox(prompt_sess, st_ev):
+            while not st_ev.is_set():
+                if self.session_manager:
+                    state_path = Path(self.session_manager.dir) / "current.json"
+                    try:
+                        if state_path.exists():
+                            with open(state_path, "r", encoding="utf-8") as f:
+                                state = json.load(f)
+                            if state.get("status") == "idle":
+                                from core.mailbox import mailbox_for
+                                mailbox = mailbox_for(self.session_manager.dir, self.session.name)
+                                messages = mailbox.peek()
+                                if messages:
+                                    msg = mailbox.drain()[0]
+                                    content = msg.get("content", "")
+                                    if prompt_sess and prompt_sess.app.is_running:
+                                        def inject():
+                                            prompt_sess.app.current_buffer.text = content
+                                            prompt_sess.app.current_buffer.validate_and_handle()
+                                        prompt_sess.app.loop.call_soon_threadsafe(inject)
+                                        break
+                    except Exception:
+                        pass
+                time.sleep(1.0)
 
-            if not user_input:
-                continue
-
-            # Meta commands
-            if user_input.startswith("/"):
-                handled = self._handle_meta_command(user_input, messages)
-                if handled == "quit":
+        stop_event = threading.Event()
+        try:
+            while True:
+                self._update_current_state("idle")
+                
+                # Start mailbox polling thread
+                poll_thread = threading.Thread(
+                    target=poll_mailbox, 
+                    args=(prompt_session, stop_event), 
+                    daemon=True
+                )
+                poll_thread.start()
+                
+                try:
+                    if prompt_session:
+                        user_input = prompt_session.prompt(ANSI(display.prompt_text())).strip()
+                    else:
+                        user_input = input(display.prompt_text()).strip()
+                    user_input = user_input.encode('utf-8', 'replace').decode('utf-8')
+                except (EOFError, KeyboardInterrupt):
+                    display.print_event("info", "Bye.")
                     break
-                if handled:
+                finally:
+                    stop_event.set()
+                    stop_event = threading.Event()
+
+                self._update_current_state("busy")
+                if not user_input:
                     continue
 
-            # Expand @"path" / @path references into capped attachments (link, don't paste).
-            user_input, attach_notes, image_refs = self._expand_at_attachments(user_input)
-            for note in attach_notes:
-                display.print_event("info", note)
+                # Meta commands
+                if user_input.startswith("/"):
+                    handled = self._handle_meta_command(user_input, messages)
+                    if handled == "quit":
+                        break
+                    if handled:
+                        continue
 
-            if image_refs and not self.vision_enabled:
-                from core.vision import vision_disabled_message
-                display.print_event("error", vision_disabled_message())
-                continue
+                # Expand @"path" / @path references into capped attachments (link, don't paste).
+                user_input, attach_notes, image_refs = self._expand_at_attachments(user_input)
+                for note in attach_notes:
+                    display.print_event("info", note)
 
-            if should_block_paste(user_input):
-                display.print_event("warn", paste_block_message())
-                continue
+                if image_refs and not self.vision_enabled:
+                    from core.vision import vision_disabled_message
+                    display.print_event("error", vision_disabled_message())
+                    continue
 
-            # Multimodal when @image paths were expanded; else plain text.
-            if image_refs:
-                from core.vision import build_user_image_content, content_text_preview
-                user_content: Any = build_user_image_content(
-                    user_input,
-                    [r["path"] for r in image_refs],
-                    as_refs=True,
-                )
-            else:
-                from core.vision import content_text_preview
-                user_content = user_input
+                if should_block_paste(user_input):
+                    display.print_event("warn", paste_block_message())
+                    continue
 
-            messages.append({"role": "user", "content": user_content})
-            self.session.add_message("user", user_content)
+                # Multimodal when @image paths were expanded; else plain text.
+                if image_refs:
+                    from core.vision import build_user_image_content, content_text_preview
+                    user_content: Any = build_user_image_content(
+                        user_input,
+                        [r["path"] for r in image_refs],
+                        as_refs=True,
+                    )
+                else:
+                    from core.vision import content_text_preview
+                    user_content = user_input
 
-            self._init_interaction_log()
-            if self.interaction_log:
-                self.interaction_log.begin_interaction(content_text_preview(user_content))
+                messages.append({"role": "user", "content": user_content})
+                self.session.add_message("user", user_content)
 
-            # Reasoning loop for this turn
-            global_turn = self.session_stats.total_turns
-            outcome = "unknown"
-            errors_in_turn = 0
-            help_calls = 0
-            think_only_nudges = 0
-            task_start_time = time.monotonic()
+                self._init_interaction_log()
+                if self.interaction_log:
+                    self.interaction_log.begin_interaction(content_text_preview(user_content))
+
+                # Reasoning loop for this turn
+                global_turn = self.session_stats.total_turns
+                outcome = "unknown"
+                errors_in_turn = 0
+                help_calls = 0
+                think_only_nudges = 0
+                task_start_time = time.monotonic()
             
-            for turn in range(1, self.max_turns + 1):
-                compaction_triggered = False
-                token_est = estimate_messages_tokens(messages)
-                if token_est > self.context_budget:
-                    messages = self._compact_messages(messages)
-                    compaction_triggered = True
-                    display.print_event(
-                        "compact",
-                        f"Context compacted — budget {self.context_budget:,} tokens"
+                for turn in range(1, self.max_turns + 1):
+                    compaction_triggered = False
+                    token_est = estimate_messages_tokens(messages)
+                    if token_est > self.context_budget:
+                        messages = self._compact_messages(messages)
+                        compaction_triggered = True
+                        display.print_event(
+                            "compact",
+                            f"Context compacted — budget {self.context_budget:,} tokens"
+                        )
+
+                    self._drain_mailbox_into_messages(messages)
+                    
+                    # Checkpoint checkpoints to support JIT "rethink" rollback
+                    session_checkpoint = len(self.session.messages)
+                    messages_checkpoint = len(messages)
+
+                    response, usage, elapsed = self._call_llm(messages, turn=turn)
+                    if response is None:
+                        break
+
+                    self._record_assistant_turn(messages, response)
+
+                    # Stats + optional auto-checkpoint
+                    budget_used = token_est / self.context_budget
+                    turn_stats, checkpoint_saved = self._emit_stats(
+                        turn=global_turn + turn,
+                        messages_before=messages[:-1],
+                        response=response,
+                        elapsed=elapsed,
+                        usage=usage,
+                        compaction_triggered=compaction_triggered,
+                        context_budget_used=budget_used,
                     )
 
-                self._drain_mailbox_into_messages(messages)
-                response, usage, elapsed = self._call_llm(messages, turn=turn)
-                if response is None:
-                    break
-
-                self._record_assistant_turn(messages, response)
-
-                # Stats + optional auto-checkpoint
-                budget_used = token_est / self.context_budget
-                turn_stats, checkpoint_saved = self._emit_stats(
-                    turn=global_turn + turn,
-                    messages_before=messages[:-1],
-                    response=response,
-                    elapsed=elapsed,
-                    usage=usage,
-                    compaction_triggered=compaction_triggered,
-                    context_budget_used=budget_used,
-                )
-
-                if usage and usage.get("aborted"):
-                    outcome = "aborted"
-                    break
+                    if usage and usage.get("aborted"):
+                        outcome = "aborted"
+                        break
                 
-                # Meta Guidance
-                hints = self.guidance_engine.evaluate(
-                    turn_stats=turn_stats,
-                    session_stats=self.session_stats,
-                    recent_errors=errors_in_turn,
-                    help_calls=help_calls,
-                    turns_this_task=turn,
-                )
-                display.print_guidance(hints)
+                    # Meta Guidance
+                    hints = self.guidance_engine.evaluate(
+                        turn_stats=turn_stats,
+                        session_stats=self.session_stats,
+                        recent_errors=errors_in_turn,
+                        help_calls=help_calls,
+                        turns_this_task=turn,
+                    )
+                    display.print_guidance(hints)
 
-                actions = self._extract_actions(response, backend="primary")
-                if not actions:
-                    # Think-only / prose-only: nudge once to emit a real tool_call
-                    if (
-                        think_only_nudges < 2
-                        and (
-                            THINK_RE.search(response or "")
-                            or "tool_call" in (response or "").lower()
-                            or "I need to" in (response or "")
-                        )
-                    ):
-                        think_only_nudges += 1
-                        nudge = (
-                            "You reasoned but did not execute a valid tool call. "
-                            "Emit exactly one <tool_call> now using "
-                            "<parameter=NAME>…</parameter> (never bare <path> tags). "
-                            "If the task is finished, reply DONE with a short summary."
-                        )
-                        messages.append({"role": "user", "name": "steward_nudge", "content": nudge})
-                        self.session.add_message("user", nudge, name="steward_nudge")
-                        display.print_event("warn", f"Think-only response — nudge {think_only_nudges}/2")
-                        continue
-                    outcome = "success"
-                    break
+                    actions = self._extract_actions(response, backend="primary")
+                    if not actions:
+                        # Think-only / prose-only: nudge once to emit a real tool_call
+                        if (
+                            think_only_nudges < 2
+                            and (
+                                THINK_RE.search(response or "")
+                                or "tool_call" in (response or "").lower()
+                                or "I need to" in (response or "")
+                            )
+                        ):
+                            think_only_nudges += 1
+                            nudge = (
+                                "You reasoned but did not execute a valid tool call. "
+                                "Emit exactly one <tool_call> now using "
+                                "<parameter=NAME>…</parameter> (never bare <path> tags). "
+                                "If the task is finished, reply DONE with a short summary."
+                            )
+                            messages.append({"role": "user", "name": "steward_nudge", "content": nudge})
+                            self.session.add_message("user", nudge, name="steward_nudge")
+                            display.print_event("warn", f"Think-only response — nudge {think_only_nudges}/2")
+                            continue
+                        outcome = "success"
+                        break
 
-                for action in actions:
-                    if action["name"] == "help":
-                        help_calls += 1
+                    for action in actions:
+                        if action["name"] == "help":
+                            help_calls += 1
 
-                _, errors_in_turn = self._process_response_actions(
-                    response,
-                    messages,
-                    backend="primary",
-                    log_actions=True,
-                )
+                    _, errors_in_turn = self._process_response_actions(
+                        response,
+                        messages,
+                        backend="primary",
+                        log_actions=True,
+                    )
 
-                if "DONE" in response:
-                    outcome = "success"
-                    break
-            else:
-                outcome = "max_turns_reached"
+                    # Rethink branch logic for tool failure in interactive REPL
+                    if errors_in_turn > 0 and self.rethink_enabled:
+                        rethink_success = False
+                        for retry in range(2):
+                            display.print_event("warn", f"Tool failed. Triggering Rethink loop (retry {retry+1}/2)…")
+                            
+                            # Roll back in-memory session changes for this turn
+                            self.session.messages = self.session.messages[:session_checkpoint]
+                            
+                            # Inject nudge warning to the temporary context
+                            nudge = "The previous tool call failed. Please analyze the stdout/stderr above, rethink your plan, and try a different command or parameter combination."
+                            messages.append({"role": "user", "name": "steward_nudge", "content": nudge})
+                            
+                            response, usage, elapsed = self._call_llm(messages, turn=turn)
+                            if response is None:
+                                break
+                                
+                            self._record_assistant_turn(messages, response)
+                            _, errors_in_turn = self._process_response_actions(
+                                response,
+                                messages,
+                                backend="primary",
+                                log_actions=True,
+                            )
+                            
+                            if errors_in_turn == 0:
+                                rethink_success = True
+                                display.print_event("ok", "Rethink succeeded! Proceeding with successful path.")
+                                break
+                                
+                        if rethink_success:
+                            # Clean up context history to preserve KV Cache and hide the failed attempts
+                            successful_assistant_msg = messages[-2]
+                            successful_tool_results = messages[-1:]
+                            
+                            # Revert local messages to clean checkpoint
+                            messages = messages[:messages_checkpoint]
+                            self.session.messages = self.session.messages[:session_checkpoint]
+                            
+                            # Re-commit only the successful path
+                            self._record_assistant_turn(messages, successful_assistant_msg["content"], persist_session=True)
+                            for msg in successful_tool_results:
+                                self._append_tool_result(messages, msg["name"], msg["content"], persist=True)
+                        else:
+                            # If all retries failed, roll back the temporary session changes and commit only the final state to history
+                            self.session.messages = self.session.messages[:session_checkpoint]
+                            self._record_assistant_turn(messages[-2:], messages[-2]["content"], persist_session=True)
 
-            if self.interaction_log:
-                total_elapsed = time.monotonic() - task_start_time
-                self.interaction_log.end_interaction(outcome, turn, 0, 0, total_elapsed)  # We could track total tokens here if needed
+                    if "DONE" in response:
+                        outcome = "success"
+                        break
+                else:
+                    outcome = "max_turns_reached"
+
+                if self.interaction_log:
+                    total_elapsed = time.monotonic() - task_start_time
+                    self.interaction_log.end_interaction(outcome, turn, 0, 0, total_elapsed)  # We could track total tokens here if needed
                 
-            display.print_separator()
+                display.print_separator()
+        finally:
+            self._update_current_state("offline")
 
     # ------------------------------------------------------------------
     # LLM call — streaming or blocking

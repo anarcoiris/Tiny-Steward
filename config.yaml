@@ -16,7 +16,7 @@ llm:
 
     provider: qwythos                  # chat-template dialect (core/providers)
 
-    ctx: 131072                        # client compaction budget (server -c may be larger)
+    ctx: 196608                        # client compaction budget (server -c may be larger)
 
     max_tokens: 16384
 
@@ -61,7 +61,7 @@ llm:
     model: "qwen3-4b-instruct-96k"
     provider: qwen3_json               # swappable secondary dialect (core/providers)
     ctx: 98304
-    max_tokens: 4192
+    max_tokens: 8192
     temperature: 0.15
     # Prefer TTFT for micro-agents; budget 0 disables sampler-side think
     enable_thinking: false
@@ -148,14 +148,21 @@ sessions:
 
 
 # Global RULES.md — injected after the built-in system prompt on every new
-
 # conversation build (not persisted into session.json history). Keep short.
-
 rules:
-
   enabled: true
-
   path: "./RULES.md"          # fallback search: ./sessions/RULES.md
+
+# Layer 0 System OS Invariants (hard rules for primitive tools and shell execution)
+os_invariants:
+  os: "windows"
+  shell: "powershell"
+  path_style: "absolute"
+  mandatory_primitives:
+    - "Operating system is Windows. PowerShell (pwsh) executions are preferred as the main resort."
+    - "Never invoke linux/bash tools or commands (no bash, no WSL, no ls/cat/grep in shell commands)."
+    - "Never use cd command inside tools (rely on Cwd arguments)."
+    - "Always use absolute paths when referencing directories/files."
 
 
 
@@ -185,7 +192,7 @@ ui:
 
 #   → single slot; concurrent child terminals serialize (503 retries help).
 
-# - orchestrator (:11440) qwythos-9b-96k: --parallel 1, -c 262144 (server),
+# - orchestrator (:11440) qwythos-9b-96k: --parallel 1, -c 131072 (server),
 
 #   while config.yaml ctx: 131072 is the budget Tiny Steward uses for compaction
 

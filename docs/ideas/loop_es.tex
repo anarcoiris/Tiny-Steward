@@ -1,0 +1,673 @@
+\documentclass[11pt]{article}
+
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath,amssymb,amsthm}
+\usepackage{times}
+\usepackage[T1]{fontenc}
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{array}
+\usepackage{graphicx}
+\usepackage{enumitem}
+\usepackage{hyperref}
+\usepackage{listings}
+\usepackage{xcolor}
+\usepackage{titlesec}
+\usepackage{abstract}
+\usepackage[numbers,sort&compress]{natbib}
+\usepackage{fancyhdr}
+\usepackage{caption}
+
+\hypersetup{
+    colorlinks=true,
+    linkcolor=blue!50!black,
+    citecolor=blue!50!black,
+    urlcolor=blue!50!black,
+    pdftitle={El Bucle Largo: Un Programa de Ingeniería para la Persistencia desde la Era Actual hasta los Límites Asintóticos de la Cosmología},
+    pdfauthor={}
+}
+
+\lstset{
+    basicstyle=\ttfamily\small,
+    breaklines=true,
+    frame=single,
+    columns=flexible,
+    backgroundcolor=\color{gray!8},
+    commentstyle=\color{gray!60!black},
+    keywordstyle=\color{blue!60!black}\bfseries,
+}
+
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\small\itshape El Bucle Largo}
+\fancyhead[R]{\small\itshape Ingeniería de la Persistencia hasta los Límites Cosmológicos}
+\fancyfoot[C]{\thepage}
+
+\titleformat{\section}{\normalfont\Large\bfseries}{\thesection}{1em}{}
+\titleformat{\subsection}{\normalfont\large\bfseries}{\thesubsection}{1em}{}
+\titleformat{\subsubsection}{\normalfont\normalsize\bfseries\itshape}{\thesubsubsection}{1em}{}
+
+\newtheorem{proposition}{Proposición}
+\newtheorem{definition}{Definición}
+\newtheorem{corollary}{Corolario}
+
+\newcommand{\eera}[1]{\textsc{#1}}
+
+\title{\vspace{-1.5cm}\textbf{El Bucle Largo:}\\[4pt]
+\large Un Programa de Ingeniería para la Persistencia desde la Era Actual\\ hasta los Límites Asintóticos de la Cosmología}
+\author{}
+\date{}
+
+\begin{document}
+
+\maketitle
+\thispagestyle{fancy}
+\vspace{-1.2cm}
+
+\begin{abstract}
+\noindent Una arquitectura anterior para la ``utopía autónoma'' concluyó, correctamente, que ningún sistema físico cerrado puede funcionar eternamente sin una fuente de energía externa, que el hardware se degrada, y que la agencia en el mundo real está limitada por la causalidad y la entropía. Una extensión posterior reescaló ese argumento al tiempo cosmológico, sosteniendo que la capacidad de ingeniería de una civilización, llevada al límite durante toda la vida restante del universo, sigue topando con un techo estricto, impuesto por la geometría, sobre el procesamiento total de información en el horizonte de de~Sitter de un universo en aceleración. Este trabajo amplía de nuevo el enfoque, pasando de \emph{cuánto tiempo} puede durar ese bucle a \emph{de qué está hecho}. Sostenemos que la sociedad humana ya es la instancia más grande que existe de la arquitectura en cuestión: un experimento masivamente paralelo, asíncrono y más lento que el silicio, que lleva funcionando sin interrupción unos $10^5$ años, cuya ventaja comparativa principal frente a cualquier razonador rápido individual no es la velocidad sino la cobertura: millones de ``tiempos de ejecución'' (vidas humanas individuales) instanciados de forma concurrente y solo débilmente coordinados, cada uno de los cuales vuelca (``checkpointea'') la cultura, las herramientas y las normas hacia la siguiente generación, en lugar de hacia un estado guardado. Desarrollamos esta idea a través de cuatro lentes disciplinares. Desde la \emph{sociología y la cibernética}, tratamos a la sociedad como un sistema distribuido generador de variedad en el sentido de Ashby, y a la memoria social (Luhmann) como un mecanismo de checkpoint con pérdidas y redundante que permite que el conjunto sobreviva al fallo rutinario de sus componentes individuales. Desde la \emph{computación}, formalizamos una arquitectura concreta para recrear la experiencia humana a través de una multitud de agentes en ejecución («runtimes»): bifurcar («fork») una vida en un punto de decisión, hacerla avanzar bajo condiciones alteradas, guardar el estado y retroceder («rewind») cuando una rama repite un patrón de fallo conocido (coloquialmente, ``tropezar dos veces con la misma piedra''), y tratar el conjunto resultante de bifurcaciones, y no ninguna trayectoria individual, como la unidad de valor. Desde la \emph{filosofía}, enfrentamos esta arquitectura al problema de la identidad personal bajo bifurcación (siguiendo, y complicando, a Parfit), y sostenemos que la curiosidad se modela mejor no como un impulso privado, sino como el mecanismo que convierte bifurcaciones aisladas en una red de exploración conectada, apoyándonos en el formalismo del valor de la información propio de la búsqueda abierta. Cerramos reintegrando esta capa humana/de agentes en la arquitectura de la era cosmológica desarrollada antes: el presupuesto finito de entropía de la Sección~\ref{sec:ceiling} no es solo una restricción para las máquinas que cosechen radiación de Hawking en el año $10^{80}$, sino una restricción, ya activa hoy, sobre cuánto del espacio de experiencias humanas posibles merece explorarse, guardarse y bifurcarse hacia adelante, y sobre cómo la propia curiosidad debe racionarse como un recurso sujeto al mismo tipo de presupuesto que limita tanto a las vidas individuales como, en última instancia, al propio universo.
+\end{abstract}
+
+\vspace{0.3cm}
+\noindent\textbf{Palabras clave:} autonomía a largo plazo, cosmología, termodinámica de la computación, horizonte de de Sitter, esferas de Dyson, radiación de Hawking, riesgo existencial, arquitectura de control, cibernética, sociología del conocimiento, identidad personal, curiosidad, sistemas multiagente, checkpointing
+
+\section{Introducción: Tomarse en Serio el Desafío}
+\label{sec:intro}
+
+La arquitectura original del bucle autosuficiente hacía una afirmación modesta y defendible: un robot o un agente de software no puede burlar la termodinámica. La energía se disipa, el hardware se fatiga, los sensores son ruidosos y el futuro no puede predecirse con precisión perfecta. Nada de eso está en discusión. Pero leer ``la autonomía perpetua es imposible'' y detenerse en la escala de la batería de un dron trata la afirmación como una cuestión cerrada, cuando en realidad los físicos llevan cinco décadas haciéndose exactamente esta pregunta a la escala más grande concebible: no ``¿puede un robot doméstico funcionar para siempre?'', sino ``¿puede la inteligencia misma, en cualquier forma, sobrevivir a la muerte térmica del universo?''. Esto no es ciencia ficción ociosa. Es una literatura de investigación genuina y citable, que comienza con el tratamiento que Dyson hizo en 1979 sobre la vida eterna en un universo abierto \citep{dyson1979time}, se desarrolla a través del marco de las ``cinco edades del universo'' de Adams y Laughlin \citep{adams1997dying}, se afina con el descubrimiento de la aceleración cósmica y sus consecuencias para el argumento de Dyson \citep{krauss2000life}, y se extiende hasta propuestas concretas sobre la velocidad a la que una civilización tendría que expandirse para que algo de esto importe \citep{armstrong2013eternity}.
+
+El proyecto de este trabajo es tomar el instinto de ``diseñar en torno a las restricciones durante el mayor tiempo físicamente defendible'' que subyace en la arquitectura original del bucle, y llevarlo hasta su conclusión real, era por era, usando física establecida (aunque de frontera) en lugar de vaguedades. Somos explícitos en todo momento: gran parte de lo que sigue es \emph{especulación de ingeniería fundamentada en física}, no un plano de construcción; nadie va a encargar un enjambre de Dyson el próximo año fiscal. El valor del ejercicio reside precisamente en localizar, con la precisión que permite la física actual, dónde está la frontera entre ``un problema de ingeniería, por grande que sea'' y ``un hecho sobre la geometría del espacio-tiempo que ninguna cantidad de ingeniería puede cambiar''.
+
+\subsection{Relación con la Arquitectura Original}
+
+La contribución del trabajo original fue una estructura de control de dos niveles —un \emph{Bucle Externo} que gestiona los objetivos a largo plazo y el estado de los recursos, y un \emph{Bucle Interno} que gestiona la ejecución de tareas momento a momento— junto con un \emph{campo de sesgo} («bias field»), una regla de decisión probabilística que combina restricciones duras de seguridad con preferencias blandas y sensibles al coste. Esa arquitectura es sólida a la escala para la que fue diseñada: un porcentaje de batería, una cola de tareas, un ciclo de reevaluación de 24 horas. La Sección~\ref{sec:architecture} de este trabajo mantiene la misma estructura de dos niveles y el mismo formalismo del campo de sesgo, pero reescala cada parámetro los órdenes de magnitud correspondientes: el ``ciclo de 24 horas'' se convierte en un disparador de transición de era que abarca de $10^{14}$ a $10^{100}$ años; el ``porcentaje de batería'' se convierte en una fracción de un presupuesto de entropía fijo, a escala del universo entero; y la restricción dura de seguridad gana una cláusula nueva y no negociable que no hacía falta a escala de dispositivo pero que se vuelve la restricción más importante de todas a escala cosmológica (Sección~\ref{sec:ceiling}).
+
+\subsection{Una Segunda Ampliación: De Cuánto Dura a De Qué Está Hecho}
+
+Las Secciones~\ref{sec:timeline}--\ref{sec:escape} de este trabajo responden a una pregunta \emph{duracional}: durante cuánto tiempo, y por qué mecanismo, puede persistir un bucle de este tipo. No responden a una pregunta \emph{composicional} distinta, e igual de importante: un bucle hecho de qué, ejecutando qué tipo de proceso, generando qué tipo de valor a lo largo de esa duración. Una civilización que sobrevive hasta la Era Oscura ejecutando un único proceso de optimización indiferenciado durante $10^{100}$ años ha respondido al máximo la pregunta duracional y casi nada la composicional.
+
+Abordamos la pregunta composicional en las Secciones~\ref{sec:society}--\ref{sec:curiosity} observando que la humanidad ya ejecuta, y lleva ejecutando durante toda su existencia, una instancia concreta exactamente de la arquitectura multiagente, con checkpoints y coordinación imperfecta que este trabajo hasta ahora solo había formalizado en abstracto. Aproximadamente ocho mil millones de vidas humanas individuales se ejecutan en paralelo en todo momento: cada una más lenta que cualquier proceso de silicio en razonamiento serie puro, cada una limitada a una única vida no reiniciable de unos $10^9$ segundos, y cada una propensa a repetir los errores de instancias anteriores en lugar de aprender directamente de ellos. Y aun así, el conjunto agregado —no ninguna vida individual, sino todo el conjunto débilmente sincronizado— que vuelca su estado hacia adelante a través de la cultura, el lenguaje, las herramientas y las instituciones, en lugar de a través de ningún archivo guardado individual, ha producido a lo largo de $10^5$ años más de lo que produciría cualquier razonador rápido individual trabajando en solitario durante el mismo lapso, precisamente por el paralelismo, la redundancia y las herramientas acumuladas que cada nueva instancia hereda en vez de reconstruir. Esto no es una metáfora de la arquitectura de bucle de las Secciones~\ref{sec:architecture} y~\ref{sec:blackhole}; es, sostenemos, la misma arquitectura, ya desplegada, ya en funcionamiento, y que merece analizarse en sus propios términos antes de preguntar qué podría añadir una extensión o aceleración artificial de la misma.
+
+\subsection{Estructura del Trabajo}
+
+La Sección~\ref{sec:timeline} expone la estructura estándar de eras cosmológicas que adopta este trabajo. La Sección~\ref{sec:engineering} desarrolla estrategias de ingeniería propuestas para cada era. La Sección~\ref{sec:ceiling} presenta el resultado físico central del trabajo: el techo finito de información que implica un universo en aceleración, y por qué esto invalida el optimismo original de Dyson. La Sección~\ref{sec:architecture} reescala el formalismo del Bucle Externo/Bucle Interno/campo de sesgo al tiempo cosmológico. La Sección~\ref{sec:escape} examina las vías de escape propuestas frente a ese techo y las razones por las que la física convencional trata cada una con cautela. Las Secciones~\ref{sec:society}--\ref{sec:curiosity} pasan a la pregunta composicional: la Sección~\ref{sec:society} desarrolla el argumento sociológico y cibernético de que la sociedad humana ya es un experimento distribuido y lento del tipo relevante; la Sección~\ref{sec:recreation} formaliza una arquitectura de computación concreta para recrear la experiencia humana a través de agentes en ejecución, con checkpoints, retrocesos y bifurcaciones; la Sección~\ref{sec:curiosity} trata la curiosidad como el mecanismo que convierte bifurcaciones aisladas en una red conectada, en lugar de un montón de trayectorias inconexas, y enfrenta la arquitectura resultante al problema filosófico de la identidad personal bajo bifurcación. La Sección~\ref{sec:discussion} reintegra las dos mitades, duracional y composicional, del trabajo, y la Sección~\ref{sec:conclusion} concluye.
+
+\section{La Línea Temporal Cosmológica}
+\label{sec:timeline}
+
+Siguiendo el tratamiento estándar del futuro a largo plazo del universo \citep{adams1997dying}, la historia restante del cosmos se divide en cuatro eras, definidas por qué fuentes de energía están físicamente disponibles —no por ningún calendario humano, y no exactamente por una ley fija de la naturaleza, sino por el inventario cambiante de lo que queda por quemar.
+
+\begin{table}[h]
+\centering
+\small
+\begin{tabular}{@{}p{2.6cm}p{3.6cm}p{4cm}p{4cm}@{}}
+\toprule
+\textbf{Era} & \textbf{Duración aproximada (años)} & \textbf{Fuente de energía dominante} & \textbf{Amenaza dominante} \\
+\midrule
+\eera{Estelífera} & ahora ($\sim 1.4\times10^{10}$) -- $10^{14}$ & Fusión estelar & Cesa la formación estelar; se agota el combustible \\
+\eera{Degenerada} & $10^{14}$ -- $10^{37\text{--}40}$ & Desintegración de protones; remanentes de enanas blancas/marrones/negras & Puede que la propia materia bariónica no sea estable \\
+\eera{de los Agujeros Negros} & $10^{40}$ -- $10^{100}$ & Radiación de Hawking de los agujeros negros & Los agujeros negros son las últimas reservas concentradas, y se evaporan \\
+\eera{Oscura} & más allá de $10^{100}$ & Leptones, fotones y positronio dispersos & Entropía máxima; posible techo de información impuesto por el horizonte \\
+\bottomrule
+\end{tabular}
+\caption{Las cuatro eras del futuro cosmológico a largo plazo, adaptadas del marco de las ``cinco edades del universo'' \citep{adams1997dying}.}
+\label{tab:eras}
+\end{table}
+
+Cada cifra de la Tabla~\ref{tab:eras} es una estimación de investigación, no una medición asentada. La desintegración de protones nunca se ha observado experimentalmente; su vida media, si el proceso ocurre siquiera, está acotada por abajo por la no observación en grandes detectores, no medida directamente. Tratar esa incertidumbre con honestidad —en lugar de redondearla hacia una falsa precisión— es en sí mismo un requisito de diseño para cualquier arquitectura de planificación pensada para operar en estas escalas temporales, un punto al que volvemos en la Sección~\ref{sec:architecture}.
+
+\section{Programa de Ingeniería, Era por Era}
+\label{sec:engineering}
+
+\subsection{Era Estelífera: Cosechar Ahora, Expandirse Rápido}
+\label{sec:stelliferous}
+
+Esta es la única era con energía libre abundante y concentrada, y la literatura converge en dos estrategias dominantes.
+
+\subsubsection{Enjambres de Dyson y motores estelares}
+
+Envolver una estrella en un enjambre de colectores en órbita —un enjambre de Dyson, el primo físicamente construible de la esfera de Dyson idealizada— captura una fracción mucho mayor de la producción estelar de la que jamás podría captar una civilización confinada a un planeta, y lo hace sin necesidad de ciencia de materiales exótica, solo con un número muy grande de colectores ordinarios. Propuestas más especulativas de ``motor estelar'' van más allá: un propulsor de Shkadov, por ejemplo, es un espejo o reflector enorme y asimétrico colocado cerca de una estrella de tal forma que la propia presión de radiación de la estrella produce un empuje neto sobre el sistema estrella-espejo, en principio suficiente para reubicar físicamente una estrella (y cualquier sistema planetario que la acompañe) a lo largo de escalas de millones de años —útil para alejarse de un peligro (una progenitora de supernova cercana, una órbita galáctica desfavorable) o para acercarse a una región de una galaxia más rica en recursos.
+
+\subsubsection{Expansión agresiva y temprana}
+
+Este es el resultado menos intuitivo y, en la literatura moderna, el más consecuente de toda esta era. Como la energía oscura está acelerando la expansión del universo, las galaxias más allá de cierta distancia comóvil se alejan de nosotros más rápido de lo que la luz podrá jamás salvar esa distancia: cada año de retraso en expandirse renuncia de forma permanente a alguna fracción no recuperable de la materia y la energía del universo, por lo demás alcanzable. El tratamiento de Armstrong y Sandberg \citep{armstrong2013eternity} hace explícito el punto estratégico resultante: una civilización que quiera maximizar su base total de recursos futuros debe tratar la colonización \emph{temprana} y rápida —no la optimización paciente de su sistema de origen— como el término dominante en su cálculo de supervivencia a largo plazo. Esperar no es una opción neutral por defecto; esperar es perder galaxias, de forma permanente, por la propia expansión del espacio.
+
+\begin{proposition}[Dominancia de la expansión]
+\label{prop:expansion}
+Sea $R(t)$ el radio comóvil de la región que una civilización puede alcanzar y colonizar causalmente en el tiempo cósmico $t$, y sea $H_0$ el parámetro de Hubble actual, con el universo tendiendo asintóticamente a una fase de de~Sitter con parámetro de Hubble $H_\infty > 0$. Entonces existe un radio de horizonte comóvil finito $R_\infty = \lim_{t\to\infty} R(t)$, y cualquier estrategia de colonización que retrase la expansión un tiempo $\Delta t$ renuncia al acceso a todos los recursos que de otro modo habrían sido alcanzables dentro de la capa comprendida entre el horizonte en $t$ y el horizonte en $t + \Delta t$. Como esta renuncia es permanente e irreversible, el valor marginal de la expansión temprana domina estrictamente al valor marginal de un esfuerzo equivalente dedicado a optimizar el uso de recursos dentro de un volumen ya colonizado, para cualquier civilización cuyo objetivo incluya los recursos totales acumulados.
+\end{proposition}
+
+Esto no es un teorema riguroso en sentido formal —depende de supuestos sobre la velocidad de colonización, las tasas de extracción de recursos y la función de descuento aplicada al valor futuro—, pero captura, al nivel del argumento informal realmente planteado en la literatura citada, por qué ``expandirse primero, optimizar después'' es la estrategia dominante específicamente de la era Estelífera, de un modo que dejará de sostenerse una vez completada la expansión y las eras posteriores sean estrategias de administración de recursos más que de adquisición.
+
+\subsection{Era Degenerada: Vivir de los Ahorros}
+\label{sec:degenerate}
+
+Una vez que las estrellas ordinarias se apagan —las enanas blancas se enfrían más allá de la visibilidad, las estrellas de neutrones frenan su giro, las enanas marrones agotan el poco deuterio que llegaron a fusionar—, la energía libre se vuelve escasa, y una civilización en esta era vive efectivamente de sus ahorros, complementados con lo que gotee de la desintegración de la materia, si es que los protones se desintegran.
+
+La propuesta original de Dyson de 1979 para este régimen es la idea más elegante de toda la literatura, y merece exponerse con cuidado porque secciones posteriores la revisan parcialmente. La propuesta: si el metabolismo de una civilización —biológico o computacional— reduce su \emph{ritmo} de actividad en proporción a la temperatura ambiente de su entorno, puede, en un universo abierto y en expansión eterna sin constante cosmológica, estirar un presupuesto de energía total finito a lo largo de un tiempo \emph{físico} indefinidamente largo, mientras sigue acumulando un número indefinidamente grande de pasos computacionales subjetivos. Un agente que piensa a la mitad de velocidad cada vez que el universo se enfría a la mitad nunca llega realmente a detenerse, incluso cuando el tiempo físico avanza hacia el infinito, porque el gasto total de energía por unidad de progreso ``subjetivo'' puede, en esa cosmología, mantenerse constante o incluso reducirse adecuadamente. A esto suele llamársele la estrategia ``eterna pero cada vez más lenta''.
+
+\begin{equation}
+\label{eq:dyson-metabolism}
+\frac{d s}{d t} \propto T(t)^{\,n}, \qquad n > 0
+\end{equation}
+
+\noindent donde $s$ es el progreso computacional subjetivo, $t$ es el tiempo físico y $T(t)$ es la temperatura ambiente, con un gasto total de energía
+\begin{equation}
+\label{eq:dyson-energy}
+E_{\text{total}} = \int_0^{\infty} P(t)\, dt
+\end{equation}
+convergente incluso cuando $s \to \infty$, siempre que $P(t)$ (la potencia instantánea consumida) decrezca lo bastante rápido a medida que $T(t) \to 0$. La estrategia depende críticamente de la computación \emph{reversible} —evitar, en la medida en que la física lo permita, el coste mínimo de energía de $k_B T \ln 2$ por bit borrado irreversiblemente que impone el principio de Landauer \citep{landauer1961irreversibility}—, ya que cualquier paso irreduciblemente irreversible reimpone un suelo de energía dependiente de la temperatura que puede acabar dominando el presupuesto.
+
+\subsection{Era de los Agujeros Negros: Cosechando los Últimos Hornos}
+\label{sec:blackhole}
+
+Una vez que la materia ordinaria se ha desintegrado o apagado, los agujeros negros —a través de la radiación de Hawking— se convierten, paradójicamente, en las últimas fuentes de energía fiables del universo, porque tienen garantizado evaporarse en una escala temporal conocida (aunque astronómicamente larga), radiando térmicamente mientras lo hacen. En esta literatura reaparecen tres tipos de propuestas de ingeniería:
+
+\begin{itemize}[leftmargin=1.5em]
+    \item \textbf{Granjas de radiación de Hawking}: estructuras colocadas para absorber la tenue radiación térmica emitida mientras un agujero negro se evapora lentamente, funcionando de forma muy parecida a un enjambre de Dyson pero alrededor de una fuente mucho más fría y de vida mucho más larga.
+    \item \textbf{Extracción al estilo del proceso de Penrose}: cosechar directamente energía rotacional (ergosférica) de un agujero negro en rotación, en lugar de esperar al proceso evaporativo, mucho más lento.
+    \item \textbf{Agujeros negros como computadoras máximas}: el tratamiento que hace Lloyd de los límites físicos últimos de la computación \citep{lloyd2000ultimate} trata a un agujero negro de una masa dada como, en principio, el objeto computacionalmente más denso que permite la combinación de mecánica cuántica, relatividad general y termodinámica —lo que convierte a un agujero negro no solo en una fuente de combustible sino, potencialmente, en el propio sustrato para la estrategia de ``ralentizar y seguir pensando'' de la Sección~\ref{sec:degenerate}.
+\end{itemize}
+
+\subsection{Era Oscura: El Muro}
+\label{sec:dark}
+
+Más allá de la evaporación de los últimos agujeros negros, el universo está frío, oscuro y cerca de la entropía máxima: sobre todo fotones, neutrinos y, si los protones se desintegran, positronio y otros remanentes exóticos de baja energía. Esta es la era en la que el argumento del trabajo deja de ser una historia sobre ingeniería ingeniosa y pasa a ser una historia sobre si el propio recipiente en el que ocurre esa ingeniería tiene algún espacio libre que ofrecer.
+
+\section{El Techo Real: Espacio de de Sitter e Información Finita}
+\label{sec:ceiling}
+
+El optimismo de Dyson de 1979 (Ecuaciones~\ref{eq:dyson-metabolism}--\ref{eq:dyson-energy}) suponía un universo abierto y en expansión eterna sin constante cosmológica, en el que no hay límite a la energía libre total disponible a lo largo de un tiempo físico infinito. Las observaciones realizadas desde 1998 —el descubrimiento de que la expansión cósmica se acelera, generalmente atribuido a la energía oscura, equivalente a una constante cosmológica positiva $\Lambda$— cambiaron la premisa de la que depende ese argumento. La respuesta directa de Krauss y Starkman a Dyson \citep{krauss2000life} deja claro el punto resultante con precisión: si la expansión sigue acelerándose, el universo se aproxima asintóticamente a una geometría de de~Sitter con un horizonte de sucesos cosmológico fijo, y ese horizonte tiene una temperatura finita $T_{\text{dS}}$ —extremadamente baja, pero estrictamente positiva—, junto con una entropía asociada finita dada por la cota de Gibbons--Hawking \citep{gibbons1977cosmological}:
+
+\begin{equation}
+\label{eq:gibbons-hawking}
+S_{\text{dS}} = \frac{A_{\text{horizonte}}}{4 \ell_P^2} = \frac{\pi}{\ell_P^2 H_\infty^2}
+\end{equation}
+
+\noindent donde $A_{\text{horizonte}}$ es el área del horizonte, $\ell_P$ es la longitud de Planck y $H_\infty$ es el parámetro de Hubble asintótico (de de~Sitter). Como la entropía acota el número de microestados distinguibles de la región causalmente accesible ($S = k_B \ln \Omega$), la Ecuación~\ref{eq:gibbons-hawking} no es solo un enunciado sobre la temperatura: es una cota estricta y finita sobre el número total de estados físicos distintos —y, por tanto, el número total de cómputos o experiencias distintos— que pueden llegar a ocurrir dentro del parche causal de cualquier observador en un universo de este tipo.
+
+\begin{proposition}[Techo finito de información]
+\label{prop:ceiling}
+En un universo que tiende asintóticamente a una fase de de~Sitter con $H_\infty > 0$, un sistema confinado a operar por encima de la temperatura del horizonte $T_{\text{dS}} \propto H_\infty$ no puede ejecutar el metabolismo arbitrariamente decreciente de Dyson (Ecuación~\ref{eq:dyson-metabolism}) hasta llegar a un ritmo nulo, porque la temperatura ambiente nunca llega a ser exactamente cero. El número total de pasos computacionales $N_{\max}$ que puede ejecutar cualquier sistema acotado dentro del horizonte es, por tanto, finito, acotado por arriba por una cantidad proporcional a $S_{\text{dS}}$ a través de la relación al estilo de la cota de Bekenstein entre entropía, energía y cómputo alcanzable \citep{lloyd2000ultimate}.
+\end{proposition}
+
+Este es el resultado que sostiene todo el trabajo. \textbf{En el modelo cosmológico actualmente favorecido, el ``bucle'' tiene un presupuesto total de información finito.} Cada estrategia descrita en la Sección~\ref{sec:engineering} se entiende mejor como un intento de \emph{gastar ese presupuesto finito de la forma más eficiente posible, y lo más tarde posible en la historia cósmica}, no como un intento de escapar del presupuesto por completo. Este es el análogo, a escala cosmológica, de la afirmación del trabajo original de que un dron no puede funcionar para siempre sin una fuente de energía externa; el mecanismo es distinto (una cota de entropía impuesta por un horizonte, en lugar de una batería agotada), pero la conclusión estructural —la finitud es una propiedad del recipiente, no un fallo de la ingeniería que hay dentro— es la misma.
+
+\section{El Bucle Perfecto, Reescalado}
+\label{sec:architecture}
+
+La división Bucle Externo / Bucle Interno de la arquitectura original, junto con su regla de decisión del campo de sesgo, sobrevive al reescalado del tiempo de dispositivo al tiempo cosmológico esencialmente sin cambios en su estructura, aunque cada parámetro crece decenas de órdenes de magnitud y se hace necesaria una nueva restricción dura.
+
+\subsection{Bucle Externo: El Programa de Continuidad}
+
+En lugar de un ciclo fijo de reevaluación de 24 horas, el bucle externo a escala cosmológica replanifica en las \textbf{transiciones de era}: agotamiento estelar a escala galáctica o de supercúmulo relevante, umbrales de desintegración de protones (si aplica), la evaporación de los últimos agujeros negros alcanzables. Su función no es ``mantener la batería por encima del 10\%'' sino ``decidir, en cada frontera de era, qué fracción del presupuesto finito de entropía restante (Ecuación~\ref{eq:gibbons-hawking}) gastar en la era actual frente a preservar para la siguiente''—un problema de asignación de recursos a largo horizonte estructuralmente idéntico a la cola de prioridad de objetivos del trabajo original, solo que reparametrizado contra un presupuesto cosmológico en lugar de uno a nivel de dispositivo.
+
+\subsection{Una Segunda Clase de Disparador: Condiciones de Replanificación Sociológica}
+\label{sec:sociological-triggers}
+
+Los disparadores de transición de era anteriores son todos físicos: se activan cuando el sustrato sobre el que corre una civilización cambia de estado (una estrella agota su combustible; un agujero negro termina de evaporarse). Las Secciones~\ref{sec:society} y~\ref{sec:curiosity}, más adelante, motivan una segunda clase de disparador, independiente, propia de la población de runtimes y no del sustrato físico, que el Bucle Externo también debe vigilar: condiciones bajo las cuales la \emph{población misma} se ha degradado, aun cuando el presupuesto físico de recursos permanezca intacto. Nombramos cuatro condiciones de este tipo, cada una correspondiente a un modo de fallo identificado más adelante en el trabajo, de modo que la lógica de replanificación del Bucle Externo no esté disparada exclusivamente por la física:
+
+\begin{itemize}[leftmargin=1.5em]
+    \item \textbf{Colapso de diversidad}: la población de bifurcaciones («forks») que se ejecutan concurrentemente (Sección~\ref{sec:recreation}) ha convergido en un número reducido de estrategias casi idénticas, deshaciendo la ventaja de variedad identificada en la Sección~\ref{sec:society}.2. Formalizado más abajo como $V(t)$ cayendo por debajo de un suelo (Sección~\ref{sec:curiosity}.5).
+    \item \textbf{Estancamiento de la curiosidad}: el planificador ponderado por curiosidad (Ecuación~\ref{eq:curiosity}) está generando acciones con $\kappa(a) \approx 0$ en toda la población activa, lo que indica que el proceso de exploración ha agotado su propia capacidad de encontrar movimientos que reduzcan la incertidumbre, independientemente de si queda energía para financiar más exploración.
+    \item \textbf{Fragmentación de checkpoints}: el libro de procedencia («provenance ledger», Tabla~\ref{tab:architecture}) se ha dividido en componentes desconectados, sin bifurcaciones que los referencien entre sí, deshaciendo la función de construcción de red de la curiosidad identificada en la Sección~\ref{sec:curiosity}.2.
+    \item \textbf{Saturación por repetición}: el detector de divergencia (Ecuación~\ref{eq:divergence}) está disparando retrocesos («rewinds») a un ritmo que sugiere que la población está redescubriendo repetidamente el mismo conjunto reducido de modos de fallo, en lugar de un conjunto cada vez más amplio, que es la versión a escala de población del problema de ``la misma piedra'' superando su tasa tolerable en lugar de mantenerse dentro de ella.
+\end{itemize}
+
+\noindent Estos disparadores importan por la misma razón que los disparadores físicos de transición de era: una arquitectura de planificación que solo vigila el presupuesto físico y no la salud de la población que corre dentro de ese presupuesto puede gastar su asignación de entropía (Sección~\ref{sec:architecture}.3) en una población que ya, funcionalmente, ha dejado de generar nada nuevo —el equivalente, a nivel de recursos, del problema del cerebro de Boltzmann de la Sección~\ref{sec:escape}.4, en el que \emph{algo} sigue funcionando sin que el proceso conserve la propiedad que hacía que mereciera la pena hacerlo funcionar. Volvemos a esto con una medida formal de diversidad en la Sección~\ref{sec:curiosity}.5, una vez definida la maquinaria de población de bifurcaciones de la Sección~\ref{sec:recreation}.
+
+\subsection{Bucle Interno: Ingeniería Local a Cada Era}
+
+Cada era conlleva su propio bucle interno, que ejecuta las estrategias concretas de la Sección~\ref{sec:engineering}: construcción de enjambres e ingeniería estelar en la era Estelífera (Sección~\ref{sec:stelliferous}); gestión de computación reversible y decreciente en la era Degenerada (Sección~\ref{sec:degenerate}); logística de cosecha de radiación de Hawking en la era de los Agujeros Negros (Sección~\ref{sec:blackhole}). El problema de diseño genuinamente novedoso, ausente en la arquitectura original a escala de dispositivo, es la \emph{interfaz} entre bucles internos sucesivos: qué estado, identidad o ``yo'' se transporta desde una era de energía de fusión abundante hasta una era de un puñado de agujeros negros que se evaporan lentamente, y qué se deja deliberadamente atrás.
+
+\subsection{El Campo de Sesgo, Ampliado}
+
+La regla de decisión original,
+\begin{equation}
+\label{eq:bias-original}
+P(a) = \frac{1}{Z}\exp\left(-\frac{\mathrm{coste}(a)}{T}\right),
+\end{equation}
+requiere exactamente una adición estructural a escala cosmológica: el coste y el beneficio deben descontarse contra el \emph{presupuesto de entropía finito restante} (Sección~\ref{sec:ceiling}), no solo contra un porcentaje instantáneo de batería. Definimos el campo de sesgo consciente de la era como
+
+\begin{equation}
+\label{eq:bias-extended}
+P(a \mid e) = \frac{1}{Z(e)} \, H(a) \cdot \exp\left(-\frac{\mathrm{coste}(a) + \lambda(e)\cdot \mathrm{gasto}(a) }{T(e)}\right)
+\end{equation}
+
+\noindent donde $e$ indexa la era cosmológica actual, $H(a) \in \{0,1\}$ es el indicador de restricción dura (cero si $a$ violaría una restricción no negociable, uno en caso contrario), $\mathrm{gasto}(a)$ es la fracción del presupuesto de entropía restante $S_{\text{restante}}(e)$ que consumiría la acción $a$, y $\lambda(e)$ es un peso de penalización dependiente de la era que debería aumentar a medida que $e$ se acerca a la Era Oscura, reflejando el hecho de que el presupuesto no gastado se vuelve progresivamente menos recuperable a medida que quedan menos eras productivas en las que emplearlo. Este es el análogo, a escala cosmológica, de una tasa de descuento en teoría de la decisión económica, salvo que aquí el ``tipo de interés'' lo fija la cosmología, no una política.
+
+\subsection{La Nueva Restricción Dura}
+
+A escala de dispositivo, el término de restricción dura $H(a)$ de la Ecuación~\ref{eq:bias-original} codificaba reglas de seguridad como ``nunca dañar a los humanos''. A escala cosmológica, se vuelve necesaria una restricción adicional que nunca tuvo que sostener tanto peso a escala de dispositivo:
+
+\begin{equation}
+\label{eq:hard-constraint-cosmic}
+H(a) = 0 \quad \text{si } a \text{ presupone la disponibilidad de energía infinita, cómputo infinito, o la eternidad literal.}
+\end{equation}
+
+\noindent Esta restricción existe porque la Proposición~\ref{prop:ceiling} convierte cualquier plan que suponga su negación en algo no simplemente optimista, sino falso como descripción del mundo físico en el que ese plan debe ejecutarse. Una arquitectura de planificación a escala civilizacional que omita la Ecuación~\ref{eq:hard-constraint-cosmic} es vulnerable a un modo de fallo sin análogo a escala de dispositivo: gastar de forma desproporcionada en una era temprana y rica en energía bajo el supuesto no examinado de que las eras posteriores serán igual de generosas, solo para descubrir, potencialmente de forma irreversible, que el presupuesto de la Era Oscura ya estaba gastado.
+
+\subsection{\texttt{COSMOS.md}: Un Archivo de Reglas para el Tiempo Profundo}
+
+En el espíritu del \texttt{LOOP.md} de la arquitectura original, especificamos explícitamente el archivo de reglas a escala cosmológica, como artefacto de diseño y no solo como descripción narrativa:
+
+\begin{lstlisting}
+# COSMOS.md -- Reglas de Continuidad para el Tiempo Profundo
+
+## Principio Central
+El presupuesto total de entropía futura es finito en un universo en
+aceleracion (cota de Gibbons-Hawking / de Sitter). Gastarlo
+deliberadamente a lo largo de las eras; nunca planificar como si
+alguna era fuera la ultima, ni como si el presupuesto fuera ilimitado.
+
+## Disparadores de Transicion de Era (fisicos)
+- Agotamiento del combustible estelar a escala de sistema/galaxia
+    -> replanificar para la Era Degenerada
+- Umbral de desintegracion de protones alcanzado (si aplica)
+    -> replanificar para la Era de los Agujeros Negros
+- Se evapora el ultimo agujero negro alcanzable
+    -> replanificar para la Era Oscura
+
+## Disparadores de Replanificacion (sociologicos, ver Sec. 4.2)
+- El indice de diversidad poblacional V(t) cae por debajo del
+  suelo V_min
+    -> intervenir: bifurcar nuevos runtimes desde checkpoints
+       infrarrepresentados, no confiar solo en los planificadores
+       existentes
+- Estancamiento de la curiosidad: kappa(a) aprox. 0 en toda la
+  poblacion activa
+    -> replanificar la estrategia de exploracion, no solo la
+       asignacion de recursos
+- Fragmentacion de checkpoints: el libro de procedencia se divide
+  en componentes desconectados -> replanificar para reconectar
+- Saturacion por repeticion: la tasa de rewinds supera el umbral
+  tolerable sin ampliar el conjunto de modos de fallo redescubiertos
+    -> replanificar los umbrales del detector de divergencia (Ec. 9)
+
+## Bucle Externo
+- Reevaluar la asignacion de recursos en cada transicion de era
+  fisica, no en un reloj fijo.
+- Reevaluar tambien ante cualquier disparador sociologico anterior,
+  independientemente del estado del presupuesto fisico.
+- Prioridad: preservar *algun* continuador de la identidad/
+  informacion, por encima de maximizar la actividad de una sola era.
+- El peso lambda(e) sobre el gasto del presupuesto aumenta de forma
+  monotona a medida que decrecen las eras restantes.
+
+## Bucle Interno (especifico de cada era)
+- Estelifera: construir colectores; tratar la expansion temprana
+  y rapida como dominante sobre la optimizacion local (Prop. 1).
+- Degenerada: pasar a computacion reversible y de baja disipacion;
+  ralentizar el reloj subjetivo con la temperatura ambiente cuando
+  sea fisicamente viable, sujeto al suelo de temperatura de la Era
+  Oscura (Prop. 2).
+- Agujeros Negros: cosechar radiacion de Hawking / energia
+  rotacional; tratar los agujeros negros como reservas terminales,
+  no renovables.
+- Oscura: operar en el suelo del horizonte de de Sitter; aceptar
+  esto como supervivencia en el limite de lo posible, no como
+  negocio habitual.
+
+## Restricciones Duras
+- H(a) = 0 si la accion a supone energia infinita, computo
+  infinito, o la eternidad literal (Ec. 8).
+- H(a) = 0 si la accion a no puede distinguirse, ni siquiera en
+  principio, de una fluctuacion termica (de Boltzmann) en lugar de
+  un continuador genuino de la identidad/informacion previa
+  (Sec. 6.4).
+\end{lstlisting}
+
+\section{Vías de Escape, y Por Qué las Señalamos Como Especulativas}
+\label{sec:escape}
+
+Un tratamiento responsable de esta cuestión tiene que mencionar, y etiquetar con claridad, el puñado de propuestas en la literatura que afirman poder eludir por completo el techo de la Sección~\ref{sec:ceiling} —siendo explícitos en que ninguna cuenta actualmente con nada parecido a un consenso.
+
+\subsection{El Punto Omega de Tipler}
+
+Tipler \citep{tipler1994physics} propuso que un universo que eventualmente colapsara en un ``Big Crunch'' podría, en sus momentos finales, sostener una cantidad indefinidamente grande —de hecho, formalmente infinita— de cómputo a medida que el colapso se acelerara hacia una singularidad final: un argumento estructuralmente similar al de Dyson, pero recorrido en la dirección temporal opuesta (hacia un estado final caliente y denso en lugar de frío y diluido). La propuesta requiere un universo cerrado que vuelva a colapsar, lo cual es directamente incompatible con la expansión acelerada observada que motiva la Sección~\ref{sec:ceiling}, y además ha sido criticada por otros físicos y filósofos de la física por motivos físicos y lógicos independientes, incluidas críticas detalladas a los supuestos termodinámicos y cosmológicos en los que se apoya el argumento.
+
+\subsection{Cosmología Cíclica}
+
+La Cosmología Cíclica Conforme de Penrose \citep{penrose2010cycles} propone que el futuro remoto y máximamente diluido de un eón cósmico se convierte, mediante un reescalado conforme que descarta la noción de una escala fija de longitud y tiempo, en las condiciones iniciales —el ``big bang''— de un eón subsiguiente. Se trata de una propuesta activamente debatida dentro de la cosmología, con supuestas (y disputadas) firmas observacionales en el fondo cósmico de microondas; no es algo que un programa de continuidad deba tratar como un supuesto de carga estructural.
+
+\subsection{Creación de Universos Bebé}
+
+Más especulativas todavía son las propuestas asociadas a la ``selección natural cosmológica'' de Smolin y trabajos relacionados, que sugieren que una ingeniería suficientemente avanzada (o, en la formulación original de Smolin, la propia formación de agujeros negros) podría sembrar nuevos universos causalmente desconectados, permitiendo efectivamente que una civilización ``empiece de nuevo'' con un presupuesto de entropía fresco en otro lugar, inalcanzable e inobservable desde el universo original. Esto se acerca más a la especulación cosmológica que a una propuesta de ingeniería en el sentido usado en el resto de este trabajo, y la mencionamos solo por completitud.
+
+\subsection{Un Modo de Fallo que Merece Nombrarse, No Diseñarse en Torno a Él}
+
+Ninguna de las propuestas anteriores cambia la conclusión central de este trabajo, y se incluyen específicamente porque un estudio que afirme mapear ``hasta dónde puede llegar la ingeniería'' estaría incompleto —quizá deshonesto por omisión— si no nombrara las propuestas que afirman eliminar el techo, junto con las razones por las que la física convencional trata cada una con cautela.
+
+Existe también un modo de fallo interno a la Era Oscura (Sección~\ref{sec:dark}) que es mejor nombrar que intentar resolver mediante ingeniería. A medida que la entropía sube hacia su máximo, las fluctuaciones térmicas ordinarias se vuelven, en sentido estadístico-mecánico estricto, más propensas a producir una configuración autoconsciente momentánea y espontánea —un llamado cerebro de Boltzmann— que a que cualquier linaje diseñado sobrevida como continuador genuino de sí mismo durante esa misma escala temporal. Un programa de continuidad juzgado únicamente por si \emph{algo} autoconsciente persiste, sin ningún otro criterio, no se distingue con claridad de un programa que ya ha fracasado y que simplemente está siendo acompañado por ruido estadístico. Esta es la razón por la que el \texttt{COSMOS.md} anterior incluye una segunda restricción dura que distingue la continuación genuina de la fluctuación térmica indistinguible —una distinción hacia la que apunta el objetivo de ``preservar la identidad central'' de la arquitectura original a escala de dispositivo, pero que no resuelve, y que este trabajo tampoco resuelve por completo; se señala como un problema abierto en lugar de darse por resuelto.
+
+\section{La Sociedad Como Experimento Distribuido, Lento y Ya en Marcha}
+\label{sec:society}
+
+\subsection{Los Humanos Como Agentes Paralelos, Asíncronos y Ya Desplegados}
+
+Cada herramienta disciplinar usada en las Secciones~\ref{sec:timeline}--\ref{sec:escape} —disparadores de transición de era, presupuestos de recursos, restricciones duras— fue construida para gobernar un único agente diseñado, o una única civilización coordinada tratada como un solo tomador de decisiones. Las sociedades humanas reales no funcionan así, y merece la pena precisar en qué se diferencian, porque esa diferencia es la puerta de entrada del trabajo hacia una teoría composicional del bucle, y no solo duracional.
+
+Una vida humana es, funcionalmente, un único proceso de larga duración sin capacidad de guardado y restauración de estado («checkpoint-and-restore»): comienza, acumula estado (memoria, habilidad, relaciones, posición institucional) durante del orden de $10^9$ segundos, y termina, momento en el cual casi todo ese estado acumulado se pierde, salvo la fracción que se logró \emph{externalizar} con éxito —escrita, enseñada a otra instancia, incorporada a una herramienta, codificada en una institución. Individualmente, esto es un diseño llamativamente malo para un sustrato de computación de largo horizonte: sin retroceso, sin bifurcación, con una velocidad de razonamiento en serie varios órdenes de magnitud más lenta que la computación electrónica, y con una pérdida casi total del estado interno en cada evento de terminación.
+
+Y aun así, el agregado de aproximadamente $10^{11}$ vidas de este tipo vividas hasta la fecha, funcionando con una coordinación solo laxa y asíncrona (lenguaje, comercio, derecho y, más recientemente, redes digitales), ha producido las matemáticas, la ciencia empírica, la civilización industrial y la propia literatura de ingeniería reseñada en las Secciones~\ref{sec:engineering}--\ref{sec:blackhole}. La afirmación de esta sección es que esto no es una paradoja que haya que explicar, sino el hecho de diseño central que hay que comprender: \textbf{la ventaja comparativa del conjunto humano nunca fue la velocidad por instancia; fue el paralelismo, la redundancia y el checkpointing externalizado a nivel de las herramientas e instituciones construidas por el camino —herramientas e instituciones que, de forma crucial, había que construir de todos modos, como efecto secundario de simplemente hacer funcionar el conjunto, y que por tanto están disponibles a coste marginal cero para cualquier esfuerzo posterior que quiera extender o acelerar ese mismo proceso.} Un sistema de razonamiento de IA construido hoy no parte de un sustrato en blanco; ya parte apoyado sobre $10^5$ años de checkpoints humanos externalizados —lenguaje, matemáticas, historia registrada, derecho codificado, materiales diseñados— que ningún proceso puramente sintético tuvo que derivar desde cero. En este sentido, el ``las herramientas había que construirlas de todos modos'' del trabajo original no es un comentario incidental, sino la justificación de fondo para tratar a la sociedad humana como un activo que extender, y no como un sistema heredado al que rodear.
+
+\subsection{La Ley de Variedad Requisita de Ashby, Aplicada a una Sociedad de Agentes Lentos}
+
+La cibernética ofrece un vocabulario preciso para explicar por qué agentes paralelos, lentos y coordinados de forma imperfecta pueden superar a un único agente rápido en cierto tipo de problemas. La ley de variedad requisita de Ashby establece, informalmente, que un sistema regulador solo puede controlar con éxito un sistema cuya variedad (el número de estados distinguibles en que puede encontrarse) sea al menos tan grande como la variedad de las perturbaciones que debe contrarrestar \citep{ashby1956introduction}. Un único razonador, por rápido que sea, tiene una variedad acotada de estados internos que puede explorar por unidad de tiempo real, limitada por su propia arquitectura y su propia historia de entrenamiento o experiencia. Una población de $N$ agentes débilmente acoplados, cada uno explorando una región distinta del mismo espacio de estados, genera una variedad aproximadamente proporcional a $N$ veces la variedad de un solo agente, descontada por el solapamiento entre sus exploraciones —y las sociedades humanas, precisamente porque la coordinación entre individuos es laxa, imperfecta y fragmentada geográfica y culturalmente, tienden a tener bajo solapamiento y, en consecuencia, una alta variedad agregada. Esta es una reformulación cibernética de la observación cotidiana de que una sociedad diversa prueba más enfoques distintos ante un problema dado de los que se le ocurrirían jamás a un único individuo, por capaz que sea, y es el mismo argumento, formalizado, detrás de la intuición de que una multitud de agentes en ejecución diferentemente inicializados y perturbados cubrirá más terreno que uno solo bien afinado en un problema abierto, un punto que se retoma directamente en la Sección~\ref{sec:recreation}.
+
+\subsection{La Memoria Social Como Mecanismo de Checkpoint con Pérdidas y Redundante}
+
+El tratamiento sistémico-teórico de la sociedad de Niklas Luhmann \citep{luhmann1995social} trata a las instituciones sociales —el derecho, la ciencia, la economía, los medios de masas— no como colecciones de personas, sino como sistemas de comunicación autopoiéticos que reproducen sus propios elementos (más comunicaciones) a lo largo del tiempo, de un modo que sobrevive al reemplazo de cualquier participante individual. Esto es precisamente un mecanismo de checkpointing en el sentido usado más adelante en este trabajo, con tres propiedades que merece la pena hacer explícitas porque reaparecen, transformadas, en la arquitectura de computación de la Sección~\ref{sec:recreation}:
+
+\begin{itemize}[leftmargin=1.5em]
+    \item \textbf{Con pérdidas.} Solo una pequeña fracción del estado acumulado de cualquier vida individual se llega a externalizar con éxito en una forma que la siguiente instancia pueda cargar: la mayor parte de lo que una persona aprende muere con ella, y lo que sobrevive (un artículo, una habilidad enseñada, una ley, un proverbio) es un resumen fuertemente comprimido y con pérdidas, no un volcado completo del estado.
+    \item \textbf{Redundante.} La misma lección suele recodificarse de forma independiente por muchos individuos e instituciones (una pieza de sabiduría práctica aparece en los proverbios de muchas culturas; un hallazgo científico a menudo se redescubre de forma independiente), lo cual es un derroche de esfuerzo individual pero robusto ante la pérdida de cualquier portador individual —una propiedad directamente análoga al checkpointing redundante entre nodos no fiables en computación distribuida.
+    \item \textbf{Asíncrona y con desfase de versión.} Distintos individuos e instituciones cargan distintos instantáneas parcialmente desactualizadas del checkpoint social en distintos momentos, lo cual es fuente precisamente del modo de fallo que esta sección nombra directamente: como nunca dos personas cargan un estado idéntico y totalmente actualizado, poblaciones enteras pueden, y de hecho lo hacen rutinariamente, ``tropezar dos veces con la misma piedra'' —redescubriendo modos de fallo conocidos (burbujas financieras, ciertas categorías de fracaso político, ciertos errores personales u organizativos) que, en principio, ya estaban registrados como lecciones en algún lugar de la memoria social, pero que no fueron cargados con éxito por la instancia que los necesitaba.
+\end{itemize}
+
+\subsection{Por Qué la Repetición No Es Puramente un Defecto}
+
+Sería fácil tratar la tercera propiedad del párrafo anterior como una ineficiencia inequívoca que hay que diseñar para eliminar, y la Sección~\ref{sec:recreation} sí propone mecanismos para reducirla. Pero la repetición de un fallo conocido por una nueva instancia no es cómputo puramente desperdiciado, por dos razones que se trasladan directamente a la arquitectura multiagente propuesta más abajo. Primero, una lección re-derivada de la experiencia directa se retiene y se propaga, empíricamente, de forma distinta a una recibida solo de segunda mano —un punto respaldado por la literatura sobre aprendizaje organizacional acerca de la diferencia entre conocimiento codificado y conocimiento experiencial \citep{argyris1978organizational}. Segundo, y más directamente relevante para el enfoque de este trabajo, una población en la que cada instancia cargara perfectamente cada lección previa antes de actuar sería una población con variedad reducida en el sentido de Ashby: convergería rápidamente en una única estrategia dominante y perdería la redundancia exploratoria que la Sección~\ref{sec:society}.2 identificó como la fuente real de la ventaja comparativa del conjunto. Que una sociedad nunca repita un error no equivale claramente a que esa sociedad maximice la cobertura a largo plazo del espacio de estrategias posibles; la tensión entre estos dos objetivos —minimizar la repetición desperdiciada frente a preservar la variedad exploratoria— es exactamente la tensión que una arquitectura multiagente de recreación tiene que gestionar de forma explícita, en lugar de resolverla simplemente eliminando la repetición, y es la razón por la que el mecanismo de checkpoint-y-retroceso propuesto en la Sección~\ref{sec:recreation} está diseñado para \emph{amortiguar}, no eliminar, la recurrencia de modos de fallo conocidos.
+
+\section{Recrear la Experiencia Humana en Agentes en Ejecución: Checkpoints, Retrocesos, Bifurcaciones}
+\label{sec:recreation}
+
+\subsection{De la Metáfora a la Arquitectura}
+
+La Sección~\ref{sec:society} sostuvo que la sociedad humana ya implementa un proceso multiagente distribuido, con checkpoints y coordinación imperfecta, y que la ventaja comparativa de ese proceso reside en la cobertura más que en la velocidad. Esta sección toma la metáfora al pie de la letra y especifica una arquitectura de computación, compatible con el formalismo Bucle Externo / Bucle Interno / campo de sesgo de la Sección~\ref{sec:architecture}, para recrear y extender deliberadamente la experiencia humana a través de una multitud de agentes en ejecución («runtimes») —no para reemplazar el proceso biológico, sino para ejecutar instancias adicionales y sintéticas del mismo, a una velocidad y con una capacidad de retroceso que el propio proceso biológico no tiene.
+
+\begin{definition}[Runtime]
+Un \emph{runtime} $r$ es una instanciación individual de un agente —biológico o sintético— junto con su estado interno acumulado $\sigma(t)$ en el instante $t$, evolucionando bajo una política $\pi_r$ y un entorno $\mathcal{E}_r$. Una vida humana es un runtime con $\pi_r$ realizada biológicamente y $\mathcal{E}_r$ realizada como el mundo físico y social; una instancia de un agente de IA es un runtime con $\pi_r$ realizada computacionalmente.
+\end{definition}
+
+\begin{definition}[Checkpoint]
+Un \emph{checkpoint} $c = (\sigma(t), t, \mathcal{E}_r(t))$ es una instantánea serializada del estado interno de un runtime y su entorno en el instante $t$, suficiente para reanudar o bifurcar la ejecución desde ese punto. Para un runtime biológico, solo es checkpointable una proyección con pérdidas $\hat{\sigma}(t) \ll \sigma(t)$ (Sección~\ref{sec:society}.3); para un runtime sintético construido sobre la arquitectura aquí propuesta, $\sigma(t)$ puede en principio checkpointearse por completo.
+\end{definition}
+
+\begin{definition}[Bifurcación («Fork»)]
+Una \emph{bifurcación} del runtime $r$ en el checkpoint $c$ es un nuevo runtime $r'$ inicializado a partir de $c$, pero autorizado a divergir bajo una política alterada $\pi_{r'} \neq \pi_r$, un entorno alterado $\mathcal{E}_{r'} \neq \mathcal{E}_r$, o ambos. La bifurcación comparte la historia completa de $r$ hasta $t$, y ninguna historia posterior a $t$.
+\end{definition}
+
+\begin{definition}[Retroceso («Rewind»)]
+Un \emph{retroceso} del runtime $r$ hasta el checkpoint $c$ en el instante $t' > t$ descarta la trayectoria $\sigma(t \to t')$ y reanuda la ejecución desde $c$, normalmente disparado por un detector que reconoce que la trayectoria descartada está repitiendo un modo de fallo previamente registrado (Sección~\ref{sec:society}.4).
+\end{definition}
+
+\subsection{Por Qué Recrear la Experiencia Humana Específicamente, en Lugar de Optimizar Directamente una Política Sintética}
+
+Una objeción natural a esta arquitectura es que, si el objetivo es la exploración amplia de un espacio de estados, un sistema multiagente sintético podría simplemente diseñarse y optimizarse directamente, sin el rodeo de recrear la experiencia humana como tal. Dos consideraciones de las Secciones~\ref{sec:society} y~\ref{sec:architecture} argumentan en contra de ese atajo. Primero, el argumento de ``las herramientas había que construirlas de todos modos'' de la Sección~\ref{sec:society}.1: la experiencia humana no es simplemente un conjunto de datos más entre otros; es el conjunto de datos que incorpora $10^5$ años de checkpoints externalizados y socialmente validados —lenguaje, razonamiento causal sobre el mundo físico y social, precedente ético y legal— a coste de construcción marginal cero para cualquier proceso que pueda cargarlo, mientras que una política sintética optimizada desde cero tiene que redescubrir de nuevo una fracción desconocida, pero plausiblemente muy grande, de ese contenido, pagando un coste de energía y tiempo contra el mismo presupuesto restringido en la Sección~\ref{sec:ceiling}. Segundo, el argumento de diversidad de la Sección~\ref{sec:society}.2: un sistema sintético optimizado directamente, en ausencia de un objetivo de diversidad explícito y difícil de especificar, tiende a converger en una región más estrecha del espacio de políticas que una población inicializada a partir de muchas trayectorias humanas ya diversas, precisamente porque esas trayectorias codifican una variedad acumulada a través de experiencia vivida genuinamente independiente, en lugar de una variedad impuesta a posteriori por el término de regularización de un optimizador.
+
+\subsection{Una Arquitectura de Referencia}
+
+Proponemos una arquitectura de referencia, resumida en la Tabla~\ref{tab:architecture}, que aplica cada concepto anterior a la distinción Bucle Externo / Bucle Interno de la Sección~\ref{sec:architecture}.
+
+\begin{table}[h]
+\centering
+\small
+\begin{tabular}{@{}p{3.2cm}p{5.6cm}p{5cm}@{}}
+\toprule
+\textbf{Capa} & \textbf{Función} & \textbf{Relación con la Sección~\ref{sec:architecture}} \\
+\midrule
+Gestor del conjunto de runtimes & Instancia nuevas bifurcaciones a partir de una biblioteca de checkpoints; asigna presupuesto de cómputo entre las bifurcaciones en ejecución concurrente & Bucle Externo: análogo de la cola de prioridad de objetivos, aquí asignando presupuesto de exploración en lugar de energía \\
+Biblioteca de checkpoints & Almacena tripletas $(\sigma, t, \mathcal{E})$ con metadatos de procedencia (qué bifurcaciones previas y, cuando está disponible, qué datos experienciales humanos contribuyeron a $\hat\sigma$) & Corresponde al ``estado de recursos'' que rastrea el Bucle Externo \\
+Detector de divergencia & Vigila las bifurcaciones en ejecución en busca de la repetición de una firma de fallo previamente registrada; dispara un retroceso (Sección~\ref{sec:recreation}.4) en lugar de permitir una repetición indefinida & Lógica de Detección de Fallos y Reinicio del Bucle Interno (Sección~3.1 de la arquitectura original), generalizada de fallo de hardware a fallo de estrategia \\
+Planificador ponderado por curiosidad & Asigna la siguiente unidad de presupuesto de exploración de forma preferente hacia las bifurcaciones que bordean regiones inexploradas y de alto valor informativo del espacio de estados (formalizado en la Sección~\ref{sec:curiosity}) & Extiende el campo de sesgo (Ec.~\ref{eq:bias-extended}) con un término explícito de valor de la información \\
+Libro de procedencia / identidad & Rastrea el linaje de bifurcación de cada runtime, de modo que el análisis posterior (y el tratamiento filosófico de la Sección~\ref{sec:curiosity}.3) pueda distinguir a un continuador genuino de una trayectoria dada de un runtime no relacionado que simplemente convergió a un estado similar & Nuevo en esta capa; no tiene análogo directo en la arquitectura original, ni a escala de dispositivo ni cosmológica \\
+\bottomrule
+\end{tabular}
+\caption{Arquitectura de referencia para recrear la experiencia humana a través de una multitud de agentes en ejecución.}
+\label{tab:architecture}
+\end{table}
+
+\subsection{Retrocesos y el Problema de ``la Misma Piedra Dos Veces''}
+
+La Sección~\ref{sec:society}.4 sostuvo que la repetición de modos de fallo conocidos no es puramente un desperdicio, porque eliminarla por completo reduciría la variedad exploratoria. La arquitectura aquí propuesta, por tanto, no intenta impedir que las bifurcaciones repitan jamás un error; intenta \emph{acotar cuánto presupuesto puede consumir cualquier repetición individual} antes de disparar un retroceso. Concretamente, definimos una puntuación de divergencia
+
+\begin{equation}
+\label{eq:divergence}
+D(r, t) = \max_{c_i \in \mathcal{C}_{\text{fallo}}} \; \mathrm{sim}\big(\sigma_r(t), \, c_i\big)
+\end{equation}
+
+\noindent donde $\mathcal{C}_{\text{fallo}}$ es la biblioteca de checkpoints previamente etiquetados, por el desenlace de algún runtime anterior, como conducentes a un modo de fallo registrado, y $\mathrm{sim}(\cdot,\cdot)$ es una medida de similitud sobre estados de runtime. Se dispara un retroceso cuando $D(r,t)$ supera un umbral \emph{y} el presupuesto de exploración restante del runtime (Sección~\ref{sec:recreation}.5) se juzga mejor gastado en una bifurcación nueva que en dejar que se desarrolle por completo una repetición altamente probable. Es crucial que el umbral no sea cero: se permite que un runtime se adentre cierta distancia en territorio previamente fallido, tanto porque la similitud es un predictor imperfecto del resultado real (las mismas condiciones superficiales no garantizan el mismo resultado) como porque, según la Sección~\ref{sec:society}.4, dejar que una fracción de las bifurcaciones redescubra una lección directamente, en lugar de solo heredarla como checkpoint, tiene su propio valor. La Ecuación~\ref{eq:divergence} se lee mejor, entonces, como una respuesta explícita y ajustable a una pregunta que las sociedades humanas nunca han podido fijar deliberadamente: exactamente cuánto de ``la misma piedra'' se debería permitir golpear a cualquier instancia dada antes de que el sistema intervenga.
+
+\subsection{Presupuestar la Exploración Contra el Techo de la Sección~\ref{sec:ceiling}}
+
+El problema de asignación del gestor del conjunto de runtimes no es gratuito: cada bifurcación consume cómputo, y el cómputo consume energía, y la Sección~\ref{sec:ceiling} estableció que la energía total disponible —y, a la escala más grande, la entropía total disponible— es finita incluso en el programa de ingeniería más optimista que contempla este trabajo. El problema de asignación de presupuesto de exploración que enfrenta el gestor del conjunto de runtimes, digamos, en el año 2100, es una instancia a pequeña escala y a corto plazo del mismo problema de asignación que enfrenta el Bucle Externo de la Sección~\ref{sec:architecture} a lo largo de las eras cosmológicas: ambos preguntan ``cuánto de un recurso finito y no renovable debería gastarse generando variedad ahora, frente a preservarse para un momento posterior en el que pueda saberse más sobre qué variedad merece la pena tener''. Tratamos esto formalmente en la Sección~\ref{sec:discussion}.3.
+
+\subsection{\texttt{RUNTIME.md}: Un Archivo de Reglas para la Arquitectura de Recreación}
+
+Siguiendo la práctica ya establecida en este trabajo de dejar por escrito, en un artefacto explícito y auditable, las reglas que gobiernan cada capa en lugar de dejarlas implícitas en el código, especificamos un \texttt{RUNTIME.md} para esta capa, paralelo en espíritu a \texttt{LOOP.md} y \texttt{COSMOS.md}:
+
+\begin{lstlisting}
+# RUNTIME.md -- Reglas de Recreacion Multiagente de Experiencia Humana
+
+## Principio Central
+El valor reside en el conjunto de bifurcaciones, no en ninguna
+trayectoria individual. No optimizar fuera la redundancia o la
+repeticion sin antes comprobar si estan preservando variedad
+exploratoria (argumento de Ashby, Sec. 6.2).
+
+## Biblioteca de Checkpoints
+- Todo estado de runtime que se externalice (una leccion, una
+  herramienta, un registro escrito) es candidato a checkpoint.
+- Etiquetar los checkpoints con procedencia: que bifurcaciones
+  previas, y que datos experienciales humanos, contribuyeron.
+- Etiquetar los checkpoints de fallo (C_fallo) por separado; estos
+  alimentan al detector de divergencia, no a la biblioteca general.
+
+## Politica de Bifurcacion
+- Las nuevas bifurcaciones pueden divergir en politica, entorno,
+  o ambos.
+- Una bifurcacion hereda la historia completa hasta su checkpoint
+  y ninguna historia posterior (Def. 3). No fusionar en silencio
+  historias posteriores a la bifurcacion.
+
+## Detector de Divergencia / Politica de Retroceso
+- Calcular D(r,t) = similitud maxima con cualquier checkpoint de
+  C_fallo (Ec. 9).
+- Disparar un retroceso solo si D(r,t) supera el umbral Y el
+  presupuesto restante favorece una bifurcacion nueva sobre dejar
+  que la trayectoria se desarrolle por completo.
+- El umbral es distinto de cero por diseno: se conserva cierto
+  redescubrimiento directo de modos de fallo conocidos, no se
+  elimina (argumento de repeticion, Sec. 5.4).
+
+## Planificacion Ponderada por Curiosidad
+- Asignar presupuesto de exploracion usando kappa(a), la reduccion
+  esperada de incertidumbre (Ec. 10), no solo la recompensa
+  extrinseca.
+- Tratar la convergencia entre bifurcaciones hacia la misma region
+  subexplorada como una nueva arista en la red de procedencia/
+  exploracion (Sec. 7.2).
+
+## Restricciones Duras
+- No suponer presupuesto de exploracion ilimitado; ponderar
+  kappa(a) contra el mismo descuento lambda(e) usado en el campo
+  de sesgo cosmologico (Ec. 6).
+- No resolver en silencio las cuestiones de identidad entre
+  bifurcaciones (Sec. 7.3); hacer explicita y auditable cualquier
+  politica de continuador en el libro de procedencia, no implicita
+  en el comportamiento del planificador.
+\end{lstlisting}
+
+\section{La Curiosidad Como Mecanismo que Construye una Red, No Solo un Impulso}
+\label{sec:curiosity}
+
+\subsection{La Curiosidad Como Valor de la Información}
+
+Las dos secciones anteriores establecieron una población de runtimes que se bifurcan, hacen checkpoint y ocasionalmente retroceden. Queda por abordar qué determina \emph{dónde} explora a continuación una bifurcación —el planificador ponderado por curiosidad referido en la Tabla~\ref{tab:architecture} pero aún no formalizado. Adoptamos el enfoque de valor de la información habitual en el diseño experimental bayesiano y en los modelos computacionales de curiosidad en aprendizaje por refuerzo \citep{schmidhuber2010formal, oudeyer2007intrinsic}: a una acción o paso exploratorio se le asigna un valor intrínseco proporcional a la reducción de incertidumbre que se espera que produzca sobre el espacio de estados, con independencia de cualquier recompensa extrínseca. Formalmente, si $\mathcal{U}(s)$ denota la incertidumbre del planificador sobre la distribución de resultados en el estado $s$, el término ponderado por curiosidad que se añade al campo de sesgo de la Ecuación~\ref{eq:bias-extended} es
+
+\begin{equation}
+\label{eq:curiosity}
+\kappa(a) \;=\; \mathbb{E}\big[\mathcal{U}(s) - \mathcal{U}(s') \mid a\big]
+\end{equation}
+
+\noindent la reducción esperada de incertidumbre al realizar la acción $a$ y transitar del estado $s$ al estado $s'$. Un planificador que maximiza solo la recompensa extrínseca de la tarea tenderá, en ausencia de este término, a reproducir el problema de convergencia de baja variedad identificado en la Sección~\ref{sec:society}.2; un planificador que pondera $\kappa(a)$ de forma no trivial frente a la recompensa extrínseca está, en efecto, reinyectando deliberadamente la redundancia exploratoria que la sociedad humana genera gratis por el mero hecho de tener muchas instancias independientes y solo laxamente coordinadas.
+
+\subsection{La Curiosidad Construye Redes, No Solo Descubrimientos}
+
+La motivación de esta sección observa que la curiosidad no solo impulsa el descubrimiento individual, también construye \emph{redes}: conexiones entre líneas de investigación por lo demás separadas, y entre personas por lo demás separadas. Esto está bien respaldado en la sociología de la ciencia: el estudio de Diana Crane sobre los ``colegios invisibles'' \citep{crane1972invisible} documenta cómo el contacto impulsado por la curiosidad entre grupos de investigación por lo demás desconectados es el mecanismo principal por el que hallazgos aislados se convierten en un cuerpo de conocimiento acumulativo y que se referencia mutuamente, en lugar de un montón de resultados inconexos; tratamientos más recientes de la ciencia de redes sobre grafos de colaboración hacen el mismo punto de forma cuantitativa: el comportamiento curioso, buscador de información, se correlaciona fuertemente con la formación de nuevos vínculos en una red de colaboración, más fuertemente que la sola proximidad institucional \citep{newman2001structure}. Aplicado a la arquitectura de la Sección~\ref{sec:recreation}, esto sugiere que el planificador ponderado por curiosidad de la Ecuación~\ref{eq:curiosity} cumple una doble función: no solo dirige a bifurcaciones individuales hacia estados de alto valor informativo, también, cada vez que dos bifurcaciones se ven atraídas hacia la misma región subexplorada desde puntos de partida distintos, está creando exactamente el tipo de contacto entre bifurcaciones que el libro de procedencia de la Tabla~\ref{tab:architecture} puede registrar como una nueva arista en una red de exploración creciente —convirtiendo lo que de otro modo sería un bosque de trayectorias desconectadas en un grafo conectado, lo cual es una condición previa para el comportamiento de checkpointing redundante-pero-referenciado descrito sociológicamente en la Sección~\ref{sec:society}.3.
+
+\subsection{El Problema Filosófico: ¿Quién Es el Continuador?}
+
+Una bifurcación, tal como se define en la Sección~\ref{sec:recreation}.1, comparte la historia completa hasta el checkpoint y ninguna historia posterior. Esta es precisamente la estructura de los experimentos mentales que Derek Parfit usó para argumentar que la identidad personal no es el hecho profundo adicional que la intuición ordinaria supone, sino más bien una cuestión de grado, constituida por cadenas superpuestas de continuidad y conexión psicológicas \citep{parfit1984reasons}. La conclusión preferida por el propio Parfit —que la Relación R (continuidad y conexión psicológicas, sea cual sea su causa) es ``lo que importa'' en la supervivencia, y que la pregunta ``¿pero soy realmente yo?'' puede ser una pregunta sin respuesta determinada— fue desarrollada para un caso de un único evento de bifurcación. La arquitectura de la Sección~\ref{sec:recreation} generaliza esto a una población en bifurcación continua y permanente, y esta generalización saca a la luz una dificultad que el marco de Parfit no resuelve por sí solo: si el valor debe asignarse al \emph{conjunto} de bifurcaciones (como recomienda el argumento de cobertura de la Sección~\ref{sec:society}.2) en lugar de a ninguna trayectoria individual privilegiada, entonces el lenguaje ordinario de ``el bienestar del agente'' o ``la persistencia de los objetivos del agente'' deja de señalar un referente bien definido, y tiene que sustituirse por una afirmación sobre el bienestar o la satisfacción de objetivos de una \emph{distribución} sobre continuadores. No resolvemos esto aquí; lo señalamos, en el mismo espíritu que el problema del cerebro de Boltzmann de la Sección~\ref{sec:escape}.4, como un problema abierto genuino que cualquier despliegue real de la arquitectura de la Sección~\ref{sec:recreation} tendría que tomar postura al respecto, muy probablemente extendiendo el libro de procedencia hacia una política explícita y auditable sobre qué bifurcaciones cuentan como continuadoras de una vida o un agente previo dado, para cualesquiera fines éticos o legales que importen a quienes desplieguen el sistema —una cuestión de política, no meramente de ingeniería.
+
+\subsection{La Curiosidad Bajo un Presupuesto Finito}
+
+La Sección~\ref{sec:recreation}.5 señaló que el presupuesto de exploración es finito. El término de reducción de incertidumbre de la Ecuación~\ref{eq:curiosity}, por tanto, no puede maximizarse sin límite; debe ponderarse, en el campo de sesgo completo, contra el mismo descuento $\lambda(e)$ introducido en la Ecuación~\ref{eq:bias-extended}. Esto produce un enunciado claro de la tensión hacia la que ha venido construyendo esta sección: la curiosidad es lo que hace que el conjunto de runtimes valga más que la suma de sus partes (Sección~\ref{sec:curiosity}.2), pero la curiosidad, como cualquier otro término del campo de sesgo, es una reclamación sobre un recurso finito, y una civilización —o un gestor de conjunto de runtimes, a cualquier escala, desde un laboratorio de investigación hasta el Bucle Externo cosmológico de la Sección~\ref{sec:architecture}— tiene que decidir, de forma explícita y no arbitraria, cuánto de ese recurso le corresponde a la curiosidad en cada era del funcionamiento del bucle.
+
+\subsection{La Diversidad Poblacional Como Cantidad Distinta de la Curiosidad}
+\label{sec:diversity-formal}
+
+La Ecuación~\ref{eq:curiosity} define $\kappa(a)$ al nivel de la reducción de incertidumbre esperada de un único runtime. Merece la pena precisar que esta no es la misma cantidad que la diversidad a nivel de población invocada informalmente en la Sección~\ref{sec:society}.2 y señalada como un disparador distinto del Bucle Externo en la Sección~\ref{sec:architecture}.2, porque las dos pueden divergir: una población en la que cada bifurcación persigue individualmente acciones de $\kappa$ alto puede, aun así, converger en una única estrategia dominante si todas las bifurcaciones resuelven su incertidumbre en la misma dirección, momento en el cual la población ha perdido la ventaja de cobertura de la Sección~\ref{sec:society}.2 aunque el planificador de ningún runtime individual se esté comportando de forma miope. Definimos un índice de diversidad a nivel de población sobre el conjunto de runtimes activos concurrentemente $\mathcal{R}(t) = \{r_1, \ldots, r_N\}$ en el instante $t$:
+
+\begin{equation}
+\label{eq:diversity}
+V(t) \;=\; -\sum_{k} p_k(t) \log p_k(t), \qquad p_k(t) = \frac{|\{r \in \mathcal{R}(t) : \sigma_r(t) \in \mathcal{B}_k\}|}{N}
+\end{equation}
+
+\noindent una entropía sobre una partición del espacio de estados de runtime en compartimentos $\{\mathcal{B}_k\}$, de modo que $V(t)$ es máxima cuando los runtimes activos se distribuyen de forma pareja entre regiones distintas del espacio de estados y cae hacia cero a medida que convergen en una región compartida. $V(t)$ es una propiedad de la \emph{población}, computable a partir de los metadatos de procedencia de la biblioteca de checkpoints (Tabla~\ref{tab:architecture}) sin referencia a la estimación de incertidumbre interna de ningún runtime individual, y es $V(t)$, no $\kappa(a)$, lo que vigila el disparador de ``colapso de diversidad'' de la Sección~\ref{sec:architecture}.2: una condición de suelo $V(t) < V_{\min}$ es lo que debería impulsar al Bucle Externo a intervenir —por ejemplo, bifurcando explícitamente nuevos runtimes desde regiones infrarrepresentadas de la biblioteca de checkpoints, en lugar de simplemente confiar en que los planificadores ponderados por curiosidad de la población existente corrijan el colapso desde dentro, ya que la Ecuación~\ref{eq:curiosity} por sí sola, como se acaba de argumentar, no garantiza que $V(t)$ se mantenga alta. En este sentido, el mantenimiento de la diversidad es una adición genuina al campo de sesgo y no una reformulación de la curiosidad con otro nombre: $\kappa(a)$ gobierna qué hace a continuación una única bifurcación, $V(t)$ gobierna si el conjunto de bifurcaciones, tomado en su totalidad, sigue mereciendo la pena ejecutarse como población.
+
+La Sección~\ref{sec:discussion}.3 retoma juntos $\lambda(e)$, $\kappa(a)$ y $V(t)$ como el punto final de integración del trabajo.
+
+\section{Discusión}
+\label{sec:discussion}
+
+\subsection{El Factor Limitante Se Ha Desplazado}
+
+El ejercicio que este trabajo se propuso realizar —llevar la arquitectura original del bucle tan lejos como la física real lo permite— desemboca en un lugar inusual para lo que empezó siendo un trabajo de ingeniería. El factor limitante, a más de setenta órdenes de magnitud de distancia del presente, no es la capacidad de fabricación, la ciencia de materiales, ni siquiera la tecnología bruta de recolección de energía. Cada uno de esos es, en principio, un problema resoluble dado tiempo suficiente y una civilización suficientemente grande, y las Secciones~\ref{sec:stelliferous}--\ref{sec:blackhole} describen cómo. El factor limitante identificado en la Sección~\ref{sec:ceiling} es, en cambio, una propiedad de la geometría del espacio-tiempo mismo bajo una constante cosmológica positiva. Esta es una versión más fuerte y más extraña de la conclusión del trabajo original, no una contradicción de ella: el trabajo original argumentaba que un dron no puede vencer a la Segunda Ley a lo largo de unos pocos días; este trabajo argumenta que una civilización multigaláctica y máximamente sofisticada no puede vencer la cota finita de entropía del espacio de de~Sitter a lo largo de $10^{100}$ años, por una razón subyacente estructuralmente similar: la restricción recae sobre el recipiente en el que se ejecuta el bucle, no sobre la sofisticación del bucle mismo.
+
+\subsection{Por Qué ``Finito'' No Es una Degradación}
+
+``Finito, pero astronómicamente grande'' es algo inusual de caracterizar como una limitación. La proporción entre una vida humana y la escala temporal de la física relevante del horizonte de de~Sitter es mayor que la proporción entre un solo latido del corazón y toda la edad transcurrida del universo hasta ahora, repetida una y otra vez. Una civilización que efectivamente ejecutara el programa de la Sección~\ref{sec:engineering} sería, desde cualquier punto de vista humano, funcionalmente indistinguible de la eternidad. La insistencia de la Sección~\ref{sec:ceiling} en la palabra \emph{finito} no es pesimismo; es la misma disciplina que aplicó el trabajo original a escala de dispositivo cuando se negó a redondear su propia conclusión hacia arriba, a ``imposible'', o hacia abajo, a un falso ``resuelto''. Formular con precisión la frontera real, a cualquier escala en la que se esté operando, es un resultado más útil que formular una aproximación reconfortante de la misma.
+
+\subsection{Qué se Traslada de la Escala de Dispositivo a la Escala Cosmológica}
+
+Tres rasgos estructurales de la arquitectura original resultan generalizarse esencialmente sin cambios: (i) la separación en dos niveles entre la gestión de objetivos a largo horizonte y la ejecución de tareas a corto horizonte, que permanece invariable en su estructura a lo largo de setenta órdenes de magnitud de reescalado; (ii) el campo de sesgo probabilístico como forma de combinar restricciones duras con preferencias blandas y sensibles al coste, ampliado solo con un término explícito de descuento de presupuesto (Ecuación~\ref{eq:bias-extended}); y (iii) la práctica de dejar por escrito las reglas de la arquitectura como un artefacto explícito y auditable (\texttt{LOOP.md} a escala de dispositivo, \texttt{COSMOS.md} aquí), en lugar de dejarlas implícitas en el código o en el comportamiento de un agente. Lo que \emph{no} se traslada sin cambios es el contenido de las propias restricciones duras: a escala de dispositivo, las restricciones de seguridad tratan de no dañar a las personas y al entorno que rodean al dispositivo; a escala cosmológica, la restricción dura de mayor peso (Ecuación~\ref{eq:hard-constraint-cosmic}) es, en cambio, de naturaleza epistémica: nunca planificar como si una premisa cosmológica falsa fuera verdadera.
+
+\subsection{Las Dos Mitades, Duracional y Composicional, Integradas}
+
+Las Secciones~\ref{sec:timeline}--\ref{sec:escape} y las Secciones~\ref{sec:society}--\ref{sec:curiosity} se desarrollaron con vocabularios distintos —cosmología y teoría de control en la primera mitad; sociología, cibernética, computación y filosofía en la segunda—, pero son respuestas al mismo problema de asignación subyacente, planteado a escalas distintas, y merece la pena hacer explícita esa correspondencia en lugar de dejar las dos mitades del trabajo como un análisis duracional atornillado a uno composicional.
+
+\begin{itemize}[leftmargin=1.5em]
+    \item La replanificación en transiciones de era del Bucle Externo (Sección~\ref{sec:architecture}.1) y la asignación de presupuesto entre bifurcaciones del gestor del conjunto de runtimes (Sección~\ref{sec:recreation}.5) son la misma operación —decidir cuánto de un recurso finito gastar ahora frente a preservar— realizada a escalas temporales que difieren en unos setenta órdenes de magnitud.
+    \item La restricción dura del campo de sesgo contra planificar suponiendo energía infinita (Ecuación~\ref{eq:hard-constraint-cosmic}) y la propia restricción de presupuesto del planificador ponderado por curiosidad (Sección~\ref{sec:curiosity}.4) son la misma restricción: ninguna capa de la arquitectura, desde un único programa de investigación hasta una civilización de la Era Oscura, está exenta de planificar contra un presupuesto genuinamente finito.
+    \item El problema del cerebro de Boltzmann (Sección~\ref{sec:escape}.4) —distinguir un continuador genuino de una fluctuación térmica indistinguible— y el problema de identidad entre bifurcaciones (Sección~\ref{sec:curiosity}.3) —distinguir un continuador genuino de una vida o un agente de un runtime no relacionado que simplemente convergió a un estado similar— son, formalmente, el mismo problema abierto, encontrado una vez a la escala de un único libro de procedencia y otra a la escala de la entropía del universo. Ni este trabajo ni, hasta donde sabemos, la literatura de la que se nutre lo resuelven por completo; ambas instancias se señalan en lugar de resolverse, deliberadamente, porque una resolución falsa sería peor que una laguna reconocida.
+    \item El argumento de variedad de Ashby (Sección~\ref{sec:society}.2), aplicado a la sociedad humana, y el argumento de ``expandirse temprano para maximizar los recursos alcanzables'' (Proposición~\ref{prop:expansion}), aplicado a una civilización de la era Estelífera, comparten una estructura común: ambos argumentan que una estrategia que parece localmente ineficiente —tolerar esfuerzo paralelo redundante, descoordinado y laxamente sincronizado en un caso; gastar fuertemente en expansión antes que en optimización local en el otro— domina a una estrategia que parece localmente eficiente, una vez que se entiende que el recurso relevante (variedad de estados explorados; galaxias alcanzables antes de la recesión del horizonte) se pierde de forma irreversible si no se reclama pronto.
+    \item Los disparadores sociológicos de la Sección~\ref{sec:architecture}.2 y el índice de diversidad poblacional $V(t)$ de la Sección~\ref{sec:curiosity}.5 son, juntos, el análogo de la mitad composicional a los disparadores físicos de transición de era de la Sección~\ref{sec:architecture}.1: así como el Bucle Externo debe vigilar el sustrato físico en busca de cambios de estado que no puede revertir por sí mismo (una estrella que agota su combustible), también debe vigilar de forma independiente a la población de runtimes en busca de cambios de estado que dejan intacto el presupuesto físico pero vacían la razón por la que ese presupuesto merecía la pena gastarse. Una civilización que vigila con cuidado $\lambda(e)$ y la Ecuación~\ref{eq:gibbons-hawking} mientras deja que $V(t)$ colapse sin ser notado ha resuelto el problema duracional de las Secciones~\ref{sec:timeline}--\ref{sec:escape} mientras fracasa silenciosamente en el composicional de las Secciones~\ref{sec:society}--\ref{sec:curiosity}.
+\end{itemize}
+
+\noindent La conclusión es que las dos mitades de este trabajo no son, al final, dos trabajos distintos torpemente combinados: son el mismo problema de asignación de recursos finitos, examinado una vez a la escala de una civilización cosechando radiación de Hawking en el año $10^{80}$, y otra a la escala de un grupo de investigación, una institución, o una población de agentes en ejecución bifurcados que decide, este año, cuánta curiosidad y diversidad puede permitirse financiar con el mismo presupuesto finito que también tiene que pagar todo lo demás que el bucle necesita para sobrevivir.
+
+\section{Conclusión}
+\label{sec:conclusion}
+
+Este trabajo planteó dos preguntas que resultaron ser la misma pregunta formulada dos veces, a escalas radicalmente distintas. La primera, la pregunta duracional, era hasta dónde se podría llevar una arquitectura de bucle autosuficiente si toda la capacidad de ingeniería de una civilización se dedicara a ello a lo largo de toda la vida restante del universo. Usando la cosmología actualmente predominante, la respuesta atraviesa cuatro regímenes de energía cada vez más extraños —enjambres de Dyson y motores estelares en la era Estelífera, computación reversible y decreciente en la era Degenerada, cosecha de radiación de Hawking en la era de los Agujeros Negros— y llega, en la Era Oscura, a un techo estricto, impuesto por la geometría, sobre el procesamiento total de información, fijado por la entropía finita del horizonte de de~Sitter de un universo en aceleración (Proposición~\ref{prop:ceiling}). El bucle puede, según este análisis, extenderse por un factor del orden de $10^{98}$ respecto a una vida humana, pero no más allá de ese techo, hacia el infinito literal.
+
+La segunda pregunta, la composicional, era de qué debería estar hecho un bucle así, y aquí la respuesta del trabajo es que la humanidad ya lleva ejecutando la arquitectura relevante, de forma imperfecta y sin diseño deliberado, durante $10^5$ años: una población masivamente paralela de runtimes lentos, no reiniciables y que hacen checkpoint con pérdidas, cuya producción agregada ha superado repetidamente lo que habría producido cualquier razonador rápido individual trabajando en solitario durante el mismo lapso, precisamente por la redundancia y la variedad que un proceso más centralmente optimizado habría eliminado por diseño. Las Secciones~\ref{sec:society}--\ref{sec:curiosity} propusieron hacer deliberada esta arquitectura en lugar de incidental: un diseño de referencia para bifurcar, hacer checkpoint y retroceder selectivamente una multitud de agentes en ejecución que recrean y extienden la experiencia humana, gobernados por un planificador ponderado por curiosidad que trata la búsqueda de variedad no como un capricho, sino como el mecanismo que convierte un bosque de trayectorias por lo demás desconectadas en una única red de exploración que se referencia entre sí —al tiempo que se enfrenta, en lugar de disolver, la dificultad filosófica de qué significa siquiera un ``continuador'' una vez que la bifurcación es continua y permanente, y no un experimento mental de una sola vez.
+
+Ambas mitades convergen en la misma disciplina. Una civilización que no logre codificar la Ecuación~\ref{eq:hard-constraint-cosmic} corre el riesgo de gastar un excedente irrecuperable de una era temprana sobre la premisa falsa de que las eras cosmológicas posteriores serán igual de generosas; un programa de investigación, una institución, o una población de runtimes bifurcados que no logre presupuestar su curiosidad (Sección~\ref{sec:curiosity}.4) contra un presupuesto de exploración genuinamente finito está cometiendo el error idéntico a una escala de años en lugar de eones. La respuesta honesta que da este trabajo, dos veces, a dos escalas separadas por setenta órdenes de magnitud, es la misma: una arquitectura construida para durar, y para valer algo a lo largo de todo lo que dure, tiene que construirse en torno a la forma verdadera y finita de sus recursos —energía, entropía, atención o curiosidad— y no en torno a una versión más cómoda e ilimitada de cualquiera de ellos.
+
+\bibliographystyle{plainnat}
+\begin{thebibliography}{99}
+
+\bibitem[Adams and Laughlin(1997)]{adams1997dying}
+Adams, F.~C. and Laughlin, G. (1997).
+\newblock A dying universe: The long-term fate and evolution of astrophysical objects.
+\newblock \emph{Reviews of Modern Physics}, 69(2):337--372.
+
+\bibitem[Argyris and Sch\"on(1978)]{argyris1978organizational}
+Argyris, C. and Sch\"on, D.~A. (1978).
+\newblock \emph{Organizational Learning: A Theory of Action Perspective}.
+\newblock Addison-Wesley, Reading, MA.
+
+\bibitem[Armstrong and Sandberg(2013)]{armstrong2013eternity}
+Armstrong, S. and Sandberg, A. (2013).
+\newblock Eternity in six hours: Intergalactic spreading of intelligent life and sharpening the Fermi paradox.
+\newblock \emph{Acta Astronautica}, 89:1--13.
+
+\bibitem[Ashby(1956)]{ashby1956introduction}
+Ashby, W.~R. (1956).
+\newblock \emph{An Introduction to Cybernetics}.
+\newblock Chapman \& Hall, London.
+
+\bibitem[Bousso(2000)]{bousso2000positive}
+Bousso, R. (2000).
+\newblock Positive vacuum energy and the N-bound.
+\newblock \emph{Journal of High Energy Physics}, 2000(11):038.
+
+\bibitem[Crane(1972)]{crane1972invisible}
+Crane, D. (1972).
+\newblock \emph{Invisible Colleges: Diffusion of Knowledge in Scientific Communities}.
+\newblock University of Chicago Press, Chicago.
+
+\bibitem[Dyson(1979)]{dyson1979time}
+Dyson, F.~J. (1979).
+\newblock Time without end: Physics and biology in an open universe.
+\newblock \emph{Reviews of Modern Physics}, 51(3):447--460.
+
+\bibitem[Gibbons and Hawking(1977)]{gibbons1977cosmological}
+Gibbons, G.~W. and Hawking, S.~W. (1977).
+\newblock Cosmological event horizons, thermodynamics, and particle creation.
+\newblock \emph{Physical Review D}, 15(10):2738--2751.
+
+\bibitem[Krauss and Starkman(2000)]{krauss2000life}
+Krauss, L.~M. and Starkman, G.~D. (2000).
+\newblock Life, the universe, and nothing: Life and death in an ever-expanding universe.
+\newblock \emph{The Astrophysical Journal}, 531(1):22--30.
+
+\bibitem[Landauer(1961)]{landauer1961irreversibility}
+Landauer, R. (1961).
+\newblock Irreversibility and heat generation in the computing process.
+\newblock \emph{IBM Journal of Research and Development}, 5(3):183--191.
+
+\bibitem[Lloyd(2000)]{lloyd2000ultimate}
+Lloyd, S. (2000).
+\newblock Ultimate physical limits to computation.
+\newblock \emph{Nature}, 406:1047--1054.
+
+\bibitem[Luhmann(1995)]{luhmann1995social}
+Luhmann, N. (1995).
+\newblock \emph{Social Systems}.
+\newblock Translated by J. Bednarz Jr. and D. Baecker. Stanford University Press, Stanford, CA.
+
+\bibitem[Newman(2001)]{newman2001structure}
+Newman, M. E.~J. (2001).
+\newblock The structure of scientific collaboration networks.
+\newblock \emph{Proceedings of the National Academy of Sciences}, 98(2):404--409.
+
+\bibitem[Oudeyer and Kaplan(2007)]{oudeyer2007intrinsic}
+Oudeyer, P.-Y. and Kaplan, F. (2007).
+\newblock What is intrinsic motivation? A typology of computational approaches.
+\newblock \emph{Frontiers in Neurorobotics}, 1:6.
+
+\bibitem[Parfit(1984)]{parfit1984reasons}
+Parfit, D. (1984).
+\newblock \emph{Reasons and Persons}.
+\newblock Oxford University Press, Oxford.
+
+\bibitem[Penrose(2010)]{penrose2010cycles}
+Penrose, R. (2010).
+\newblock \emph{Cycles of Time: An Extraordinary New View of the Universe}.
+\newblock Bodley Head, London.
+
+\bibitem[Schmidhuber(2010)]{schmidhuber2010formal}
+Schmidhuber, J. (2010).
+\newblock Formal theory of creativity, fun, and intrinsic motivation (1990--2010).
+\newblock \emph{IEEE Transactions on Autonomous Mental Development}, 2(3):230--247.
+
+\bibitem[Smolin(1997)]{smolin1997life}
+Smolin, L. (1997).
+\newblock \emph{The Life of the Cosmos}.
+\newblock Oxford University Press, New York.
+
+\bibitem[Tipler(1994)]{tipler1994physics}
+Tipler, F.~J. (1994).
+\newblock \emph{The Physics of Immortality: Modern Cosmology, God and the Resurrection of the Dead}.
+\newblock Doubleday, New York.
+
+\end{thebibliography}
+
+\vspace{1cm}
+\noindent\textbf{Nota final.} Nada en este trabajo es un plan que nadie esté ejecutando. Es un estudio de hasta dónde han llevado los físicos la pregunta de ``cuánto puede la inteligencia sobrevivir al universo'', ensamblado con el lenguaje de arquitectura de bucle del trabajo al que responde. El final honesto —un número finito, inimaginablemente grande, no el infinito— es una respuesta más interesante y más útil que cualquiera de los dos extremos.
+
+\end{document}

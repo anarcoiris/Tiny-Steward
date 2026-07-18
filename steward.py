@@ -134,6 +134,7 @@ def main():
     )
 
     if not args.delegate_mode:
+        backend_launcher.start_vram_monitor(threshold_mb=1750.0, check_interval=30.0)
         for lane in ("orch", "atomic"):
             cfg = backend_launcher.configs.get(lane)
             if cfg and cfg.autostart:

@@ -12,12 +12,14 @@ llama-server CLI rewrite.
 
 from __future__ import annotations
 
+import threading
 import subprocess
 import sys
 import time
 from dataclasses import dataclass, field
 from typing import Any, Callable
 
+import core.display as display
 from core.config_check import PropsSnapshot, fetch_props
 
 LaneName = str  # "orch" | "atomic"
@@ -124,6 +126,9 @@ class BackendLauncher:
             "orch": LaneState(),
             "atomic": LaneState(),
         }
+        self._vram_monitor_thread: threading.Thread | None = None
+        self._vram_monitor_stop_event = threading.Event()
+        self.vram_mode = "heavy"
 
     @classmethod
     def from_config(
@@ -354,3 +359,74 @@ class BackendLauncher:
         pid = st.pid
         st.process = None
         return {"ok": True, "stopped": True, "pid": pid}
+
+    def start_vram_monitor(self, threshold_mb: float = 1750.0, check_interval: float = 30.0):
+        if self._vram_monitor_thread and self._vram_monitor_thread.is_alive():
+            return
+        self._vram_monitor_stop_event.clear()
+        self._vram_monitor_thread = threading.Thread(
+            target=self._vram_monitor_loop,
+            args=(threshold_mb, check_interval),
+            daemon=True,
+            name="VramMonitorThread"
+        )
+        self._vram_monitor_thread.start()
+
+    def stop_vram_monitor(self):
+        self._vram_monitor_stop_event.set()
+        if self._vram_monitor_thread:
+            self._vram_monitor_thread.join(timeout=2.0)
+            self._vram_monitor_thread = None
+
+    def _get_gpu0_vram_mb(self) -> float:
+        try:
+            res = subprocess.run(
+                ["nvidia-smi", "--query-gpu=memory.used", "--format=csv,noheader,nounits"],
+                capture_output=True, text=True, check=True
+            )
+            lines = res.stdout.strip().split("\n")
+            if lines and lines[0].strip().isdigit():
+                return float(lines[0].strip())
+        except Exception as e:
+            display.print_event("error", f"VRAM monitor failed to run nvidia-smi: {e}")
+        return 0.0
+
+    def _adapt_to_light_mode(self):
+        if self.vram_mode == "light":
+            return
+        display.print_event("warn", "GPU0 VRAM > 1750MB! Switching to Light topology (Qwythos=GPU1, Qwen=GPU2)...")
+        self.stop("orch")
+        self.stop("atomic")
+        
+        # Modify in-memory configs for Light mode
+        orch_cfg = self.configs.get("orch")
+        if orch_cfg:
+            try:
+                idx = orch_cfg.cmd.index("-CudaDevices")
+                orch_cfg.cmd[idx + 1] = "1"
+            except ValueError:
+                orch_cfg.cmd.extend(["-CudaDevices", "1"])
+                
+        atomic_cfg = self.configs.get("atomic")
+        if atomic_cfg:
+            try:
+                idx = atomic_cfg.cmd.index("-CudaDevices")
+                atomic_cfg.cmd[idx + 1] = "2"
+            except ValueError:
+                atomic_cfg.cmd.extend(["-CudaDevices", "2"])
+                
+        self.vram_mode = "light"
+        
+        if orch_cfg and orch_cfg.autostart:
+            self.start("orch")
+        if atomic_cfg and atomic_cfg.autostart:
+            self.start("atomic")
+
+    def _vram_monitor_loop(self, threshold_mb: float, check_interval: float):
+        while not self._vram_monitor_stop_event.is_set():
+            if self.vram_mode == "heavy":
+                used_mb = self._get_gpu0_vram_mb()
+                if used_mb > threshold_mb:
+                    self._adapt_to_light_mode()
+                    # Stays in light mode for the remainder of the session to prevent flapping
+            self._vram_monitor_stop_event.wait(check_interval)
