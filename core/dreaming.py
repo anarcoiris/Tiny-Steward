@@ -40,19 +40,31 @@ Rules:
 
 
 def think_path(sessions_dir: Path, session_name: str) -> Path:
-    return Path(sessions_dir) / f"{session_name}.think.jsonl"
+    safe_name = "".join(c if c.isalnum() or c in "-_" else "_" for c in session_name)
+    p = Path(sessions_dir) / safe_name
+    p.mkdir(parents=True, exist_ok=True)
+    return p / f"{session_name}.think.jsonl"
 
 
 def memory_jsonl_path(sessions_dir: Path, session_name: str) -> Path:
-    return Path(sessions_dir) / f"{session_name}.memory.jsonl"
+    safe_name = "".join(c if c.isalnum() or c in "-_" else "_" for c in session_name)
+    p = Path(sessions_dir) / safe_name
+    p.mkdir(parents=True, exist_ok=True)
+    return p / f"{session_name}.memory.jsonl"
 
 
 def memory_md_path(sessions_dir: Path, session_name: str) -> Path:
-    return Path(sessions_dir) / f"{session_name}.memory.md"
+    safe_name = "".join(c if c.isalnum() or c in "-_" else "_" for c in session_name)
+    p = Path(sessions_dir) / safe_name
+    p.mkdir(parents=True, exist_ok=True)
+    return p / f"{session_name}.memory.md"
 
 
 def interactions_path(sessions_dir: Path, session_name: str) -> Path:
-    return Path(sessions_dir) / f"{session_name}.interactions.jsonl"
+    safe_name = "".join(c if c.isalnum() or c in "-_" else "_" for c in session_name)
+    p = Path(sessions_dir) / safe_name
+    p.mkdir(parents=True, exist_ok=True)
+    return p / f"{session_name}.interactions.jsonl"
 
 
 def load_think_entries(path: Path) -> list[dict[str, Any]]:

@@ -63,6 +63,12 @@ class TestDisplayMarkupEscape(unittest.TestCase):
         except MarkupError as e:
             self.fail(f"traceback branch raised MarkupError: {e}")
 
+    def test_print_header(self):
+        try:
+            display.print_header("TURN 1/50")
+        except Exception as e:
+            self.fail(f"print_header raised exception: {e}")
+
 
 if __name__ == "__main__":
     unittest.main()

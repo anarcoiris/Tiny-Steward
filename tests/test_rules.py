@@ -65,6 +65,26 @@ class TestRulesLoading(unittest.TestCase):
             self.assertLessEqual(len(text), 150)
             self.assertIn("truncated", text)
 
+    def test_reload_rules_and_delegate_child(self):
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "RULES.md"
+            path.write_text("Initial rule", encoding="utf-8")
+            llm = LLMClient(base_url="http://mock", model="m")
+            rt = Runtime(
+                llm=llm,
+                help_engine=HelpEngine(SkillIndex([], vectors=None), None),
+                session=Session("test-s"),
+                rules_path=path,
+            )
+            self.assertFalse(rt._is_delegate_child)
+            rt.mark_delegate_child(parent="main")
+            self.assertTrue(rt._is_delegate_child)
+
+            path.write_text("Updated rule text", encoding="utf-8")
+            res = rt.reload_rules()
+            self.assertIn("Reloaded rules", res)
+            self.assertIn("Updated rule text", rt._fresh_system_messages()[0]["content"])
+
 
 if __name__ == "__main__":
     unittest.main()

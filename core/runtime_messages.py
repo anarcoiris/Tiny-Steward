@@ -37,10 +37,19 @@ def normalize_messages_for_llm(
     placeholder so history never contains blank assistant messages.
     """
     out: list[dict[str, Any]] = []
-    for msg in messages:
+    for i, msg in enumerate(messages):
         m = dict(msg)
         role = m.get("role", "")
         content = m.get("content", "")
+
+        # Jinja template compliance: non-first system messages are invalid in Qwythos/Qwen templates
+        if i > 0 and role == "system":
+            m["role"] = "user"
+            if isinstance(content, str) and not content.startswith("[System Note]"):
+                m["content"] = f"[System Note]\n{content}"
+            role = "user"
+            content = m["content"]
+
         if role == "user" and isinstance(content, list):
             # Multimodal: scrub/placeholder only on text parts; keep image_ref / image_url.
             m["content"] = _normalize_content_parts(content)

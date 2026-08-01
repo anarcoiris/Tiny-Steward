@@ -16,6 +16,7 @@ import threading
 import subprocess
 import sys
 import time
+import json
 from dataclasses import dataclass, field
 from typing import Any, Callable
 
@@ -129,6 +130,7 @@ class BackendLauncher:
         self._vram_monitor_thread: threading.Thread | None = None
         self._vram_monitor_stop_event = threading.Event()
         self.vram_mode = "heavy"
+        self._watchdog_threads: dict[LaneName, threading.Thread] = {}
 
     @classmethod
     def from_config(
@@ -378,6 +380,61 @@ class BackendLauncher:
             self._vram_monitor_thread.join(timeout=2.0)
             self._vram_monitor_thread = None
 
+    def start_health_watchdog(self, lane: LaneName, url: str, interval: float = 60.0) -> None:
+        """Start a background /health watchdog for *lane*.
+
+        Logs a crash event when 3 consecutive health checks fail so GPU-lost
+        events that are invisible to the launch-history log are captured.
+        Does NOT auto-restart — steward will do that on the next LLM call.
+        """
+        if lane in self._watchdog_threads and self._watchdog_threads[lane].is_alive():
+            return
+
+        stop_ev = self._vram_monitor_stop_event  # shared stop signal
+
+        def _loop() -> None:
+            import httpx
+            consecutive_failures = 0
+            while not stop_ev.is_set():
+                try:
+                    resp = httpx.get(f"{url}/health", timeout=5.0)
+                    if resp.status_code == 200:
+                        consecutive_failures = 0
+                    else:
+                        consecutive_failures += 1
+                except Exception:
+                    consecutive_failures += 1
+
+                if consecutive_failures >= 3:
+                    display.print_event(
+                        "error",
+                        f"[watchdog] {lane} health failed 3× in a row — possible GPU-lost event",
+                    )
+                    self._log_crash_event(lane, url)
+                    consecutive_failures = 0  # reset to avoid log spam
+
+                stop_ev.wait(interval)
+
+        t = threading.Thread(target=_loop, name=f"health-watchdog-{lane}", daemon=True)
+        t.start()
+        self._watchdog_threads[lane] = t
+
+    def _log_crash_event(self, lane: LaneName, url: str) -> None:
+        """Append a timestamped crash-event entry to qwythos.crash-events.jsonl"""
+        import pathlib
+        log_path = pathlib.Path("qwythos.crash-events.jsonl")
+        entry = {
+            "ts": time.time(),
+            "lane": lane,
+            "url": url,
+            "event": "health_watchdog_3x_fail",
+        }
+        try:
+            with log_path.open("a", encoding="utf-8") as f:
+                f.write(json.dumps(entry) + "\n")
+        except Exception as exc:
+            display.print_event("warn", f"[watchdog] could not write crash-events log: {exc}")
+
     def _get_gpu0_vram_mb(self) -> float:
         try:
             res = subprocess.run(
@@ -394,13 +451,27 @@ class BackendLauncher:
     def _adapt_to_light_mode(self):
         if self.vram_mode == "light":
             return
+        orch_cfg = self.configs.get("orch")
+        atomic_cfg = self.configs.get("atomic")
+        
+        # Do not kill externally managed backend servers when autostart is false
+        if not (orch_cfg and orch_cfg.autostart) and not (atomic_cfg and atomic_cfg.autostart):
+            self.vram_mode = "light"
+            return
+
         display.print_event("warn", "GPU0 VRAM > 1750MB! Switching to Light topology (Qwythos=GPU1, Qwen=GPU2)...")
         self.stop("orch")
         self.stop("atomic")
         
+        # Save deep copies of heavy mode commands before mutating
+        if not hasattr(self, "_heavy_cmds"):
+            self._heavy_cmds: dict[LaneName, list[str]] = {}
+        
         # Modify in-memory configs for Light mode
         orch_cfg = self.configs.get("orch")
         if orch_cfg:
+            if "orch" not in self._heavy_cmds:
+                self._heavy_cmds["orch"] = list(orch_cfg.cmd)
             try:
                 idx = orch_cfg.cmd.index("-CudaDevices")
                 orch_cfg.cmd[idx + 1] = "1"
@@ -409,6 +480,8 @@ class BackendLauncher:
                 
         atomic_cfg = self.configs.get("atomic")
         if atomic_cfg:
+            if "atomic" not in self._heavy_cmds:
+                self._heavy_cmds["atomic"] = list(atomic_cfg.cmd)
             try:
                 idx = atomic_cfg.cmd.index("-CudaDevices")
                 atomic_cfg.cmd[idx + 1] = "2"
@@ -421,6 +494,23 @@ class BackendLauncher:
             self.start("orch")
         if atomic_cfg and atomic_cfg.autostart:
             self.start("atomic")
+
+    def revert_to_heavy_mode(self):
+        """Revert back to heavy mode configuration if heavy commands were saved."""
+        if self.vram_mode == "heavy":
+            return
+        heavy_cmds = getattr(self, "_heavy_cmds", {})
+        if not heavy_cmds:
+            self.vram_mode = "heavy"
+            return
+        display.print_event("info", "Reverting to Heavy topology commands...")
+        self.stop("orch")
+        self.stop("atomic")
+        for lane, cmd in heavy_cmds.items():
+            cfg = self.configs.get(lane)
+            if cfg:
+                cfg.cmd = list(cmd)
+        self.vram_mode = "heavy"
 
     def _vram_monitor_loop(self, threshold_mb: float, check_interval: float):
         while not self._vram_monitor_stop_event.is_set():

@@ -169,7 +169,7 @@ class InteractionLog:
         html_path = self.dir / f"{self.session_name}_review.html"
         
         # Simple HTML generation
-        html = [
+        html_lines = [
             "<html><head><title>Interaction Review Report</title>",
             "<style>body { font-family: sans-serif; background: #1e1e1e; color: #d4d4d4; padding: 20px; }",
             ".record { background: #252526; padding: 15px; margin-bottom: 20px; border-radius: 5px; border-left: 5px solid #007acc; }",
@@ -187,36 +187,36 @@ class InteractionLog:
             user_raw = str(r.get("user_input", ""))
             user_esc = html.escape(user_raw[:500] + ("…" if len(user_raw) > 500 else ""))
             
-            html.append(f"<div class='record {status_class} {reviewed_class}'>")
-            html.append(f"<h3>[{ts}] {user_esc}</h3>")
-            html.append(
+            html_lines.append(f"<div class='record {status_class} {reviewed_class}'>")
+            html_lines.append(f"<h3>[{ts}] {user_esc}</h3>")
+            html_lines.append(
                 f"<p><strong>Outcome:</strong> {html.escape(str(r.get('outcome')))} | "
                 f"<strong>Turns:</strong> {html.escape(str(r.get('turns')))} | "
                 f"<strong>Elapsed:</strong> {float(r.get('elapsed_s', 0)):.1f}s</p>"
             )
             
             if r.get("reviewed"):
-                html.append(
+                html_lines.append(
                     f"<p><strong>Rating:</strong> {html.escape(str(r.get('rating')))} | "
                     f"<strong>Notes:</strong> {html.escape(str(r.get('notes')))}</p>"
                 )
                 
             if r.get("actions"):
-                html.append("<h4>Actions:</h4><ul>")
+                html_lines.append("<h4>Actions:</h4><ul>")
                 for a in r.get("actions", []):
                     mark = "❌" if a.get("exit_code") != 0 else "✅"
-                    html.append(
+                    html_lines.append(
                         f"<li>{mark} {html.escape(str(a.get('name')))}: "
                         f"<code>{html.escape(str(a.get('body_preview')))}</code></li>"
                     )
-                html.append("</ul>")
+                html_lines.append("</ul>")
                 
-            html.append("</div>")
+            html_lines.append("</div>")
             
-        html.append("</body></html>")
+        html_lines.append("</body></html>")
         
         try:
-            html_path.write_text("\n".join(html), encoding="utf-8")
+            html_path.write_text("\n".join(html_lines), encoding="utf-8")
         except Exception:
             return ""
             

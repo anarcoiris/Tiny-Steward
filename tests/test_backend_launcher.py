@@ -133,6 +133,27 @@ class TestBackendLauncher(unittest.TestCase):
         st = bl.status("orch")
         self.assertFalse(st["configured"])
 
+    def test_runtime_init_with_backend_launcher(self):
+        from core.runtime import Runtime
+        bl = BackendLauncher({"orch": None, "atomic": None})
+        llm = MagicMock()
+        help_engine = MagicMock()
+        session = MagicMock()
+
+        rt = Runtime(
+            llm=llm,
+            help_engine=help_engine,
+            session=session,
+            backend_launcher=bl,
+            primary_provider="qwythos",
+            secondary_provider="qwen3_json",
+        )
+        self.assertEqual(rt.backend_launcher, bl)
+        self.assertIn("primary", rt.profiles)
+        self.assertIn("secondary", rt.profiles)
+        self.assertEqual(rt.profiles["primary"].id, "qwythos")
+        self.assertEqual(rt.profiles["secondary"].id, "qwen3_json")
+
 
 if __name__ == "__main__":
     unittest.main()

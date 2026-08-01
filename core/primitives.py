@@ -53,15 +53,24 @@ def _run_shell(
 # Shell primitives
 # ------------------------------------------------------------------
 
-def pwsh(command: str, *, cwd: str | None = None, timeout: float = 60.0) -> dict[str, Any]:
+def pwsh(command: str, *, cwd: str | None = None, timeout: float = 120.0) -> dict[str, Any]:
     """Execute a PowerShell command."""
-    return _run_shell(
+    res = _run_shell(
         command,
         shell_exe="pwsh",
         shell_args=["-NoProfile", "-NonInteractive", "-Command"],
         timeout=timeout,
         cwd=cwd,
     )
+    if res.get("exit_code") == -1 and "not found" in res.get("stderr", ""):
+        res = _run_shell(
+            command,
+            shell_exe="powershell",
+            shell_args=["-NoProfile", "-NonInteractive", "-Command"],
+            timeout=timeout,
+            cwd=cwd,
+        )
+    return res
 
 
 def bash(command: str, *, cwd: str | None = None, timeout: float = 60.0) -> dict[str, Any]:
@@ -193,12 +202,19 @@ def ls(path: str = ".") -> dict[str, Any]:
             return {"error": f"Not a directory: {path}"}
 
         entries = []
-        for item in sorted(p.iterdir()):
+        all_items = sorted(p.iterdir())
+        capped = False
+        if len(all_items) > 100:
+            all_items = all_items[:100]
+            capped = True
+        for item in all_items:
             if item.is_dir():
                 entries.append(f"  {item.name}/")
             else:
                 size = item.stat().st_size
                 entries.append(f"  {item.name}  ({size} bytes)")
+        if capped:
+            entries.append("\n  [... directory listing capped at 100 entries ...]")
         return {"content": f"{p}/\n" + "\n".join(entries) if entries else f"{p}/ (empty)"}
     except Exception as e:
         return {"error": str(e)}

@@ -166,6 +166,28 @@ class SessionStats:
         """Explicitly record a checkpoint save."""
         self.checkpoint_count += 1
 
+    def add_turn(self, turn_stats: "TurnStats") -> None:
+        """Accumulate a pre-built TurnStats into session totals.
+
+        Used by RuntimeLoopMixin._emit_stats to record streaming turns
+        without re-constructing all primitive arguments.
+        """
+        self.total_prompt_tokens += (
+            turn_stats.prompt_tokens_real
+            if turn_stats.prompt_tokens_real is not None
+            else turn_stats.prompt_tokens_est
+        )
+        self.total_completion_tokens += (
+            turn_stats.completion_tokens_real
+            if turn_stats.completion_tokens_real is not None
+            else turn_stats.completion_tokens_est
+        )
+        self.total_turns += 1
+        if turn_stats.compaction_triggered:
+            self.compaction_count += 1
+        if turn_stats.checkpoint_saved:
+            self.checkpoint_count += 1
+
     @property
     def session_elapsed_s(self) -> float:
         return time.time() - self._start_time

@@ -255,7 +255,7 @@ class TestThinkLogAndSessionRaw(unittest.TestCase):
             raw = "<think>\ninternal plan\n</think>\n\nDONE"
             rt._record_assistant_turn(messages, raw)
             self.assertIn("<think>", session.messages[-1]["content"])
-            think_path = Path(td) / "thinktest.think.jsonl"
+            think_path = Path(td) / "thinktest" / "thinktest.think.jsonl"
             self.assertTrue(think_path.exists())
             line = json.loads(think_path.read_text(encoding="utf-8").strip())
             self.assertIn("internal plan", line["reasoning"])

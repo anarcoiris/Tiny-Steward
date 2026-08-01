@@ -30,7 +30,7 @@ class TestSessionManager(unittest.TestCase):
         self.assertEqual(session.name, "test_session")
         self.assertEqual(self.session_mgr.current, session)
 
-        expected_path = self.temp_dir / "test_session.json"
+        expected_path = self.temp_dir / "test_session" / "test_session.json"
         self.assertTrue(expected_path.exists())
 
         # Load raw file and check name
@@ -55,14 +55,15 @@ class TestSessionManager(unittest.TestCase):
         self.assertEqual(session.name, "mismatched")
         self.assertEqual(self.session_mgr.current.name, "mismatched")
 
-        # Now save it and verify it writes back to mismatched.json, not internal_old_name.json
+        # Now save it and verify it writes back to mismatched/mismatched.json, not internal_old_name.json
         self.session_mgr.save()
         
-        self.assertTrue((self.temp_dir / "mismatched.json").exists())
+        nested_expected_path = self.temp_dir / "mismatched" / "mismatched.json"
+        self.assertTrue(nested_expected_path.exists())
         self.assertFalse((self.temp_dir / "internal_old_name.json").exists())
 
         # Check that saved file contains the correct aligned name
-        saved_data = json.loads(mismatched_path.read_text(encoding="utf-8"))
+        saved_data = json.loads(nested_expected_path.read_text(encoding="utf-8"))
         self.assertEqual(saved_data["name"], "mismatched")
 
     def test_list_sessions_includes_orch_id_slot(self):

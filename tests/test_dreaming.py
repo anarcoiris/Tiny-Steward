@@ -76,7 +76,8 @@ class TestDreaming(unittest.TestCase):
     def test_run_dream_with_mock_llm(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
-            think = root / "demo.think.jsonl"
+            think = root / "demo" / "demo.think.jsonl"
+            think.parent.mkdir(parents=True, exist_ok=True)
             think.write_text(
                 json.dumps({
                     "ts": "2026-07-16T22:00:00+00:00",

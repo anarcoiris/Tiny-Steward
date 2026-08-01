@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Tiny Steward - Web IDE & Control Center</title>
+  
+  <!-- Google Fonts: Inter -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+
+  <!-- Force Graph Library -->
+  <script src="https://unpkg.com/force-graph"></script>
+
+  <!-- App Stylesheets -->
+  <link rel="stylesheet" href="web/css/main.css">
+  <link rel="stylesheet" href="web/css/components.css">
+</head>
+<body>
+
+  <!-- App Header & Navigation -->
+  <header class="app-header">
+    <div class="brand-container">
+      <span style="font-size: 1.3rem;">⚡</span>
+      <span class="brand-title">Tiny Steward Web IDE</span>
+      <div class="status-badge">
+        <span class="status-dot active"></span>
+        <span id="lock-status-label">Shared Lock: Idle</span>
+      </div>
+    </div>
+
+    <!-- Navigation Tabs -->
+    <nav class="nav-tabs">
+      <button class="tab-btn active" data-tab="chat">💬 Chat & REPL</button>
+      <button class="tab-btn" data-tab="editor">📁 File IDE</button>
+      <button class="tab-btn" data-tab="kanban">📋 Kanban Board</button>
+      <button class="tab-btn" data-tab="graph">🧠 Memory Graph</button>
+      <button class="tab-btn" data-tab="telemetry">⚡ Telemetry</button>
+    </nav>
+
+    <!-- Right Header Actions -->
+    <div class="header-actions">
+      <label style="font-size:0.75rem; color:var(--text-muted);">Session:</label>
+      <select id="session-select" style="padding:4px 8px; border-radius:var(--radius-sm);">
+        <option value="default">default</option>
+      </select>
+    </div>
+  </header>
+
+  <!-- Main Views Container -->
+  <main class="app-content">
+
+    <!-- 1. Agent Chat & REPL View -->
+    <section id="tab-chat" class="tab-content active">
+      <div class="chat-container">
+        <div class="glass-panel chat-sidebar">
+          <h3 style="font-size:0.9rem; color:var(--accent-blue);">Quick Commands</h3>
+          <div style="font-size:0.78rem; color:var(--text-muted); display:flex; flex-direction:column; gap:6px;">
+            <code>/idle status</code>
+            <code>/help</code>
+            <code>/session list</code>
+          </div>
+        </div>
+        
+        <div class="chat-main">
+          <div id="messages-feed" class="glass-panel messages-feed">
+            <div class="message-bubble assistant">
+              👋 Welcome to <strong>Tiny Steward Web IDE</strong>. Enter an instruction or query to start reasoning.
+            </div>
+          </div>
+
+          <div class="input-box-container">
+            <textarea id="chat-input" class="chat-input" placeholder="Ask Tiny Steward anything or enter a task instruction..."></textarea>
+            <button id="send-btn" class="btn">Send</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 2. File IDE View -->
+    <section id="tab-editor" class="tab-content">
+      <div class="editor-container">
+        <div class="glass-panel file-tree-panel">
+          <h3 style="font-size:0.9rem; margin-bottom:10px; color:var(--accent-blue);">Workspace Files</h3>
+          <div id="file-tree-container">Loading tree...</div>
+        </div>
+
+        <div class="glass-panel code-editor-panel">
+          <div class="editor-header">
+            <span id="editor-file-title" style="font-size:0.85rem; font-weight:600; color:var(--text-muted);">No file selected</span>
+            <button id="save-file-btn" class="btn btn-secondary">Save File</button>
+          </div>
+          <textarea id="code-textarea" class="code-textarea" placeholder="Select a file to edit..."></textarea>
+        </div>
+      </div>
+    </section>
+
+    <!-- 3. Kanban Board View -->
+    <section id="tab-kanban" class="tab-content">
+      <div class="kanban-container">
+        <div class="glass-panel kanban-column">
+          <div class="kanban-header">Backlog</div>
+          <div id="kanban-backlog" class="kanban-cards-container"></div>
+        </div>
+        <div class="glass-panel kanban-column">
+          <div class="kanban-header">To Do</div>
+          <div id="kanban-todo" class="kanban-cards-container"></div>
+        </div>
+        <div class="glass-panel kanban-column">
+          <div class="kanban-header" style="color:var(--accent-blue);">In Progress</div>
+          <div id="kanban-in-progress" class="kanban-cards-container"></div>
+        </div>
+        <div class="glass-panel kanban-column">
+          <div class="kanban-header" style="color:var(--accent-amber);">Review</div>
+          <div id="kanban-review" class="kanban-cards-container"></div>
+        </div>
+        <div class="glass-panel kanban-column">
+          <div class="kanban-header" style="color:var(--accent-green);">Done</div>
+          <div id="kanban-done" class="kanban-cards-container"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 4. Memory Graph View -->
+    <section id="tab-graph" class="tab-content">
+      <div id="graph-canvas-container" style="width:100%; height:100%; position:relative;"></div>
+    </section>
+
+    <!-- 5. Telemetry View -->
+    <section id="tab-telemetry" class="tab-content">
+      <div id="gpu-metrics-grid" class="telemetry-container">
+        <div class="glass-panel gpu-card" style="padding:16px;">
+          <div>Loading GPU telemetry...</div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- ES Modules Entry -->
+  <script type="module" src="web/js/app.js"></script>
+</body>
+</html>

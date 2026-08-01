@@ -7,6 +7,7 @@ Handles streaming, reasoning_content, retry on 503 (slot busy), and token estima
 from __future__ import annotations
 
 import json
+import re
 import time
 from typing import Any, Generator, Literal
 
@@ -92,13 +93,7 @@ class LLMClient:
                 kwargs[key] = cfg[key]
         budget = cfg.get("thinking_budget_tokens", -1)
         cache = cfg.get("cache_prompt", True)
-        known = {
-            "base_url", "api", "model", "ctx", "max_tokens", "temperature", "top_p",
-            "repeat_penalty", "chat_template_kwargs", "thinking_budget_tokens",
-            "cache_prompt", "enable_thinking", "preserve_thinking", "add_vision_id",
-            "launch", "id_slot", "provider", "vision",
-        }
-        extra = {k: v for k, v in cfg.items() if k not in known}
+        extra = {k: v for k, v in cfg.items() if k not in cls._RESERVED_CFG}
         id_slot = cfg.get("id_slot", None)
         params = {
             "base_url": cfg["base_url"],
@@ -415,8 +410,13 @@ _StreamContext = _GatedStreamContext
 # Token estimation (rough, no tokenizer dependency)
 # ------------------------------------------------------------------
 def estimate_tokens(text: str) -> int:
-    """Rough token estimate: ~4 chars per token for English text."""
-    return max(1, len(text) // 4)
+    """Token estimate using content-type weighting for XML/code syntax vs prose."""
+    if not text:
+        return 0
+    # XML tags, parameters, and structural symbols tokenize denser (~3.2 chars/token) than prose (~4.2 chars/token)
+    code_chars = sum(len(m.group()) for m in re.finditer(r'<[^>]+>|[\{\}\[\]"`;:\\]', text))
+    prose_chars = len(text) - code_chars
+    return max(1, int(code_chars / 3.2 + prose_chars / 4.2))
 
 
 def estimate_content_tokens(content: Any) -> int:

@@ -20,8 +20,7 @@ from core.vision import (
 )
 import core.display as display
 
-# Soft cap mirrored from runtime (avoid circular import at module load).
-ATTACH_MAX_CHARS = 48_000
+from core.system_prompt import ATTACH_MAX_CHARS
 
 
 class RuntimeMetaMixin:
@@ -129,7 +128,7 @@ class RuntimeMetaMixin:
                 display.print_event("ok", msg)
                 # Refresh live system message if caller passes messages list
                 if messages and messages[0].get("role") == "system":
-                    messages[0]["content"] = self._system_prompt
+                    messages[0]["content"] = self._fresh_system_messages()[0]["content"]
                 return True
             if not self.rules_enabled:
                 display.print_event("info", "rules disabled in config")
@@ -178,9 +177,14 @@ class RuntimeMetaMixin:
             display.print_event("compact", f"Manually compacted: {before} → {after} messages")
             return True
 
+        # ── /idle [status|start|stop|run] ──────────────────────────────
+        if command == "/idle":
+            return self._handle_idle(arg)
+
         # ── /dream [session] ───────────────────────────────────────────
         if command == "/dream":
             return self._handle_dream(arg, messages)
+
 
         # ── /memory ────────────────────────────────────────────────────
         if command == "/memory":
@@ -772,3 +776,71 @@ class RuntimeMetaMixin:
     def _save_config_overrides(self):
         """Stub: write runtime overrides back to config.yaml."""
         display.print_event("warn", "/config save not yet implemented — overrides are runtime-only.")
+
+    def _handle_idle(self, arg: str) -> bool:
+        """Handle /idle [status|start|stop|run] commands."""
+        loop = getattr(self, "idle_loop", None)
+        if not loop:
+            display.print_event("error", "Idle loop engine not initialized.")
+            return True
+
+        sub = arg.strip().lower()
+        if sub in ("start", "enable", "on"):
+            loop.state.enabled = True
+            loop.start()
+            display.print_event("ok", "Idle loop started (daemon thread active).")
+            return True
+
+        if sub in ("stop", "disable", "off"):
+            loop.state.enabled = False
+            loop.stop()
+            display.print_event("ok", "Idle loop stopped.")
+            return True
+
+        if sub in ("run", "trigger", "now"):
+            display.print_event("info", "Triggering immediate idle loop pass…")
+            res = loop.trigger_now()
+            if res.get("ok"):
+                display.print_event("ok", f"Idle pass completed: {res}")
+            else:
+                display.print_event("warn", f"Idle pass skipped: {res.get('reason')}")
+            return True
+
+        # Default: /idle status
+        st = loop.state
+        running_str = "running" if loop.is_running else "stopped"
+        exec_lock = getattr(self, "execution_lock", None) or getattr(loop, "lock", None)
+        shared_st = exec_lock.get_shared_status() if exec_lock and hasattr(exec_lock, "get_shared_status") else {}
+
+        lock_state_str = shared_st.get("shared_lock_state", "UNKNOWN")
+        holder_info = shared_st.get("lock_holder")
+        holder_str = "None (FREE)"
+        if holder_info:
+            holder_str = f"PID {holder_info.get('pid')} [session: '{holder_info.get('session')}'] mode={holder_info.get('mode')}"
+
+        procs_list = shared_st.get("registered_processes", [])
+        proc_lines = []
+        for p in procs_list:
+            cur_tag = " (current)" if p.get("is_current_process") else ""
+            proc_lines.append(f"    * PID {p.get('pid')} [session: '{p.get('session')}']{cur_tag} -> status={p.get('status')}")
+
+        procs_summary = "\n".join(proc_lines) if proc_lines else "    * (None registered)"
+
+        display.print_event(
+            "info",
+            f"Idle Daemon [{running_str}] (enabled={st.enabled})\n"
+            f"Shared Execution Semaphore:\n"
+            f"  - Shared Lock State: {lock_state_str}\n"
+            f"  - Current Lock Holder: {holder_str}\n"
+            f"  - Registered Processes & Sessions on Host ({len(procs_list)}):\n"
+            f"{procs_summary}\n"
+            f"Loop Telemetry:\n"
+            f"  - Intervals: tick={st.tick_interval}s, health={st.health_check_interval}s, dream={st.dream_check_interval}s, alert={st.alert_check_interval}s\n"
+            f"  - Last Run: {st.last_run_ts or 'never'}\n"
+            f"  - Stats: dream_runs={st.dream_runs_count}, alerts_processed={st.alerts_processed_count}\n"
+            f"  - Health Status: {st.health_status or 'pending'}\n"
+            f"  - Last Error: {st.last_error or 'none'}"
+        )
+        return True
+
+

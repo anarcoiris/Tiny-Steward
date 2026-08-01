@@ -45,7 +45,7 @@ class RuntimeDelegateMixin:
 
     def _delegate_with_terminal(self, skill, problem: str, context_text: str) -> str:
         """Spawn a child terminal when configured; otherwise run in-process."""
-        mode = resolve_terminal_mode(self.delegate_terminal)
+        mode = resolve_terminal_mode(getattr(self, "delegate_terminal_setting", getattr(self, "delegate_terminal", "auto")))
         if mode == "in_process" or not self.session_manager:
             return self._run_delegate_loop(skill, problem, context_text)
 
@@ -225,7 +225,7 @@ class RuntimeDelegateMixin:
                 messages,
                 response,
                 client=self.atomic_llm,
-                persist_session=self._is_delegate_child,
+                persist_session=getattr(self, "_is_delegate_child", False),
             )
 
             if "DONE" in response and not self._extract_actions(response, backend="secondary"):

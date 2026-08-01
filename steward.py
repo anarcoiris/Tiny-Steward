@@ -135,6 +135,14 @@ def main():
 
     if not args.delegate_mode:
         backend_launcher.start_vram_monitor(threshold_mb=1750.0, check_interval=30.0)
+        # Health watchdog: log GPU-lost events invisible to launch-history
+        _llm_cfg = config.get("llm") or {}
+        _orch_url = (_llm_cfg.get("orchestrator") or {}).get("base_url", "")
+        _atomic_url = (_llm_cfg.get("atomic") or {}).get("base_url", "")
+        if _orch_url:
+            backend_launcher.start_health_watchdog("orch", _orch_url, interval=60.0)
+        if _atomic_url:
+            backend_launcher.start_health_watchdog("atomic", _atomic_url, interval=60.0)
         for lane in ("orch", "atomic"):
             cfg = backend_launcher.configs.get(lane)
             if cfg and cfg.autostart:
@@ -298,6 +306,7 @@ def main():
         primary_provider=primary_provider,
         secondary_provider=secondary_provider,
         vision_enabled=False if args.delegate_mode else vision_enabled,
+        idle_config=config.get("idle_loop"),
     )
     runtime.session_manager = session_mgr
 

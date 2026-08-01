@@ -1,0 +1,14 @@
+{
+	"folders": [
+		{
+			"path": "."
+		},
+		{
+			"path": "../Ollama/docker/llamacpp"
+		},
+		{
+			"path": "../Pulse-main"
+		}
+	],
+	"settings": {}
+}

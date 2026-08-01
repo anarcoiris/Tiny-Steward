@@ -605,6 +605,45 @@ def print_separator():
         print("  " + "─" * 60)
 
 
+def print_header(title: str):
+    """Print a styled section/turn header rule."""
+    if _RICH:
+        _console.rule(f"[{_C.HEADER}]{title}[/{_C.HEADER}]", style=_C.BORDER)
+    else:
+        print(f"\n  ── {title} ──────────────────────────────────────────")
+
+
+def print_error(message: str):
+    """Print an error event message."""
+    print_event("error", message)
+
+
+def print_success(message: str):
+    """Print a success event message."""
+    print_event("ok", message)
+
+
+def print_think_start():
+    """Start printing thinking/reasoning stream."""
+    if _RICH:
+        _console.print("  [dim]<think>[/dim]\n  ", end="", style=_C.DIM)
+    else:
+        print("  <think>\n  ", end="", flush=True)
+
+
+def print_think_chunk(chunk: str):
+    """Print a streaming thinking chunk in dim style."""
+    print_stream_reasoning_chunk(chunk)
+
+
+def print_think_end():
+    """End printing thinking/reasoning stream."""
+    if _RICH:
+        _console.print("\n  [dim]</think>[/dim]")
+    else:
+        print("\n  </think>")
+
+
 # ---------------------------------------------------------------------------
 # Guidance UI
 # ---------------------------------------------------------------------------

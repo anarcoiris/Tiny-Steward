@@ -1,30 +1,41 @@
-# Task: Analyze and Document Redundant Scripts in Qwythos Environment
+# Task: Cross-Process & Cross-Session Shared Execution Lock & Idle Loop Status Visibility
 
-## Goal
-Identify, categorize, and document redundant or duplicate PowerShell scripts within the `C:\Users\soyko\Documents\Ollama\docker\llamacpp` directory. Focus on maintaining alignment with the overall system objectives.
+## User Request Goal
+Automatize a continuous loop in Tiny-Steward that uses idle time to stay alert (monitor mailboxes, background tasks, alerts), dream (memory consolidation), and perform self-health state checks, while ensuring it never overlaps active/running user processes using semaphores/gates, and display its full shared status between processes and sessions.
 
-## Current Status
-- **Directory**: `C:\Users\soyko\Documents\Ollama\docker\llamacpp`
-- **Scripts Listed**: 38 total (including utilities, startup scripts, and common functions)
-- **Key Observations from Initial Scan**:
-  - `atomic96-qwythos256.ps1` (1.3KB) — core atomic server launcher
-  - `start-qwythos.ps1` (6.4KB) — comprehensive stack starter
-  - `set-atomic-lane-profile.ps1` (8.3KB) — profile configuration
-  - Multiple Gemma-related scripts (`start-gemma-*.ps1`, `stop-gemma-*.ps1`)
-  - Repair and restore utilities (`repair-llama-server.ps1`, `restore-atomic-bin.ps1`)
-  - Common functions (`_common.ps1`, `free-gpus.ps1`)
+## Action Plan
+- [x] **Phase 1: Research & Architectural Design**
+  - [x] Inspect existing `core/backend_gate.py`, `core/dreaming.py`, `core/mailbox.py`, `steward.py`, and `core/runtime.py` / `core/runtime_loop.py`.
+  - [x] Design process concurrency guard (`SharedExecutionLock`) + `BackendGate` priority integration to prevent overlap with active reasoning or tool execution.
+  - [x] Draft `implementation_plan.md` and obtain user approval.
 
-## Next Steps
-1. Compare script contents to identify duplicates or near-duplicates
-2. Check for scripts with identical functionality but different names
-3. Document findings in a structured report
-4. Recommend consolidation actions where appropriate
+- [x] **Phase 2: Core Idle Loop Implementation (`core/idle_loop.py`)**
+  - [x] Create `core/idle_loop.py` containing `IdleLoop` daemon class.
+  - [x] Implement `SharedExecutionLock` ensuring non-overlapping execution across processes and sessions.
+  - [x] Implement modular background idle routines:
+    - `_do_health_check()`: monitor VRAM, backend LLMs, CPU/GPU, launcher status.
+    - `_do_dream_check()`: auto-trigger `run_dream()` when un-dreamed think entries exist and system is idle.
+    - `_do_alert_check()`: poll mailbox for inter-agent messages / notifications.
+  - [x] Support graceful start/stop/trigger_now.
 
-## Long Term mission Goal:
- adding visual projector
+- [x] **Phase 3: Runtime & CLI Integration**
+  - [x] Add `idle_loop` section in `config.yaml`.
+  - [x] Integrate `IdleLoop` start/stop in `steward.py` and `Runtime.run_interactive()` / REPL prompt loop.
+  - [x] Add `/idle status|start|stop|run` slash command in `core/runtime_meta.py`.
 
-## Async Clock Tools / Heartbeat — Build & Integrate
-- Goal: Provide a heartbeat/timer that always inputs a user prompt interaction with instructions on pending awaitings
-- Must work as "while, for, if" loops; if no approved steps require human-in-the-loop, scan `../repo-hygiene/*` (in Documents) for tasks
-- If out of jobs: clone https://github.com/anarcoiris/editorial_anarcoiris and incorporate its skills
-- Add this reminder to task.md so it is not missed or left incomplete
+- [x] **Phase 4: Cross-Process & Cross-Session Shared Semaphore Implementation**
+  - [x] Update `SharedExecutionLock` in `core/idle_loop.py` to use OS file locking (`sessions/.execution.lock`) + atomic lock registry (`sessions/.lock_registry.json`).
+  - [x] Add stale PID detection (`_is_pid_alive`) and cleanup so crashed sessions/processes release locks automatically.
+  - [x] Implement `get_shared_status()` returning active lock holder (PID, session), registered processes, and lock states across all sessions.
+  - [x] Format and display cross-process & cross-session shared status table in `/idle status`.
+
+- [x] **Phase 5: Unit Testing & Verification**
+  - [x] Add cross-process / multi-session unit tests in `tests/test_idle_loop.py`.
+  - [x] Run full pytest suite (142/142 passed cleanly).
+
+- [x] **Phase 6: Tiny Steward Web UI & Agent IDE Platform**
+  - [x] Deep research & architecture design for Web UI / Agent IDE platform.
+  - [x] Implement `core/web_server.py` with REST, SSE/WebSocket endpoints (Chat, Sessions, Files, Tasks, Telemetry, Memory).
+  - [x] Upgrade `dashboard.html` to modern 5-module Web IDE SPA (Chat, File Editor, Kanban Board, Memory Graph, Telemetry).
+  - [x] Integrate real-time streaming, `<think>` block toggles, and `SharedExecutionLock` concurrency protection.
+  - [x] Add unit & end-to-end integration tests for web endpoints (168/168 tests passed cleanly).
