@@ -42,6 +42,24 @@ llm:
     # Server-side --mmproj / -WithVision is the source of truth — this only gates the client.
     vision: auto
 
+    # Fallback chain when primary local backend is offline/busy/erroring
+    fallbacks:
+      - name: github_models
+        provider: github
+        base_url: "https://models.github.ai/inference"
+        model: "openai/gpt-4o"
+        api_key_env: "GITHUB_TOKEN"
+      - name: groq_cloud
+        provider: groq
+        base_url: "https://api.groq.com/openai/v1"
+        model: "llama-3.3-70b-versatile"
+        api_key_env: "GROQ_API_KEY"
+      - name: openrouter_free
+        provider: openrouter
+        base_url: "https://openrouter.ai/api/v1"
+        model: "meta-llama/llama-3.3-70b-instruct:free"
+        api_key_env: "OPENROUTER_API_KEY"
+
     # When atomic --parallel N>1 later: auto id_slot=-1 can split children across slots and hurt LCP.
     # F3 host: set launch.parallel / expect_total_slots; raise backends.gate.*_slots to match.
     # cache_ram / cache_idle_slots / slot_save_path are annotations until host scripts expose them

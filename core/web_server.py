@@ -265,3 +265,34 @@ async def chat_stream(req: ChatPromptRequest):
         yield "data: [DONE]\n\n"
 
     return StreamingResponse(sse_generator(), media_type="text/event-stream")
+
+
+@app.get("/api/providers/status")
+async def get_providers_status():
+    cfg_file = WORKSPACE_ROOT / "config.yaml"
+    cfg = {}
+    if cfg_file.exists():
+        try:
+            cfg = yaml.safe_load(cfg_file.read_text(encoding="utf-8")) or {}
+        except Exception:
+            pass
+    orch_cfg = cfg.get("llm", {}).get("orchestrator", {})
+    client = LLMClient.from_lane_config(orch_cfg)
+    statuses = client.get_provider_statuses()
+    client.close()
+    return {"status": "ok", "providers": statuses}
+
+
+@app.get("/api/extensions/list")
+async def get_extensions_list():
+    from core.extensions import ExtensionManager
+    cfg_file = WORKSPACE_ROOT / "config.yaml"
+    cfg = {}
+    if cfg_file.exists():
+        try:
+            cfg = yaml.safe_load(cfg_file.read_text(encoding="utf-8")) or {}
+        except Exception:
+            pass
+    mgr = ExtensionManager(workspace_root=WORKSPACE_ROOT, config=cfg)
+    return {"status": "ok", "extensions": mgr.get_all_extensions()}
+

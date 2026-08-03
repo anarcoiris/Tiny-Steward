@@ -1,6 +1,7 @@
-"""LLM client for llamacpp / OpenAI-compatible endpoints.
+"""LLM client for llamacpp / OpenAI-compatible endpoints & Multi-Provider Fallbacks.
 
-Talks to Qwythos (:11440) and Atomic (:11439) via /v1/chat/completions.
+Talks to Qwythos (:11440) and Atomic (:11439) via /v1/chat/completions,
+with automatic failover to cloud providers (GitHub Models, OpenRouter, Groq, Gemini, Ollama).
 Handles streaming, reasoning_content, retry on 503 (slot busy), and token estimation.
 """
 
@@ -14,6 +15,7 @@ from typing import Any, Generator, Literal
 import httpx
 
 from core.backend_gate import Priority, get_gate
+from core.providers.llm_provider import BaseLLMProvider, create_provider_from_config
 
 StreamPartKind = Literal["reasoning", "content"]
 
@@ -32,14 +34,14 @@ def merge_reasoning_into_content(content: str, reasoning: str) -> str:
 
 
 class LLMClient:
-    """Thin wrapper around a llamacpp / OpenAI-compatible chat endpoint."""
+    """Thin wrapper around a llamacpp / OpenAI-compatible chat endpoint with multi-provider fallbacks."""
 
     # Keys that belong on LLMClient attrs / nested kwargs — not flat extra_params.
     _RESERVED_CFG = frozenset({
         "base_url", "api", "model", "ctx", "max_tokens", "temperature", "top_p",
         "repeat_penalty", "chat_template_kwargs", "thinking_budget_tokens",
         "cache_prompt", "enable_thinking", "preserve_thinking", "add_vision_id",
-        "launch", "id_slot", "provider", "vision",
+        "launch", "id_slot", "provider", "vision", "fallbacks",
     })
 
     def __init__(
@@ -59,6 +61,7 @@ class LLMClient:
         gate_lane: Literal["orch", "atomic"] = "orch",
         gate_priority: Priority = "interactive",
         id_slot: int | None = None,
+        fallback_providers: list[BaseLLMProvider] | None = None,
     ):
         self.base_url = base_url.rstrip("/")
         self.model = model
@@ -76,6 +79,8 @@ class LLMClient:
         }
         self.gate_lane: Literal["orch", "atomic"] = gate_lane
         self.gate_priority: Priority = gate_priority
+        self.fallback_providers: list[BaseLLMProvider] = list(fallback_providers or [])
+        self.active_provider_name: str = "primary"
         self._last_reasoning: str = ""
         self._last_timings: dict[str, Any] = {}
         self._active_resp: Any = None
@@ -95,6 +100,19 @@ class LLMClient:
         cache = cfg.get("cache_prompt", True)
         extra = {k: v for k, v in cfg.items() if k not in cls._RESERVED_CFG}
         id_slot = cfg.get("id_slot", None)
+
+        # Parse fallback providers
+        fallbacks_cfg = cfg.get("fallbacks") or []
+        fallback_providers: list[BaseLLMProvider] = []
+        for idx, fb in enumerate(fallbacks_cfg):
+            if isinstance(fb, dict):
+                fb_name = fb.get("name", f"fallback_{idx+1}_{fb.get('provider', 'cloud')}")
+                try:
+                    p = create_provider_from_config(fb_name, fb)
+                    fallback_providers.append(p)
+                except Exception as e:
+                    print(f"  [warn] Failed to initialize fallback provider {fb_name}: {e}")
+
         params = {
             "base_url": cfg["base_url"],
             "model": cfg["model"],
@@ -107,9 +125,42 @@ class LLMClient:
             "cache_prompt": cache,
             "extra_params": extra,
             "id_slot": id_slot,
+            "fallback_providers": fallback_providers,
         }
         params.update(overrides)
         return cls(**params)
+
+    def get_provider_statuses(self) -> list[dict[str, Any]]:
+        """Return health status list for primary and fallback providers."""
+        statuses = []
+        # Primary status
+        start = time.perf_counter()
+        primary_healthy = False
+        err_msg = None
+        try:
+            resp = self._client.get("/health", timeout=3.0)
+            primary_healthy = (resp.status_code == 200)
+        except Exception as e:
+            err_msg = str(e)
+        lat_ms = round((time.perf_counter() - start) * 1000, 1)
+
+        statuses.append({
+            "name": "primary",
+            "provider_type": "llamacpp",
+            "model": self.model,
+            "base_url": self.base_url,
+            "healthy": primary_healthy,
+            "latency_ms": lat_ms,
+            "error": err_msg,
+            "active": (self.active_provider_name == "primary"),
+        })
+
+        for fb in self.fallback_providers:
+            info = fb.check_health()
+            info["active"] = (self.active_provider_name == fb.name)
+            statuses.append(info)
+
+        return statuses
 
     # ------------------------------------------------------------------
     # Chat completion (non-streaming)
@@ -123,21 +174,37 @@ class LLMClient:
         tools: list[dict] | None = None,
     ) -> str:
         """Send a chat completion request. Returns assistant text (think-merged)."""
-        body = self._build_body(
-            messages,
-            stream=False,
-            max_tokens=max_tokens,
-            temperature=temperature,
-            tools=tools,
-        )
-        data = self._post("/v1/chat/completions", body)
-        msg = data["choices"][0]["message"]
-        content = msg.get("content") or ""
-        reasoning = msg.get("reasoning_content") or ""
-        self._last_reasoning = reasoning
-        timings = data.get("timings") if isinstance(data.get("timings"), dict) else {}
-        self._last_timings = timings or {}
-        return merge_reasoning_into_content(content, reasoning)
+        try:
+            body = self._build_body(
+                messages,
+                stream=False,
+                max_tokens=max_tokens,
+                temperature=temperature,
+                tools=tools,
+            )
+            data = self._post("/v1/chat/completions", body)
+            msg = data["choices"][0]["message"]
+            content = msg.get("content") or ""
+            reasoning = msg.get("reasoning_content") or ""
+            self._last_reasoning = reasoning
+            timings = data.get("timings") if isinstance(data.get("timings"), dict) else {}
+            self._last_timings = timings or {}
+            self.active_provider_name = "primary"
+            return merge_reasoning_into_content(content, reasoning)
+        except Exception as primary_err:
+            if not self.fallback_providers:
+                raise primary_err
+
+            for fb_provider in self.fallback_providers:
+                try:
+                    print(f"\n  [LLM Gateway] Primary endpoint failed ({primary_err}). Falling back to provider: {fb_provider.name} ({fb_provider.model})")
+                    res = fb_provider.chat(messages, max_tokens=max_tokens, temperature=temperature, tools=tools)
+                    self.active_provider_name = fb_provider.name
+                    return res
+                except Exception as fb_err:
+                    print(f"  [LLM Gateway] Fallback provider {fb_provider.name} failed: {fb_err}")
+
+            raise primary_err
 
     # ------------------------------------------------------------------
     # Chat completion (streaming)
@@ -179,6 +246,7 @@ class LLMClient:
 
         try:
             with self._stream_request("/v1/chat/completions", body) as resp:
+                self.active_provider_name = "primary"
                 self._active_resp = resp
                 for line in resp.iter_lines():
                     if not line.startswith("data: "):
@@ -209,6 +277,25 @@ class LLMClient:
                             yield ("content", text)
                     except (json.JSONDecodeError, KeyError, IndexError, TypeError):
                         continue
+        except Exception as primary_err:
+            if not self.fallback_providers:
+                raise primary_err
+
+            for fb_provider in self.fallback_providers:
+                try:
+                    print(f"\n  [LLM Gateway] Primary stream failed ({primary_err}). Falling back to provider: {fb_provider.name} ({fb_provider.model})")
+                    self.active_provider_name = fb_provider.name
+                    for kind, text in fb_provider.chat_stream(
+                        messages, max_tokens=max_tokens, temperature=temperature, tools=tools
+                    ):
+                        if kind == "reasoning":
+                            reasoning_parts.append(text)
+                        yield (kind, text)
+                    self._last_reasoning = "".join(reasoning_parts)
+                    return usage
+                except Exception as fb_err:
+                    print(f"  [LLM Gateway] Fallback provider {fb_provider.name} failed: {fb_err}")
+            raise primary_err
         finally:
             self._active_resp = None
 
@@ -240,13 +327,7 @@ class LLMClient:
         temperature: float | None = None,
         tools: list[dict] | None = None,
     ) -> Generator[str, None, dict[str, Any] | None]:
-        """Stream content chunks; capture usage + reasoning on return.
-
-        Yields text chunks just like chat_stream(). On return (StopIteration),
-        the ``value`` attribute holds usage/timings dict or None. Reasoning text is on
-        ``self._last_reasoning`` and is also merged by callers via
-        :func:`merge_reasoning_into_content`.
-        """
+        """Stream content chunks; capture usage + reasoning on return."""
         gen = self.chat_stream_parts(
             messages, max_tokens=max_tokens, temperature=temperature, tools=tools
         )
@@ -264,7 +345,7 @@ class LLMClient:
     # Health check
     # ------------------------------------------------------------------
     def health(self) -> bool:
-        """Check if the endpoint is reachable and healthy."""
+        """Check if the primary endpoint is reachable and healthy."""
         try:
             resp = self._client.get("/health")
             return resp.status_code == 200
@@ -283,7 +364,6 @@ class LLMClient:
         temperature: float | None,
         tools: list[dict] | None = None,
     ) -> dict[str, Any]:
-        # List-valued content (image_url / text parts) is passed through unchanged.
         body: dict[str, Any] = {
             "model": self.model,
             "messages": messages,
@@ -302,9 +382,8 @@ class LLMClient:
             body["id_slot"] = self.id_slot
         if tools is not None:
             body["tools"] = tools
-        # extra_params last but must not clobber nested kwargs accidentally
         for k, v in self.extra_params.items():
-            if k in ("chat_template_kwargs", "thinking_budget_tokens", "cache_prompt", "id_slot", "launch"):
+            if k in ("chat_template_kwargs", "thinking_budget_tokens", "cache_prompt", "id_slot", "launch", "fallbacks"):
                 continue
             body[k] = v
         return body
@@ -344,10 +423,7 @@ class LLMClient:
         max_retries: int = 3,
         retry_delay: float = 2.0,
     ):
-        """Open a streaming POST under the gate; retry on 503 before yielding.
-
-        The gate slot is held for the lifetime of the returned stream context.
-        """
+        """Open a streaming POST under the gate; retry on 503 before yielding."""
         gate_cm = self._gate_hold()
         gate_cm.__enter__()
         last_exc: Exception | None = None
@@ -367,6 +443,10 @@ class LLMClient:
                 if e.response.status_code == 503 and attempt < max_retries - 1:
                     time.sleep(retry_delay * (attempt + 1))
                     continue
+                gate_cm.__exit__(None, None, None)
+                raise
+            except Exception as e:
+                last_exc = e
                 gate_cm.__exit__(None, None, None)
                 raise
         gate_cm.__exit__(None, None, None)
@@ -402,18 +482,13 @@ class _GatedStreamContext:
             self._gate_cm.__exit__(None, None, None)
 
 
-# Keep alias for any external imports
 _StreamContext = _GatedStreamContext
 
 
-# ------------------------------------------------------------------
-# Token estimation (rough, no tokenizer dependency)
-# ------------------------------------------------------------------
 def estimate_tokens(text: str) -> int:
     """Token estimate using content-type weighting for XML/code syntax vs prose."""
     if not text:
         return 0
-    # XML tags, parameters, and structural symbols tokenize denser (~3.2 chars/token) than prose (~4.2 chars/token)
     code_chars = sum(len(m.group()) for m in re.finditer(r'<[^>]+>|[\{\}\[\]"`;:\\]', text))
     prose_chars = len(text) - code_chars
     return max(1, int(code_chars / 3.2 + prose_chars / 4.2))
@@ -430,7 +505,6 @@ def estimate_content_tokens(content: Any) -> int:
             if ptype == "text":
                 total += estimate_tokens(str(part.get("text") or ""))
             elif ptype in ("image_ref", "image_url"):
-                # Rough vision-token stand-in; real cost is server-side.
                 total += 512
         return total
     return estimate_tokens(content if isinstance(content, str) else str(content or ""))
@@ -444,5 +518,5 @@ def estimate_messages_tokens(messages: list[dict[str, Any]]) -> int:
         rc = msg.get("reasoning_content")
         if isinstance(rc, str):
             total += estimate_tokens(rc)
-        total += 4  # role + formatting overhead
+        total += 4
     return total

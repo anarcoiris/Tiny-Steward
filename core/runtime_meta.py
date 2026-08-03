@@ -181,6 +181,22 @@ class RuntimeMetaMixin:
         if command == "/idle":
             return self._handle_idle(arg)
 
+        # ── /providers ────────────────────────────────────────────────
+        if command == "/providers":
+            return self._handle_providers(arg)
+
+        # ── /fallback ─────────────────────────────────────────────────
+        if command == "/fallback":
+            return self._handle_fallback(arg)
+
+        # ── /extensions ───────────────────────────────────────────────
+        if command == "/extensions":
+            return self._handle_extensions(arg)
+
+        # ── /mcp ──────────────────────────────────────────────────────
+        if command == "/mcp":
+            return self._handle_mcp(arg)
+
         # ── /dream [session] ───────────────────────────────────────────
         if command == "/dream":
             return self._handle_dream(arg, messages)
@@ -842,5 +858,84 @@ class RuntimeMetaMixin:
             f"  - Last Error: {st.last_error or 'none'}"
         )
         return True
+
+    def _handle_providers(self, arg: str) -> bool:
+        """Handle /providers command — show status of primary & fallback LLM providers."""
+        llm = getattr(self, "llm", None)
+        if not llm:
+            display.print_event("error", "LLM client not initialized.")
+            return True
+
+        statuses = llm.get_provider_statuses()
+        lines = ["[LLM Gateway Providers & Fallback Chain Status]"]
+        for st in statuses:
+            active_str = " (ACTIVE)" if st.get("active") else ""
+            health_str = "HEALTHY" if st.get("healthy") else f"UNHEALTHY ({st.get('error', 'offline')})"
+            lines.append(
+                f"  * Provider: '{st.get('name')}' [{st.get('provider_type')}] model={st.get('model')}{active_str}\n"
+                f"    - Base URL: {st.get('base_url', 'n/a')}\n"
+                f"    - Status: {health_str} | Latency: {st.get('latency_ms')}ms"
+            )
+
+        display.print_event("info", "\n".join(lines))
+        return True
+
+    def _handle_fallback(self, arg: str) -> bool:
+        """Handle /fallback [provider_name] command — test or select fallback provider."""
+        llm = getattr(self, "llm", None)
+        if not llm:
+            display.print_event("error", "LLM client not initialized.")
+            return True
+
+        sub = arg.strip()
+        if not sub:
+            display.print_event("info", f"Current active provider: {llm.active_provider_name}")
+            return True
+
+        if sub.lower() in ("reset", "primary"):
+            llm.active_provider_name = "primary"
+            display.print_event("ok", "Active provider reset to primary local backend.")
+            return True
+
+        match = next((fb for fb in llm.fallback_providers if fb.name.lower() == sub.lower()), None)
+        if match:
+            llm.active_provider_name = match.name
+            display.print_event("ok", f"Active provider manually set to fallback: '{match.name}' ({match.model}).")
+        else:
+            names = [fb.name for fb in llm.fallback_providers]
+            display.print_event("error", f"Unknown fallback provider '{sub}'. Available: {names}")
+        return True
+
+    def _handle_extensions(self, arg: str) -> bool:
+        """Handle /extensions command — discover & list skills, plugins, tools."""
+        from core.extensions import ExtensionManager
+        mgr = ExtensionManager(workspace_root=".", config=getattr(self, "cfg", {}))
+        exts = mgr.get_all_extensions()
+
+        lines = [f"[Extensions Summary] Total Skills: {exts['total_skills']} | MCP Servers: {exts['total_mcp_servers']}"]
+        lines.append("Skills:")
+        for s in exts["skills"][:10]:
+            lines.append(f"  - {s['name']} ({s['slug']}) [{s['type']}]: {s['description'][:60]}...")
+        if len(exts["skills"]) > 10:
+            lines.append(f"  ... and {len(exts['skills']) - 10} more skills.")
+
+        lines.append("MCP Tools:")
+        for m in exts["mcp_tools"]:
+            lines.append(f"  - Server: {m['server']} [{m['status']}]: {m['description']}")
+
+        display.print_event("info", "\n".join(lines))
+        return True
+
+    def _handle_mcp(self, arg: str) -> bool:
+        """Handle /mcp command — query MCP tool status."""
+        from core.extensions import ExtensionManager
+        mgr = ExtensionManager(workspace_root=".", config=getattr(self, "cfg", {}))
+        mcp_tools = mgr.get_mcp_tools()
+        lines = ["[MCP Servers Status]"]
+        for m in mcp_tools:
+            lines.append(f"  * Server: {m['server']} ({m['status']})\n    - Details: {m['description']}")
+        display.print_event("info", "\n".join(lines))
+        return True
+
 
 
