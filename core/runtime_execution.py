@@ -62,16 +62,16 @@ class RuntimeExecutionMixin:
         backend: str = "primary",
         allow_delegate: bool = True,
         log_actions: bool = False,
-    ) -> tuple[bool, int]:
-        """Execute actions from an LLM response. Returns (had_actions, error_count)."""
+    ) -> tuple[bool, list[str]]:
+        """Execute actions from an LLM response. Returns (had_actions, errors_list)."""
         if "<tool_call>" in response and not self._extract_actions(response, backend=backend):
             self._force_tools_resend(backend)
 
         actions = self._extract_actions(response, backend=backend)
         if not actions:
-            return False, 0
+            return False, []
 
-        errors = 0
+        errors: list[str] = []
         for action in actions:
             display.print_action_placeholder(action["name"], action.get("body", ""))
             result = self._execute_action(action, allow_delegate=allow_delegate, messages=messages)
@@ -89,7 +89,9 @@ class RuntimeExecutionMixin:
             self._append_tool_result(messages, action["name"], result_text, persist=persist)
 
             if is_error:
-                errors += 1
+                err_str = str(result_text) if result_text is not None else "failed"
+                err_msg = f"{action['name']}: {err_str[:120]}"
+                errors.append(err_msg)
                 if not self._is_benign_fs_error(result):
                     self._force_tools_resend(backend)
 

@@ -38,7 +38,7 @@ class LLMClient:
 
     # Keys that belong on LLMClient attrs / nested kwargs — not flat extra_params.
     _RESERVED_CFG = frozenset({
-        "base_url", "api", "model", "ctx", "max_tokens", "temperature", "top_p",
+        "base_url", "api", "model", "ctx", "max_tokens", "temperature", "top_p", "top_k",
         "repeat_penalty", "chat_template_kwargs", "thinking_budget_tokens",
         "cache_prompt", "enable_thinking", "preserve_thinking", "add_vision_id",
         "launch", "id_slot", "provider", "vision", "fallbacks",
@@ -48,9 +48,10 @@ class LLMClient:
         self,
         base_url: str,
         model: str,
-        max_tokens: int = 4096,
-        temperature: float = 0.15,
-        top_p: float = 0.9,
+        max_tokens: int = 16384,
+        temperature: float = 0.6,
+        top_p: float = 0.95,
+        top_k: int = 20,
         repeat_penalty: float = 1.05,
         timeout: float = 300.0,
         *,
@@ -68,6 +69,7 @@ class LLMClient:
         self.max_tokens = max_tokens
         self.temperature = temperature
         self.top_p = top_p
+        self.top_k = top_k
         self.repeat_penalty = repeat_penalty
         self.chat_template_kwargs: dict[str, Any] = dict(chat_template_kwargs or {})
         self.thinking_budget_tokens = thinking_budget_tokens
@@ -116,9 +118,10 @@ class LLMClient:
         params = {
             "base_url": cfg["base_url"],
             "model": cfg["model"],
-            "max_tokens": cfg.get("max_tokens", 4096),
-            "temperature": cfg.get("temperature", 0.15),
-            "top_p": cfg.get("top_p", 0.9),
+            "max_tokens": cfg.get("max_tokens", 16384),
+            "temperature": cfg.get("temperature", 0.6),
+            "top_p": cfg.get("top_p", 0.95),
+            "top_k": cfg.get("top_k", 20),
             "repeat_penalty": cfg.get("repeat_penalty", 1.05),
             "chat_template_kwargs": kwargs,
             "thinking_budget_tokens": budget,
@@ -243,6 +246,9 @@ class LLMClient:
         usage: dict[str, Any] | None = None
         reasoning_parts: list[str] = []
         timings: dict[str, Any] = {}
+        recent_lines: list[str] = []
+        repetition_count = 0
+        should_abort = False
 
         try:
             with self._stream_request("/v1/chat/completions", body) as resp:
@@ -275,6 +281,25 @@ class LLMClient:
                         text = delta.get("content") or ""
                         if text:
                             yield ("content", text)
+
+                        buf = reasoning or text
+                        if buf and "\n" in buf:
+                            for line_item in buf.split("\n")[:-1]:
+                                clean_l = line_item.strip()
+                                if len(clean_l) > 20:
+                                    if recent_lines and clean_l == recent_lines[-1]:
+                                        repetition_count += 1
+                                        if repetition_count >= 3:
+                                            should_abort = True
+                                            break
+                                    else:
+                                        repetition_count = 0
+                                        recent_lines.append(clean_l)
+                                        if len(recent_lines) > 10:
+                                            recent_lines.pop(0)
+                        if should_abort:
+                            print("\n  [warn] Repetition loop detected during streaming; terminating response early.")
+                            break
                     except (json.JSONDecodeError, KeyError, IndexError, TypeError):
                         continue
         except Exception as primary_err:
@@ -370,6 +395,7 @@ class LLMClient:
             "max_tokens": max_tokens or self.max_tokens,
             "temperature": temperature if temperature is not None else self.temperature,
             "top_p": self.top_p,
+            "top_k": self.top_k,
             "repeat_penalty": self.repeat_penalty,
             "stream": stream,
             "cache_prompt": self.cache_prompt,

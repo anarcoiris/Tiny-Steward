@@ -15,7 +15,9 @@ from core.primitives import PRIMARY_ARGS
 
 ATTR_PATTERN = re.compile(r'(\w+)="([^"]*)"')
 TOOL_CALL_RE = re.compile(r"<tool_call>(.*?)</tool_call>", re.DOTALL)
+TOOL_CALL_UNCLOSED_RE = re.compile(r"<tool_call>(.*?)$", re.DOTALL)
 QWEN_PARAM_RE = re.compile(r"<parameter=([^>]+)>\n?(.*?)\n?</parameter>", re.DOTALL)
+UNCLOSED_PARAM_RE = re.compile(r"<parameter=([^>]+)>\n?(.*?)(?=\n?</parameter>|\n?<parameter=|\n?</function>|\n?</tool_call>|$)", re.DOTALL)
 # Model drift: bare <path>…</path> / <command>…</command> instead of <parameter=…>
 BARE_PARAM_RE = re.compile(r"<([a-zA-Z_][\w]*)>\n?(.*?)\n?</\1>", re.DOTALL)
 # Hybrid drift: <path>…</parameter> (open bare, close parameter)
@@ -46,18 +48,36 @@ def args_to_action(name: str, args: dict[str, Any]) -> dict[str, Any]:
 _args_to_action = args_to_action
 
 
-def parse_qwen_tool_call(inner: str) -> dict[str, Any] | None:
+def parse_qwen_tool_call(inner: str) -> dict[str, Any] | list[dict[str, Any]] | None:
     """Parse Qwen JSON body inside ``<tool_call>…</tool_call>``."""
     inner = inner.strip()
     try:
         data = json.loads(inner)
-        name = data.get("name")
-        args = data.get("arguments", {})
-        if isinstance(args, str):
-            args = json.loads(args)
-        if name and isinstance(args, dict):
-            return args_to_action(name, args)
-    except (json.JSONDecodeError, TypeError):
+        if isinstance(data, list):
+            actions = []
+            for item in data:
+                if isinstance(item, dict):
+                    name = item.get("name")
+                    args = item.get("arguments", {})
+                    if isinstance(args, str):
+                        try:
+                            args = json.loads(args)
+                        except Exception:
+                            args = {}
+                    if name and isinstance(args, dict):
+                        actions.append(args_to_action(name, args))
+            return actions if actions else None
+        if isinstance(data, dict):
+            name = data.get("name")
+            args = data.get("arguments", {})
+            if isinstance(args, str):
+                try:
+                    args = json.loads(args)
+                except Exception:
+                    args = {}
+            if name and isinstance(args, dict):
+                return args_to_action(name, args)
+    except (json.JSONDecodeError, TypeError, AttributeError):
         pass
     return None
 
@@ -74,6 +94,12 @@ def parse_qwythos_tool_call(inner: str) -> dict[str, Any] | None:
     args: dict[str, Any] = {}
     for param_match in QWEN_PARAM_RE.finditer(inner):
         args[param_match.group(1).strip()] = param_match.group(2).strip()
+    if not args:
+        for param_match in UNCLOSED_PARAM_RE.finditer(inner):
+            k = param_match.group(1).strip()
+            v = param_match.group(2).strip()
+            if k and v and k not in args:
+                args[k] = v
     # Fallback: bare <path>…</path> / hybrid <path>…</parameter>
     if not args or (name in ("write", "append", "read", "mkdir", "ls") and "path" not in args):
         for bare in list(BARE_PARAM_RE.finditer(inner)) + list(DRIFT_PARAM_RE.finditer(inner)):
@@ -114,10 +140,22 @@ def extract_tool_calls_qwen(text: str) -> list[dict[str, Any]]:
     if "<tool_call>" not in text:
         return []
     actions: list[dict[str, Any]] = []
-    for match in TOOL_CALL_RE.finditer(text):
-        action = parse_qwen_tool_call(match.group(1))
-        if action:
-            actions.append(action)
+    matches = list(TOOL_CALL_RE.finditer(text))
+    if not matches:
+        unclosed = TOOL_CALL_UNCLOSED_RE.search(text)
+        if unclosed:
+            parsed = parse_qwen_tool_call(unclosed.group(1))
+            if isinstance(parsed, list):
+                actions.extend(parsed)
+            elif parsed:
+                actions.append(parsed)
+            return actions
+    for match in matches:
+        parsed = parse_qwen_tool_call(match.group(1))
+        if isinstance(parsed, list):
+            actions.extend(parsed)
+        elif parsed:
+            actions.append(parsed)
     return actions
 
 
@@ -126,7 +164,15 @@ def extract_tool_calls_qwythos(text: str) -> list[dict[str, Any]]:
     if "<tool_call>" not in text:
         return []
     actions: list[dict[str, Any]] = []
-    for match in TOOL_CALL_RE.finditer(text):
+    matches = list(TOOL_CALL_RE.finditer(text))
+    if not matches:
+        unclosed = TOOL_CALL_UNCLOSED_RE.search(text)
+        if unclosed:
+            action = parse_qwythos_tool_call(unclosed.group(1))
+            if action:
+                actions.append(action)
+            return actions
+    for match in matches:
         action = parse_qwythos_tool_call(match.group(1))
         if action:
             actions.append(action)
@@ -151,11 +197,24 @@ def extract_actions(text: str, *, dialect: str | None = None) -> list[dict[str, 
     # compat_try_all (default for re-export / older tests)
     if "<tool_call>" in text:
         actions = []
-        for match in TOOL_CALL_RE.finditer(text):
-            inner = match.group(1)
-            action = parse_qwen_tool_call(inner) or parse_qwythos_tool_call(inner)
-            if action:
-                actions.append(action)
+        matches = list(TOOL_CALL_RE.finditer(text))
+        if not matches:
+            unclosed = TOOL_CALL_UNCLOSED_RE.search(text)
+            if unclosed:
+                inner = unclosed.group(1)
+                action = parse_qwen_tool_call(inner) or parse_qwythos_tool_call(inner)
+                if isinstance(action, list):
+                    actions.extend(action)
+                elif action:
+                    actions.append(action)
+        else:
+            for match in matches:
+                inner = match.group(1)
+                action = parse_qwen_tool_call(inner) or parse_qwythos_tool_call(inner)
+                if isinstance(action, list):
+                    actions.extend(action)
+                elif action:
+                    actions.append(action)
         if actions:
             return actions
     return parse_actions(text)

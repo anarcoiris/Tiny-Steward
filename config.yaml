@@ -24,6 +24,8 @@ llm:
 
     top_p: 0.95
 
+    top_k: 20
+
     repeat_penalty: 1.05
 
     # Qwythos chat-template / reasoning (stable per session — toggling kwargs breaks LCP)

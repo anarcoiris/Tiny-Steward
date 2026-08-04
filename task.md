@@ -1,28 +1,19 @@
-# Task: Multi-Provider LLM Fallback System & Extension / Skill / Tool Inspection & Execution
+# Task: Deep Codebase Audit for Subjacent Architectural & Runtime Issues
 
 ## User Request Goal
-Implement a resilient multi-provider LLM fallback engine in Tiny-Steward (supporting local Qwythos/llama.cpp/Ollama and cloud fallbacks like GitHub Models, Groq, OpenRouter, Gemini, OpenAI) and create an Extension/Skill/MCP Tool inspection and execution architecture across CLI REPL and Web IDE.
+Investigate `tiny_steward` and `Pulse-main` codebases to uncover hidden, subjacent bugs, edge-case failure modes, structural vulnerabilities, and latent runtime issues.
 
 ## Action Plan
-- [x] **Phase 1: Research & Architectural Design**
-  - [x] Inspect existing `core/llm.py`, `core/providers/`, `core/skill_loader.py`, `core/runtime_meta.py`, `config.yaml`, and `dashboard.html`.
-  - [x] Draft `implementation_plan.md` and `plans/llm_fallback_and_extensions_plan.md` for user approval.
-
-- [x] **Phase 2: Multi-Provider LLM Architecture & Resilient Fallback Engine**
-  - [x] Refactor `core/llm.py` and `core/providers/` to support a unified `LLMProvider` interface.
-  - [x] Implement concrete providers: `LlamaCppProvider`, `OllamaProvider`, `GitHubModelsProvider`, `OpenRouterProvider`, `GroqProvider`, `GeminiProvider`.
-  - [x] Implement `ResilientLLMClient` with automatic failover, retry logic, timeout handling, and provider health checks.
-  - [x] Update `config.yaml` schema to configure primary and fallback provider chains for `orchestrator` and `atomic` lanes.
-
-- [x] **Phase 3: Extension, Skill & MCP Tool Inspection Architecture**
-  - [x] Implement `ExtensionManager` in `core/extensions.py` to inspect, load, and manage Skills, MCP Tools, and custom Python plugin extensions.
-  - [x] Enhance `core/skill_loader.py` with extension discovery, health checks, and metadata verification.
-  - [x] Expose REPL meta-commands: `/providers` (status & test), `/fallback` (test failover), `/extensions` (list & inspect skills/tools), `/mcp` (manage MCP servers).
-
-- [x] **Phase 4: Web UI Integration & Telemetry**
-  - [x] Extend `core/web_server.py` with REST endpoints for `/api/providers/status`, `/api/extensions/list`.
-  - [x] Update `dashboard.html` with Provider & Fallback telemetry controls and Extension Inspector pane.
-
-- [x] **Phase 5: Unit Testing & Verification**
-  - [x] Add unit tests in `tests/test_llm_providers.py` and `tests/test_extensions.py` validating failover, fallback triggers, and extension discovery.
-  - [x] Run full pytest suite ensuring 100% clean passage.
+- [x] **Phase 1: Deep Codebase Investigation & Edge-Case Audit**
+  - [x] Audit `tiny_steward` runtime loop, tool parsing, rethink handling, and delegate execution paths.
+  - [x] Audit `tiny_steward` error handling in `core/runtime_delegate.py`, `core/runtime_execution.py`, `core/providers/`, `core/llm.py`, and `core/mailbox.py`.
+  - [x] Audit `Pulse-main` LLM provider implementations (`knowledge/providers/llm_provider.py`), fallback mechanisms in `llm_client.py`, and integration interfaces.
+- [x] **Phase 2: Formulate Audit Findings & Fix Strategy (`plan.md`)**
+  - [x] Group findings by severity (Critical Runtime Bugs, Latent Parsing Edge Cases, Resilience/Fallback Flaws, Structural Debt).
+  - [x] Draft concrete remediation steps in `implementation_plan.md` and obtain user approval.
+- [x] **Phase 3: Remediation & Verification**
+  - [x] Implemented array JSON tool call parsing & `AttributeError` handling in `tiny_steward/core/action_parse.py`.
+  - [x] Implemented safe string conversion before error string slicing in `tiny_steward/core/runtime_execution.py`.
+  - [x] Implemented streaming multi-provider fallback failover loop in `Pulse-main/knowledge/llm_client.py`.
+  - [x] Verified test suites: 175 tests passed in `tiny_steward`, 129 tests passed in `Pulse-main`.- [x] **Phase 2: Provider Implementation Audit**
+  - [x] All providers in `knowledge/providers/llm_provider.py` already exist (LlamaCpp, Ollama, GitHubModels, OpenRouter, Groq, Gemini) with a factory `create_provider_from_config`. No new provider code required.

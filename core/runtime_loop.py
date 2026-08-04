@@ -221,13 +221,14 @@ class RuntimeLoopMixin:
 
         Returns: (rethink_success, errors_in_turn, messages, final_response)
         """
-        display.print_event("rethink", f"Action failed ({errors[0]}). Invoking rethink loop...")
+        first_err = errors[0] if isinstance(errors, (list, tuple)) and errors else str(errors)
+        display.print_event("rethink", f"Action failed ({first_err}). Invoking rethink loop...")
         
         # Save snapshot of messages before the failed assistant turn + actions
         pre_failed_history = [dict(m) for m in messages]
         
         nudge = (
-            f"[SYSTEM NOTE: The action failed with: {errors[0]}. "
+            f"[SYSTEM NOTE: The action failed with: {first_err}. "
             f"Carefully analyze what went wrong. Do NOT repeat the exact same parameters or approach. "
             f"Think step-by-step about why it failed before trying another action.]"
         )

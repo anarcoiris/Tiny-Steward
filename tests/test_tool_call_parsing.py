@@ -124,6 +124,49 @@ class TestToolCallParsing(unittest.TestCase):
         self.assertEqual(actions[0]["name"], "help")
         self.assertEqual(actions[0]["body"], "docker won't start")
 
+    def test_unclosed_qwythos_tool_call(self):
+        """Model omits closing </tool_call> tag at end of turn."""
+        text = (
+            '<tool_call>\n'
+            '<function=read>\n'
+            '<parameter=path>\n'
+            'task.md\n'
+            '</parameter>\n'
+            '</function>'
+        )
+        actions = extract_actions(text)
+        self.assertEqual(len(actions), 1)
+        self.assertEqual(actions[0]["name"], "read")
+        self.assertEqual(actions[0]["body"], "task.md")
+
+    def test_unclosed_qwythos_parameter_tag(self):
+        """Model omits closing </parameter> tag at end of turn."""
+        text = (
+            '<tool_call>\n'
+            '<function=read>\n'
+            '<parameter=path>\n'
+            'task.md'
+        )
+        actions = extract_actions(text)
+        self.assertEqual(len(actions), 1)
+        self.assertEqual(actions[0]["name"], "read")
+    def test_qwen_json_array_tool_calls(self):
+        """Qwen emits a JSON list of tool call objects inside <tool_call>."""
+        text = (
+            '<tool_call>\n'
+            '[\n'
+            '  {"name": "read", "arguments": {"path": "config.yaml"}},\n'
+            '  {"name": "ls", "arguments": {"path": "."}}\n'
+            ']\n'
+            '</tool_call>'
+        )
+        actions = extract_actions(text)
+        self.assertEqual(len(actions), 2)
+        self.assertEqual(actions[0]["name"], "read")
+        self.assertEqual(actions[0]["body"], "config.yaml")
+        self.assertEqual(actions[1]["name"], "ls")
+        self.assertEqual(actions[1]["body"], ".")
+
 
 if __name__ == "__main__":
     unittest.main()
