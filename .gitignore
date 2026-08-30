@@ -1,6 +1,7 @@
 __pycache__/
 *.py[cod]
 *$py.class
+.pytest_cache/
 .vscode/
 .idea/
 *.log
@@ -17,4 +18,14 @@ core/__pycache__/
 */references/roadmap.md
 **/questionary.md
 **/references/
-sessions/*
+
+# Session transcripts — local only (never push personal chats)
+sessions/**
+!sessions/.gitkeep
+!sessions/template-review.md
+*.think.jsonl
+*.crash-events.jsonl
+workspace/
+ejercicios/
+MagicMock/
+

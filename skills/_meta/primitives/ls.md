@@ -14,13 +14,17 @@ List files and subdirectories in a directory.
 ## Usage
 
 ```xml
-<action name="ls">.</action>
-<action name="ls">C:\Users\soyko\Documents</action>
+<tool_call>
+<function=ls>
+<parameter=path>
+.
+</parameter>
+</function>
+</tool_call>
 ```
 
 ## Notes
 
-- Shows file sizes in bytes
-- Directories are marked with trailing `/`
-- For recursive listing, use `pwsh`: `Get-ChildItem -Recurse`
-- For tree view, use `pwsh`: `tree /F`
+- Directory path only — do not pass cwd as an argument name
+- Prefer relative paths from the Tiny Steward workspace cwd
+- For recursive listing use `pwsh`: `Get-ChildItem -Recurse`

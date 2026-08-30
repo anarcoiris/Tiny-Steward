@@ -14,11 +14,11 @@ Create a directory, including any necessary parent directories.
 ## Usage
 
 ```xml
-<action name="mkdir">output/reports/2024</action>
+<tool_call>
+<function=mkdir>
+<parameter=path>
+output/reports
+</parameter>
+</function>
+</tool_call>
 ```
-
-## Notes
-
-- Creates parent directories automatically (like `mkdir -p`)
-- No error if directory already exists
-- Paths can be relative or absolute

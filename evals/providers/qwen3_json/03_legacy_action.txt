@@ -1,0 +1,2 @@
+Fallback works too.
+<action name="ls" path="skills/_policy"></action>

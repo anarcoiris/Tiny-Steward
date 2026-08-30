@@ -9,6 +9,8 @@ from __future__ import annotations
 import numpy as np
 import httpx
 
+from core.backend_gate import Priority, get_gate
+
 
 class Embedder:
     """Client for Nomic embeddings via Ollama's /api/embeddings endpoint."""
@@ -18,9 +20,12 @@ class Embedder:
         base_url: str = "http://127.0.0.1:11438",
         model: str = "nomic-embed-text",
         timeout: float = 60.0,
+        *,
+        gate_priority: Priority = "interactive",
     ):
         self.base_url = base_url.rstrip("/")
         self.model = model
+        self.gate_priority: Priority = gate_priority
         self._client = httpx.Client(
             base_url=self.base_url,
             timeout=httpx.Timeout(timeout, connect=10.0),
@@ -28,13 +33,14 @@ class Embedder:
 
     def embed(self, text: str) -> np.ndarray:
         """Embed a single text string. Returns a 1-D float32 array."""
-        resp = self._client.post(
-            "/api/embeddings",
-            json={"model": self.model, "prompt": text},
-        )
-        resp.raise_for_status()
-        data = resp.json()
-        return np.array(data["embedding"], dtype=np.float32)
+        with get_gate().hold("embed", priority=self.gate_priority):
+            resp = self._client.post(
+                "/api/embeddings",
+                json={"model": self.model, "prompt": text},
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            return np.array(data["embedding"], dtype=np.float32)
 
     def embed_batch(self, texts: list[str]) -> np.ndarray:
         """Embed multiple texts. Returns a 2-D array (n_texts, dim).

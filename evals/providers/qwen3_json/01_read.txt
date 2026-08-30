@@ -1,0 +1,4 @@
+Let me read the file.
+<tool_call>
+{"name": "read", "arguments": {"path": "config.yaml", "start_line": 1}}
+</tool_call>

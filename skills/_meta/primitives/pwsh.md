@@ -11,34 +11,49 @@ related: [bash, python, grep, ls]
 
 Primary shell for Tiny Steward. Executes PowerShell commands natively on Windows.
 
-## When
-
-- Running Windows-native commands and cmdlets
-- System administration tasks
-- File management beyond simple read/write
-- Process management
-- Registry operations
-
 ## Usage
 
 ```xml
-<action name="pwsh">Get-ChildItem -Recurse -Filter *.py</action>
-<action name="pwsh">Get-Process | Where-Object { $_.CPU -gt 100 }</action>
+<tool_call>
+<function=pwsh>
+<parameter=command>
+Get-ChildItem -Recurse -Filter *.py
+</parameter>
+</function>
+</tool_call>
 ```
-
-## Common Patterns
-
-| Task | Command |
-|------|---------|
-| List files | `Get-ChildItem -Path . -Recurse` |
-| Find text | `Select-String -Path *.log -Pattern "error"` |
-| Environment vars | `$env:PATH` |
-| Install module | `Install-Module -Name <name> -Scope CurrentUser` |
-| Service status | `Get-Service -Name <name>` |
-| Network test | `Test-NetConnection -ComputerName <host> -Port <port>` |
 
 ## Notes
 
 - Use `-ErrorAction SilentlyContinue` to suppress non-critical errors
 - Pipe to `Select-Object -First N` to limit output
-- Use `ConvertTo-Json` for structured output
+- Prefer relative paths from the Tiny Steward workspace cwd
+- Use `date` for time awareness, scheduling, planning timers... (be creative and resolutive)
+- Use argument `-h` or `--help` to investigate problematic methods and calls
+
+## Basic usage
+
+
+| Atajo | Descripción |
+|-------|-------------|
+| `Get-Help <comando> -Examples` | Muestra ejemplos prácticos |
+| `Get-Help <comando> -Full` | Ayuda completa del comando |
+| `Get-Command *palabra*` | Busca comandos que contengan "palabra" |
+| `Get-Member` (alias: `gm`) | Muestra propiedades y métodos de objetos |
+| `Ctrl+C` | Cancela ejecución actual |
+| `Tab` / `Shift+Tab` | Autocompletado de comandos y parámetros |
+| `Get-History` / `Invoke-History` | Historial de comandos ejecutados |
+
+---
+
+Estos son los comandos más utilizados en PowerShell. La clave es combinarlos con el **pipeline** (`|`) para crear operaciones potentes. Por ejemplo:
+
+```powershell
+Get-Process | Where-Object {$_.CPU -gt 100} | Sort-Object CPU -Descending | Select-Object -First 5
+```
+
+Este comando muestra los 5 procesos que más CPU consumen.
+
+## Full reference for methods and calls
+
+- Methods appendix: **"C:\\Users\\soyko\\Documents\\tiny_steward\\skills\\_infra\\powershell\\SKILL.md"**

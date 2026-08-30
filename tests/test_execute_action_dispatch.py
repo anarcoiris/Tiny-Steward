@@ -96,20 +96,64 @@ class TestExecuteActionDispatch(unittest.TestCase):
         self.assertIn("error", result)
         self.assertTrue(result["error"].startswith("Not a directory:"))
 
+    def test_write_uses_attrs_path(self):
+        target = self.temp / "out.txt"
+        result = self.runtime._execute_action({
+            "name": "write",
+            "body": "payload",
+            "attrs": {"path": str(target)},
+        })
+        self.assertNotIn("error", result)
+        self.assertEqual(target.read_text(encoding="utf-8"), "payload")
+
+    def test_write_missing_path_errors(self):
+        result = self.runtime._execute_action({
+            "name": "write",
+            "body": "payload",
+            "attrs": {},
+        })
+        self.assertIn("error", result)
+        self.assertIn("Missing path", result["error"])
+
     def test_benign_fs_error_does_not_force_tools_resend(self):
         missing = self.temp / "nope"
         messages: list = []
+        # Primary lane uses Qwythos XML dialect
         response = (
             '<tool_call>\n'
-            f'{{"name": "ls", "arguments": {{"path": "{missing.as_posix()}"}}}}\n'
+            '<function=ls>\n'
+            f'<parameter=path>\n{missing.as_posix()}\n</parameter>\n'
+            '</function>\n'
             '</tool_call>'
         )
-        # Escape Windows backslashes for JSON in response — use forward path already
         self.runtime._process_response_actions(response, messages, backend="primary")
         self.assertFalse(
             self.runtime.session.metadata.get("force_tools_payload_primary_next", False)
         )
 
+    def test_process_response_actions_persist_session_false(self):
+        target = self.temp / "rethink_out.txt"
+        messages: list = []
+        response = (
+            '<tool_call>\n'
+            '<function=write>\n'
+            f'<parameter=path>\n{target.as_posix()}\n</parameter>\n'
+            '<parameter=content>\nhello rethink\n</parameter>\n'
+            '</function>\n'
+            '</tool_call>'
+        )
+        had_actions, errors = self.runtime._process_response_actions(
+            response, messages, backend="primary", persist_session=False
+        )
+        self.assertTrue(had_actions)
+        self.assertEqual(errors, [])
+        self.assertEqual(len(messages), 1)
+        self.assertEqual(messages[0]["role"], "tool")
+        # Ensure message was NOT added to session history because persist_session=False
+        session_tool_msgs = [m for m in self.runtime.session.messages if m.get("role") == "tool"]
+        self.assertEqual(len(session_tool_msgs), 0)
+
 
 if __name__ == "__main__":
     unittest.main()
+

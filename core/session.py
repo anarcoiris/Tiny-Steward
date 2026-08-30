@@ -7,6 +7,8 @@ Sessions are saved as JSON files in the sessions/ directory.
 from __future__ import annotations
 
 import json
+import os
+import tempfile
 import time
 from dataclasses import dataclass, field, asdict
 from pathlib import Path
@@ -24,10 +26,20 @@ class Session:
     discovered_skills: list[str] = field(default_factory=list)  # slugs used during session
     metadata: dict[str, Any] = field(default_factory=dict)
 
-    def add_message(self, role: str, content: str, *, name: str | None = None):
+    def add_message(
+        self,
+        role: str,
+        content: str | list[Any],
+        *,
+        name: str | None = None,
+        reasoning_content: str | None = None,
+    ):
+        """Append a message. ``content`` may be a string or multimodal parts list."""
         msg: dict[str, Any] = {"role": role, "content": content}
         if name is not None:
             msg["name"] = name
+        if reasoning_content:
+            msg["reasoning_content"] = reasoning_content
         self.messages.append(msg)
         self.updated_at = time.time()
 
@@ -59,9 +71,14 @@ class SessionManager:
             except Exception:
                 pass
 
-    def _session_path(self, name: str) -> Path:
+    def session_dir(self, name: str) -> Path:
         safe_name = "".join(c if c.isalnum() or c in "-_" else "_" for c in name)
-        return self.dir / f"{safe_name}.json"
+        p = self.dir / safe_name
+        p.mkdir(parents=True, exist_ok=True)
+        return p
+
+    def _session_path(self, name: str) -> Path:
+        return self.session_dir(name) / f"{name}.json"
 
     # ------------------------------------------------------------------
     # CRUD
@@ -73,19 +90,44 @@ class SessionManager:
         self.save()
         return session
 
+    def _atomic_json_write(self, path: Path, data: dict) -> None:
+        """Write JSON atomically via temp-file-rename (NTFS same-volume safe)."""
+        tmp_fd, tmp_path = tempfile.mkstemp(
+            dir=str(path.parent), suffix=".tmp", prefix=".session_"
+        )
+        try:
+            with os.fdopen(tmp_fd, "w", encoding="utf-8") as f:
+                json.dump(data, f, indent=2, ensure_ascii=False)
+            Path(tmp_path).replace(path)  # atomic on NTFS
+        except Exception:
+            Path(tmp_path).unlink(missing_ok=True)
+            raise
+
     def save(self):
         """Save the current session to disk."""
         if not self.current:
             return
         path = self._session_path(self.current.name)
         data = asdict(self.current)
-        path.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+        self._atomic_json_write(path, data)
 
     def load(self, name: str) -> Session:
         """Load a session by name."""
         path = self._session_path(name)
         if not path.exists():
-            raise FileNotFoundError(f"Session '{name}' not found at {path}")
+            # Fallback to old flat location if it exists
+            flat_path = self.dir / f"{name}.json"
+            if flat_path.exists():
+                # Move to the new nested directory structure
+                path.parent.mkdir(parents=True, exist_ok=True)
+                flat_path.rename(path)
+                # Clean up other flat companion files if any
+                for suffix in (".think.jsonl", ".interactions.jsonl", ".memory.jsonl", ".memory.md"):
+                    old_file = self.dir / f"{name}{suffix}"
+                    if old_file.exists():
+                        old_file.rename(path.parent / f"{name}{suffix}")
+            else:
+                raise FileNotFoundError(f"Session '{name}' not found at {path}")
         data = json.loads(path.read_text(encoding="utf-8"))
         # Force the session name to be the loaded session name to keep filename and internal name aligned
         data["name"] = name
@@ -109,18 +151,33 @@ class SessionManager:
     def list_sessions(self) -> list[dict[str, Any]]:
         """List all saved sessions with summary info."""
         sessions = []
+        paths = []
+        # Find new folder-scoped session files
+        for path in sorted(self.dir.glob("*/*.json")):
+            if path.parent.name == path.stem:
+                paths.append(path)
+        # Find legacy flat files
         for path in sorted(self.dir.glob("*.json")):
+            paths.append(path)
+            
+        seen_names = set()
+        for path in paths:
             try:
                 data = json.loads(path.read_text(encoding="utf-8"))
+                name = data.get("name", path.stem)
+                if name in seen_names:
+                    continue
+                seen_names.add(name)
                 meta = data.get("metadata") or {}
                 sessions.append({
-                    "name": data.get("name", path.stem),
+                    "name": name,
                     "messages": len(data.get("messages", [])),
                     "skills": len(data.get("discovered_skills", [])),
                     "updated_at": data.get("updated_at", 0),
                     "parent": meta.get("parent"),
                     "status": meta.get("status"),
                     "children": list(meta.get("children") or []),
+                    "orch_id_slot": meta.get("orch_id_slot"),
                 })
             except Exception:
                 continue
@@ -168,13 +225,13 @@ class SessionManager:
         if not path.exists():
             # Create a minimal session shell so child can mark status before first save.
             session = Session(name=name, metadata=dict(updates))
-            path.write_text(json.dumps(asdict(session), indent=2, ensure_ascii=False), encoding="utf-8")
+            self._atomic_json_write(path, asdict(session))
             return
         data = json.loads(path.read_text(encoding="utf-8"))
         meta = data.setdefault("metadata", {})
         meta.update(updates)
         data["updated_at"] = time.time()
-        path.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+        self._atomic_json_write(path, data)
         if self.current and self.current.name == name:
             self.current.metadata.update(updates)
 

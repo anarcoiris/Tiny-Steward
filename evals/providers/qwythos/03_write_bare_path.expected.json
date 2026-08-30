@@ -1,0 +1,9 @@
+[
+  {
+    "name": "write",
+    "body": "# Hello",
+    "attrs": {
+      "path": "task.md"
+    }
+  }
+]

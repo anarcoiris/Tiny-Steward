@@ -1,0 +1,7 @@
+<tool_call>
+<function=ls>
+<parameter=path>
+skills/_policy
+</parameter>
+</function>
+</tool_call>

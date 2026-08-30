@@ -17,6 +17,30 @@ from typing import Any
 
 import httpx
 
+_WORKSPACE_DIR: Path = Path.cwd()
+
+
+def get_workspace_dir() -> Path:
+    """Return the active working directory for file primitives and commands."""
+    return _WORKSPACE_DIR
+
+
+def set_workspace_dir(path: Path | str) -> Path:
+    """Set and ensure the active working directory."""
+    global _WORKSPACE_DIR
+    p = Path(path).expanduser().resolve()
+    p.mkdir(parents=True, exist_ok=True)
+    _WORKSPACE_DIR = p
+    return _WORKSPACE_DIR
+
+
+def resolve_path(path: str | Path) -> Path:
+    """Resolve a path relative to the active workspace directory unless absolute."""
+    p = Path(path).expanduser()
+    if p.is_absolute():
+        return p.resolve()
+    return (_WORKSPACE_DIR / p).resolve()
+
 
 def _run_shell(
     command: str,
@@ -26,6 +50,7 @@ def _run_shell(
     cwd: str | None = None,
 ) -> dict[str, Any]:
     """Run a shell command and capture output."""
+    eff_cwd = str(cwd) if cwd else str(_WORKSPACE_DIR)
     try:
         result = subprocess.run(
             [shell_exe, *shell_args, command],
@@ -34,7 +59,7 @@ def _run_shell(
             encoding="utf-8",
             errors="replace",
             timeout=timeout,
-            cwd=cwd,
+            cwd=eff_cwd,
         )
         return {
             "stdout": result.stdout,
@@ -53,19 +78,30 @@ def _run_shell(
 # Shell primitives
 # ------------------------------------------------------------------
 
-def pwsh(command: str, *, cwd: str | None = None, timeout: float = 60.0) -> dict[str, Any]:
+def pwsh(command: str, *, cwd: str | None = None, timeout: float = 120.0) -> dict[str, Any]:
     """Execute a PowerShell command."""
-    return _run_shell(
+    eff_cwd = str(cwd) if cwd else str(_WORKSPACE_DIR)
+    res = _run_shell(
         command,
         shell_exe="pwsh",
         shell_args=["-NoProfile", "-NonInteractive", "-Command"],
         timeout=timeout,
-        cwd=cwd,
+        cwd=eff_cwd,
     )
+    if res.get("exit_code") == -1 and "not found" in res.get("stderr", ""):
+        res = _run_shell(
+            command,
+            shell_exe="powershell",
+            shell_args=["-NoProfile", "-NonInteractive", "-Command"],
+            timeout=timeout,
+            cwd=eff_cwd,
+        )
+    return res
 
 
 def bash(command: str, *, cwd: str | None = None, timeout: float = 60.0) -> dict[str, Any]:
     """Execute a bash command (WSL or native)."""
+    eff_cwd = str(cwd) if cwd else str(_WORKSPACE_DIR)
     # Try WSL first on Windows, native bash on Linux/macOS
     if os.name == "nt":
         return _run_shell(
@@ -73,19 +109,20 @@ def bash(command: str, *, cwd: str | None = None, timeout: float = 60.0) -> dict
             shell_exe="wsl",
             shell_args=["bash", "-c"],
             timeout=timeout,
-            cwd=cwd,
+            cwd=eff_cwd,
         )
     return _run_shell(
         command,
         shell_exe="bash",
         shell_args=["-c"],
         timeout=timeout,
-        cwd=cwd,
+        cwd=eff_cwd,
     )
 
 
 def python(code: str, *, cwd: str | None = None, timeout: float = 60.0) -> dict[str, Any]:
     """Execute a Python snippet."""
+    eff_cwd = str(cwd) if cwd else str(_WORKSPACE_DIR)
     try:
         # Inherit the current environment and ensure PYTHONUTF8 is set for
         # the child process so print() doesn't crash on non-ASCII characters.
@@ -99,7 +136,7 @@ def python(code: str, *, cwd: str | None = None, timeout: float = 60.0) -> dict[
             encoding="utf-8",
             errors="replace",
             timeout=timeout,
-            cwd=cwd,
+            cwd=eff_cwd,
             env=env,
         )
         return {
@@ -120,7 +157,7 @@ def python(code: str, *, cwd: str | None = None, timeout: float = 60.0) -> dict[
 def read(path: str, start_line: int | None = None, end_line: int | None = None) -> dict[str, Any]:
     """Read file contents, with optional line range and a 500-line safety cap."""
     try:
-        p = Path(path).expanduser().resolve()
+        p = resolve_path(path)
         lines = p.read_text(encoding="utf-8").splitlines()
         
         start = max(1, start_line) if start_line is not None else 1
@@ -151,7 +188,7 @@ def read(path: str, start_line: int | None = None, end_line: int | None = None) 
 def write(path: str, content: str) -> dict[str, Any]:
     """Write content to a file (creates parent dirs)."""
     try:
-        p = Path(path).expanduser().resolve()
+        p = resolve_path(path)
         p.parent.mkdir(parents=True, exist_ok=True)
         p.write_text(content, encoding="utf-8")
         return {"content": f"Written {len(content)} bytes to {p}"}
@@ -164,7 +201,7 @@ def write(path: str, content: str) -> dict[str, Any]:
 def append(path: str, content: str) -> dict[str, Any]:
     """Append content to a file."""
     try:
-        p = Path(path).expanduser().resolve()
+        p = resolve_path(path)
         p.parent.mkdir(parents=True, exist_ok=True)
         with p.open("a", encoding="utf-8") as f:
             f.write(content)
@@ -176,7 +213,7 @@ def append(path: str, content: str) -> dict[str, Any]:
 def mkdir(path: str) -> dict[str, Any]:
     """Create a directory (including parents)."""
     try:
-        p = Path(path).expanduser().resolve()
+        p = resolve_path(path)
         p.mkdir(parents=True, exist_ok=True)
         return {"content": f"Created directory: {p}"}
     except Exception as e:
@@ -186,28 +223,45 @@ def mkdir(path: str) -> dict[str, Any]:
 def ls(path: str = ".") -> dict[str, Any]:
     """List directory contents."""
     try:
-        p = Path(path).expanduser().resolve()
+        p = resolve_path(path)
         if not p.exists():
             return {"error": f"Path not found: {path}"}
         if not p.is_dir():
             return {"error": f"Not a directory: {path}"}
 
         entries = []
-        for item in sorted(p.iterdir()):
+        all_items = sorted(p.iterdir())
+        capped = False
+        if len(all_items) > 100:
+            all_items = all_items[:100]
+            capped = True
+        for item in all_items:
             if item.is_dir():
                 entries.append(f"  {item.name}/")
             else:
                 size = item.stat().st_size
                 entries.append(f"  {item.name}  ({size} bytes)")
+        if capped:
+            entries.append("\n  [... directory listing capped at 100 entries ...]")
         return {"content": f"{p}/\n" + "\n".join(entries) if entries else f"{p}/ (empty)"}
     except Exception as e:
         return {"error": str(e)}
 
 
-def grep(pattern: str, path: str) -> dict[str, Any]:
+def grep(pattern: str, path: str = ".") -> dict[str, Any]:
     """Search for a pattern in files. Uses PowerShell Select-String on Windows."""
     try:
-        p = Path(path).expanduser().resolve()
+        stripped = (path or ".").strip()
+        # Reject multi-path strings like "./ ./skills/" — one path per call.
+        # Still allow a single existing path that contains spaces (e.g. Program Files).
+        if len(stripped.split()) > 1 and not resolve_path(stripped).exists():
+            return {
+                "error": (
+                    "grep accepts a single path per call "
+                    f"(got {path!r}). For several roots, issue separate grep calls."
+                )
+            }
+        p = resolve_path(path or ".")
         if p.is_file():
             # Search single file natively — no shell, no encoding issues
             lines = p.read_text(encoding="utf-8").split("\n")
@@ -257,6 +311,20 @@ def http(method: str, url: str, body: str | None = None) -> dict[str, Any]:
         return {"error": str(e)}
 
 
+# Module-level MCP client paths (overridden via configure_mcp from config.yaml).
+_MCP_PYTHON_EXE = r"C:\Users\soyko\Documents\nina-mcp\.venv\Scripts\python.exe"
+_MCP_CLIENT_PY = r"C:\Users\soyko\Documents\nina-mcp\test_client.py"
+
+
+def configure_mcp(*, python_exe: str | None = None, client_py: str | None = None) -> None:
+    """Set nina-mcp launcher paths (from config.yaml mcp: block)."""
+    global _MCP_PYTHON_EXE, _MCP_CLIENT_PY
+    if python_exe:
+        _MCP_PYTHON_EXE = python_exe
+    if client_py:
+        _MCP_CLIENT_PY = client_py
+
+
 def mcp(tool: str, body: str = "") -> dict[str, Any]:
     """Execute an MCP tool on nina-mcp.
 
@@ -265,8 +333,8 @@ def mcp(tool: str, body: str = "") -> dict[str, Any]:
     Body:
       - JSON string containing the tool parameters
     """
-    python_exe = r"C:\Users\soyko\Documents\nina-mcp\.venv\Scripts\python.exe"
-    client_py = r"C:\Users\soyko\Documents\nina-mcp\test_client.py"
+    python_exe = _MCP_PYTHON_EXE
+    client_py = _MCP_CLIENT_PY
 
     cmd = [python_exe, client_py, tool]
     if body:

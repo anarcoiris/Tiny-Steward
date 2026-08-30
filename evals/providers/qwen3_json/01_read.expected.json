@@ -1,0 +1,9 @@
+[
+  {
+    "name": "read",
+    "body": "config.yaml",
+    "attrs": {
+      "start_line": "1"
+    }
+  }
+]

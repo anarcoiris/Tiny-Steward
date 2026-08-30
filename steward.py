@@ -7,6 +7,11 @@ Entry point. Provides:
   - Session management (--session <name>)
   - Out-of-process delegate child (--delegate-mode)
 
+See also:
+  - RULES.md — global rules injected into the system prompt
+  - plans/archivos-retirados.md — deleted/absorbed modules (e.g. micro_agent.py)
+  - plans/fuera-de-alcance.md — next-cycle backlog (F3+)
+
 Usage:
   python steward.py                          # interactive REPL, default session
   python steward.py --session deploy-flask   # resume named session
@@ -54,11 +59,16 @@ from core.runtime import Runtime
 import core.display as display
 
 
+STEWARD_ROOT = Path(__file__).resolve().parent
+
+
 def load_config(path: str = "config.yaml") -> dict:
-    """Load configuration from YAML."""
+    """Load configuration from YAML (checks cwd and STEWARD_ROOT)."""
     config_path = Path(path)
     if not config_path.exists():
-        print(f"  [error] Config not found: {config_path.resolve()}")
+        config_path = STEWARD_ROOT / path
+    if not config_path.exists():
+        print(f"  [error] Config not found: {Path(path).resolve()}")
         sys.exit(1)
     with config_path.open("r", encoding="utf-8") as f:
         return yaml.safe_load(f)
@@ -87,6 +97,7 @@ def main():
         description="Tiny Steward — Semantic Capability Graph",
     )
     parser.add_argument("--config", default="config.yaml", help="Path to config.yaml")
+    parser.add_argument("--workspace", "-w", default=None, help="Working directory for agent file operations and execution (default: ./workspace or current directory)")
     parser.add_argument("--session", default="default", help="Session name")
     parser.add_argument("--task", help="Run a single task and exit")
     parser.add_argument("--build-index", action="store_true", help="Rebuild skill index")
@@ -103,6 +114,14 @@ def main():
     # Load config
     config = load_config(args.config)
 
+    # Configure isolated workspace directory if specified or in config
+    from core.primitives import set_workspace_dir, get_workspace_dir
+    ws_target = args.workspace or config.get("workspace")
+    if ws_target:
+        set_workspace_dir(ws_target)
+    elif (STEWARD_ROOT / "workspace").exists():
+        set_workspace_dir(STEWARD_ROOT / "workspace")
+
     # UI config
     ui_cfg = config.get("ui", {})
     use_streaming = ui_cfg.get("streaming", True) and not args.no_stream
@@ -111,30 +130,65 @@ def main():
     checkpoint_every = ui_cfg.get("checkpoint_every", 5)
     delegate_terminal = ui_cfg.get("delegate_terminal", "auto")
 
-    # Initialize orchestrator LLM
+    # Initialize orchestrator LLM (Qwythos: thinking on by default)
     orch_cfg = config["llm"]["orchestrator"]
-    llm = LLMClient(
-        base_url=orch_cfg["base_url"],
-        model=orch_cfg["model"],
-        max_tokens=orch_cfg.get("max_tokens", 4096),
-        temperature=orch_cfg.get("temperature", 0.15),
-        top_p=orch_cfg.get("top_p", 0.9),
-        repeat_penalty=orch_cfg.get("repeat_penalty", 1.05),
-        extra_params={k: v for k, v in orch_cfg.items() if k not in ["base_url", "api", "model", "ctx", "max_tokens", "temperature", "top_p", "repeat_penalty"]},
-    )
+    llm = LLMClient.from_lane_config(orch_cfg, gate_lane="orch")
 
-    # Initialize atomic/subagent LLM (optional)
+    # Initialize atomic/subagent LLM (optional; thinking off by default)
     atomic_llm: LLMClient | None = None
     if "atomic" in config.get("llm", {}):
         at_cfg = config["llm"]["atomic"]
-        atomic_llm = LLMClient(
-            base_url=at_cfg["base_url"],
-            model=at_cfg["model"],
-            max_tokens=at_cfg.get("max_tokens", 2048),
-            temperature=at_cfg.get("temperature", 0.1),
-            top_p=at_cfg.get("top_p", 0.9),
-            repeat_penalty=at_cfg.get("repeat_penalty", 1.05),
-            extra_params={k: v for k, v in at_cfg.items() if k not in ["base_url", "api", "model", "ctx", "max_tokens", "temperature", "top_p", "repeat_penalty"]},
+        atomic_llm = LLMClient.from_lane_config(at_cfg, gate_lane="atomic")
+
+    from core.backend_launcher import BackendLauncher
+    backend_launcher = BackendLauncher.from_config(
+        config,
+        orch_health=llm.health,
+        atomic_health=(atomic_llm.health if atomic_llm else None),
+    )
+
+    if not args.delegate_mode:
+        backend_launcher.start_vram_monitor(threshold_mb=1750.0, check_interval=30.0)
+        # Health watchdog: log GPU-lost events invisible to launch-history
+        _llm_cfg = config.get("llm") or {}
+        _orch_url = (_llm_cfg.get("orchestrator") or {}).get("base_url", "")
+        _atomic_url = (_llm_cfg.get("atomic") or {}).get("base_url", "")
+        if _orch_url:
+            backend_launcher.start_health_watchdog("orch", _orch_url, interval=60.0)
+        if _atomic_url:
+            backend_launcher.start_health_watchdog("atomic", _atomic_url, interval=60.0)
+        for lane in ("orch", "atomic"):
+            cfg = backend_launcher.configs.get(lane)
+            if cfg and cfg.autostart:
+                hf = backend_launcher.health.get(lane)
+                if hf and hf():
+                    display.print_event("info", f"{lane} backend is already healthy, skipping autostart.")
+                else:
+                    display.print_event("info", f"Autostarting {lane} backend…")
+                    res = backend_launcher.start(lane)
+                    if res.get("ok"):
+                        display.print_event("ok", f"{lane} backend ready (pid={res.get('pid')})")
+                    else:
+                        display.print_event("error", f"Failed to autostart {lane}: {res.get('error')}")
+
+    # Backend gate (client-side serialization; complements --parallel 1)
+    from core.backend_gate import configure_default_gate
+
+    gate_cfg = (config.get("backends") or {}).get("gate") or {}
+    configure_default_gate(
+        enabled=bool(gate_cfg.get("enabled", True)),
+        orch_slots=int(gate_cfg.get("orch_slots", 1)),
+        atomic_slots=int(gate_cfg.get("atomic_slots", 1)),
+        embed_slots=int(gate_cfg.get("embed_slots", 1)),
+    )
+
+    # MCP launcher paths from config (fallback to primitives defaults)
+    mcp_cfg = config.get("mcp") or {}
+    if mcp_cfg:
+        from core.primitives import configure_mcp
+        configure_mcp(
+            python_exe=mcp_cfg.get("python_exe"),
+            client_py=mcp_cfg.get("client_py"),
         )
 
     # Initialize embedder
@@ -144,17 +198,51 @@ def main():
         model=emb_cfg["model"],
     )
 
-    # Health check
+    # Health check + /props reconciliation (yaml is reference; never rewritten)
+    vision_enabled = False
+    vision_reason = "skipped (--no-health-check or delegate)"
     if not args.no_health_check:
         print()
         if not check_health(llm, embedder):
             display.print_event("warn", "Some endpoints are not reachable. Continuing anyway…")
+        from core.config_check import verify_config_backends
+        for kind, msg in verify_config_backends(config):
+            display.print_event(kind, msg)
+        # F5: multimodal probe (orch only; atomic stays text-only)
+        from core.vision import resolve_vision_enabled
+        vision_mode = orch_cfg.get("vision", "auto")
+        vision_enabled, vision_reason = resolve_vision_enabled(
+            vision_mode, base_url=llm.base_url,
+        )
+        kind = "ok" if vision_enabled else "info"
+        display.print_event(kind, f"Vision: {'enabled' if vision_enabled else 'disabled'} — {vision_reason}")
+        if orch_cfg.get("vision") in ("on", True, "true", "yes", "1") and not vision_enabled:
+            display.print_event(
+                "warn",
+                "vision=on but orch has no multimodal capability — restart with -WithVision / --mmproj",
+            )
         print()
+    elif not args.delegate_mode:
+        # Still resolve off/on without probe when health checks skipped
+        from core.vision import resolve_vision_enabled
+        mode = str(orch_cfg.get("vision", "auto")).lower()
+        if mode in ("off", "false", "no", "0"):
+            vision_enabled, vision_reason = False, "config vision=off (--no-health-check)"
+        elif mode in ("on", "true", "yes", "1", "require"):
+            # Without probe, trust on but warn
+            vision_enabled, vision_reason = True, "config vision=on (unprobed; --no-health-check)"
+            display.print_event("warn", vision_reason)
+        else:
+            vision_enabled, vision_reason = False, "vision=auto skipped (--no-health-check)"
 
     # Skills
     skills_cfg = config["skills"]
     skills_root = Path(skills_cfg["root"])
+    if not skills_root.is_absolute() and not skills_root.exists():
+        skills_root = (STEWARD_ROOT / skills_root).resolve()
     index_path = Path(skills_cfg["index"])
+    if not index_path.is_absolute() and not index_path.exists():
+        index_path = (STEWARD_ROOT / index_path).resolve()
 
     # Build index if requested or if it doesn't exist
     if args.build_index or not index_path.exists() or skills_cfg.get("rebuild_on_start"):
@@ -190,7 +278,10 @@ def main():
 
     # Session
     session_cfg = config.get("sessions", {})
-    session_mgr = SessionManager(session_cfg.get("dir", "./sessions"))
+    session_dir = Path(session_cfg.get("dir", "./sessions"))
+    if not session_dir.is_absolute() and not session_dir.exists():
+        session_dir = (STEWARD_ROOT / session_dir).resolve()
+    session_mgr = SessionManager(str(session_dir))
     session = session_mgr.switch(args.session)
 
     if args.parent:
@@ -203,8 +294,23 @@ def main():
         "send": "escape, enter",
         "newline": "c-j"
     })
+    rules_cfg = config.get("rules") or {}
+    rules_p = Path(rules_cfg.get("path", "RULES.md"))
+    if not rules_p.is_absolute() and not rules_p.exists():
+        rules_p = (STEWARD_ROOT / rules_p).resolve()
     # Delegate children always use the atomic lane as their primary LLM client.
     runtime_llm = atomic_llm if (args.delegate_mode and atomic_llm) else llm
+
+    orch_provider = str(orch_cfg.get("provider") or "qwythos")
+    atomic_provider = str(
+        (config.get("llm") or {}).get("atomic", {}).get("provider") or "qwen3_json"
+    )
+    # Delegate children run on the atomic lane as their primary client.
+    if args.delegate_mode:
+        primary_provider, secondary_provider = atomic_provider, atomic_provider
+    else:
+        primary_provider, secondary_provider = orch_provider, atomic_provider
+
     runtime = Runtime(
         llm=runtime_llm,
         help_engine=help_engine,
@@ -218,8 +324,20 @@ def main():
         shortcuts=shortcuts,
         delegate_terminal=delegate_terminal,
         config_path=args.config,
+        rules_path=str(rules_p),
+        rules_enabled=bool(rules_cfg.get("enabled", True)),
+        backend_launcher=backend_launcher,
+        primary_provider=primary_provider,
+        secondary_provider=secondary_provider,
+        vision_enabled=False if args.delegate_mode else vision_enabled,
+        idle_config=config.get("idle_loop"),
     )
     runtime.session_manager = session_mgr
+
+    # F4 metadata: record orch slot pin on the session tree (not a KV dump).
+    if not args.delegate_mode and llm.id_slot is not None:
+        session.metadata["orch_id_slot"] = llm.id_slot
+        session_mgr.save()
 
     # Execute
     if args.delegate_mode:
@@ -242,6 +360,7 @@ def main():
             context_text = str(blob.get("context", ""))
 
         try:
+            runtime.mark_delegate_child(parent=args.parent)
             runtime.run_delegate_child(skill, problem, context_text)
         finally:
             session_mgr.save()

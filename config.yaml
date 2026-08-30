@@ -1,59 +1,132 @@
-# Tiny Steward — Semantic Capability Graph
-# Endpoints for llamacpp / Ollama local stack
-
 llm:
   orchestrator:
-    base_url: "http://127.0.0.1:11440"
-    api: "openai"                      # llamacpp /v1/chat/completions
-    model: "qwythos-9b-96k"
-    ctx: 131072
+    base_url: http://127.0.0.1:11434
+    api: openai
+    model: qwen3.8-64k
+    provider: qwythos
+    ctx: 65536
     max_tokens: 8192
     temperature: 0.6
     top_p: 0.95
+    top_k: 20
     repeat_penalty: 1.05
+    enable_thinking: true
+    preserve_thinking: false
+    thinking_budget_tokens: -1
+    cache_prompt: true
+    id_slot: 0
+    vision: auto
+    fallbacks:
+    - name: github_models
+      provider: github
+      base_url: https://models.github.ai/inference
+      model: openai/gpt-4o
+      api_key_env: GITHUB_TOKEN
+    - name: groq_cloud
+      provider: groq
+      base_url: https://api.groq.com/openai/v1
+      model: llama-3.3-70b-versatile
+      api_key_env: GROQ_API_KEY
+    - name: openrouter_free
+      provider: openrouter
+      base_url: https://openrouter.ai/api/v1
+      model: meta-llama/llama-3.3-70b-instruct:free
+      api_key_env: OPENROUTER_API_KEY
+    launch:
+      cmd:
+      - powershell
+      - -File
+      - C:\Users\soyko\Documents\Ollama\docker\llamacpp\start-qwythos-server.ps1
+      - -CudaDevices
+      - 1,2
+      - -WithVision
+      cwd: C:\Users\soyko\Documents\Ollama\docker\llamacpp
+      autostart: false
+      parallel: 1
+      expect_total_slots: 1
+      extra_args:
+      - --cache-ram
+      - '0'
+      - --cache-idle-slots
+      - --ctx-checkpoints
+      - '0'
   atomic:
-    base_url: "http://127.0.0.1:11439"
-    api: "openai"
-    model: "qwen3-4b-instruct-96k"
-    ctx: 98304
-    max_tokens: 4192
+    base_url: http://127.0.0.1:11434
+    api: openai
+    model: qwen3.8-64k
+    provider: qwen3_json
+    ctx: 65536
+    max_tokens: 8192
     temperature: 0.15
-
+    enable_thinking: false
+    preserve_thinking: false
+    thinking_budget_tokens: 0
+    cache_prompt: true
+    launch:
+      cmd:
+      - powershell
+      - -File
+      - C:\Users\soyko\Documents\Ollama\docker\llamacpp\start-qwythos-atomic.ps1
+      - -CudaDevices
+      - '0'
+      cwd: C:\Users\soyko\Documents\Ollama\docker\llamacpp
+      autostart: false
+      parallel: 1
+      profile: longctx
+      expect_total_slots: 1
+      extra_args:
+      - --cache-ram
+      - '0'
+      - --cache-idle-slots
+      - --ctx-checkpoints
+      - '0'
 embeddings:
-  base_url: "http://127.0.0.1:11438"
-  api: "ollama"                        # Ollama /api/embeddings
-  model: "nomic-embed-text"
-
+  base_url: http://127.0.0.1:11438
+  api: ollama
+  model: nomic-embed-text
+backends:
+  gate:
+    enabled: true
+    orch_slots: 1
+    atomic_slots: 1
+    embed_slots: 1
+mcp:
+  python_exe: C:\Users\soyko\Documents\nina-mcp\.venv\Scripts\python.exe
+  client_py: C:\Users\soyko\Documents\nina-mcp\test_client.py
 help:
   top_k: 5
   min_similarity: 0.35
-  max_inject_tokens: 4000             # budget for skill text injection
-
+  max_inject_tokens: 4000
 skills:
-  root: "./skills"
-  index: "./skills/_index.json"
+  root: ./skills
+  index: ./skills/_index.json
   rebuild_on_start: false
-
 sessions:
-  dir: "./sessions"
+  dir: ./sessions
   auto_save: true
-
+rules:
+  enabled: true
+  path: ./RULES.md
+os_invariants:
+  os: windows
+  shell: powershell
+  path_style: absolute
+  mandatory_primitives:
+  - Operating system is Windows. PowerShell (pwsh) executions are preferred as the
+    main resort.
+  - Never invoke linux/bash tools or commands (no bash, no WSL, no ls/cat/grep in
+    shell commands).
+  - Never use cd command inside tools (rely on Cwd arguments).
+  - Always use absolute paths when referencing directories/files.
 ui:
-  streaming: true          # stream LLM tokens to terminal in real time
-  markdown: true           # render Markdown in assistant responses
-  stats: true              # show per-turn token + timing stats line
-  checkpoint_every: 4      # auto-save session checkpoint every N turns (0 = off)
-  # Out-of-process delegate terminal: auto | in_process | windows_terminal | tmux | console
-  # auto → Windows Terminal split if wt.exe present, else new console; Unix + $TMUX → tmux; else in_process
+  streaming: true
+  markdown: true
+  stats: true
+  checkpoint_every: 4
   delegate_terminal: auto
-
-# ---------------------------------------------------------------------------
-# llama.cpp ops notes (verified on this host 2026-07-16):
-# - atomic (:11439) qwen3-4b-instruct-96k: --parallel 1, -c 98304
-#   → single slot; concurrent child terminals serialize (503 retries help).
-# - orchestrator (:11440) qwythos-9b-96k: --parallel 1, -c 262144 (server),
-#   while config.yaml ctx: 98304 is the budget Tiny Steward uses for compaction.
-# - Raise atomic --parallel N before relying on multiple out-of-process delegates.
-# - Mid-generation abort is not used; mailbox drains between turns only.
-# ---------------------------------------------------------------------------
-
+idle_loop:
+  enabled: true
+  tick_interval: 2.0
+  health_check_interval: 30.0
+  dream_check_interval: 60.0
+  alert_check_interval: 3.0

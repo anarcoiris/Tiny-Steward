@@ -1,0 +1,2 @@
+# Session transcripts and mailbox live on disk but stay out of git.
+# See docs/operator.md

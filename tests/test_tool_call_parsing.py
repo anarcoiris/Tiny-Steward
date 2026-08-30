@@ -52,6 +52,45 @@ class TestToolCallParsing(unittest.TestCase):
         self.assertEqual(actions[0]["body"], "skills/_policy")
         self.assertNotIn("path", actions[0]["attrs"])
 
+    def test_write_bare_path_tag_accepted(self):
+        """Model drift: <path>…</path> instead of <parameter=path>."""
+        text = (
+            '<tool_call>\n'
+            '<function=write>\n'
+            '<path>\n'
+            'task.md\n'
+            '</path>\n'
+            '<parameter=content>\n'
+            '# Hello\n'
+            '</parameter>\n'
+            '</function>\n'
+            '</tool_call>'
+        )
+        actions = extract_actions(text)
+        self.assertEqual(len(actions), 1)
+        self.assertEqual(actions[0]["name"], "write")
+        self.assertEqual(actions[0]["attrs"].get("path"), "task.md")
+        self.assertEqual(actions[0]["body"], "# Hello")
+
+    def test_write_hybrid_path_close_parameter(self):
+        """Wild drift: <path>…</parameter> + <parameter=content>."""
+        text = (
+            '<tool_call>\n'
+            '<function=write>\n'
+            '<path>\n'
+            'task.md\n'
+            '</parameter>\n'
+            '<parameter=content>\n'
+            'body text\n'
+            '</parameter>\n'
+            '</function>\n'
+            '</tool_call>'
+        )
+        actions = extract_actions(text)
+        self.assertEqual(len(actions), 1)
+        self.assertEqual(actions[0]["attrs"].get("path"), "task.md")
+        self.assertEqual(actions[0]["body"], "body text")
+
     def test_legacy_ls_path_attribute(self):
         text = '<action name="ls" path="skills/_policy"></action>'
         actions = extract_actions(text)
@@ -84,6 +123,49 @@ class TestToolCallParsing(unittest.TestCase):
         actions = parse_actions(text)
         self.assertEqual(actions[0]["name"], "help")
         self.assertEqual(actions[0]["body"], "docker won't start")
+
+    def test_unclosed_qwythos_tool_call(self):
+        """Model omits closing </tool_call> tag at end of turn."""
+        text = (
+            '<tool_call>\n'
+            '<function=read>\n'
+            '<parameter=path>\n'
+            'task.md\n'
+            '</parameter>\n'
+            '</function>'
+        )
+        actions = extract_actions(text)
+        self.assertEqual(len(actions), 1)
+        self.assertEqual(actions[0]["name"], "read")
+        self.assertEqual(actions[0]["body"], "task.md")
+
+    def test_unclosed_qwythos_parameter_tag(self):
+        """Model omits closing </parameter> tag at end of turn."""
+        text = (
+            '<tool_call>\n'
+            '<function=read>\n'
+            '<parameter=path>\n'
+            'task.md'
+        )
+        actions = extract_actions(text)
+        self.assertEqual(len(actions), 1)
+        self.assertEqual(actions[0]["name"], "read")
+    def test_qwen_json_array_tool_calls(self):
+        """Qwen emits a JSON list of tool call objects inside <tool_call>."""
+        text = (
+            '<tool_call>\n'
+            '[\n'
+            '  {"name": "read", "arguments": {"path": "config.yaml"}},\n'
+            '  {"name": "ls", "arguments": {"path": "."}}\n'
+            ']\n'
+            '</tool_call>'
+        )
+        actions = extract_actions(text)
+        self.assertEqual(len(actions), 2)
+        self.assertEqual(actions[0]["name"], "read")
+        self.assertEqual(actions[0]["body"], "config.yaml")
+        self.assertEqual(actions[1]["name"], "ls")
+        self.assertEqual(actions[1]["body"], ".")
 
 
 if __name__ == "__main__":
