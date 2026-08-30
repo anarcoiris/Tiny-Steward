@@ -3,7 +3,8 @@
 **Documento:** `plans/master_architecture_improvement_plan.md`  
 **Fecha:** 2026-08-30  
 **Autor:** Antigravity Pairing System (Wingman Agent)  
-**Backend de Pruebas Activo:** Docker `ollama-planner` (`http://localhost:11434`, Qwen 3.8 / Qwythos 9B).
+**Backend & Modelo Activo:** Ollama (`http://127.0.0.1:11434`), Modelo `qwen3.8-64k:latest` (Qwen 3.8 / 3.5 9.2B Distill GGUF Q4_K_M, 64k ctx, 8k max_tokens).  
+**Test Suite Base:** 177/177 pruebas pasando (`python -m pytest`).
 
 ---
 
@@ -14,7 +15,7 @@
 3. [[P1] Extracción de `StewardEngine` (Kernel de Servicio Unificado)](#3-p1-extracción-de-stewardengine-kernel-de-servicio-unificado)
 4. [[P1] Servidor FastMCP para Tiny Steward (`mcp_server/`)](#4-p1-servidor-fastmcp-para-tiny-steward-mcp_server)
 5. [[P2] Contrato `finding.schema.json` y Validador de Fases](#5-p2-contrato-findingschemajson-y-validador-de-fases)
-6. [Plan de Pruebas Integradas con `ollama-planner`](#6-plan-de-pruebas-integradas-con-ollama-planner)
+6. [Plan de Pruebas Integradas con `qwen3.8-64k`](#6-plan-de-pruebas-integradas-con-qwen38-64k)
 
 ---
 
@@ -62,15 +63,15 @@ graph TD
 ## 2. [P0] Guardarraíles de Truncación y Agotamiento de Reasoning en `core/llm.py`
 
 ### 2.1. Contexto y Diagnóstico
-1. **Thinking Exhaustion**: Qwythos / Qwen 3.8 a veces consume todo el presupuesto de `max_tokens` dentro de `<think>...</think>`, devolviendo un mensaje con `content` vacío o cortado, pero con la herramienta ya definida en el bloque de pensamiento.
+1. **Thinking Exhaustion**: En modelos de razonamiento (como `qwen3.8-64k` / Qwen 3.8 / Qwen 3.5 distill con CoT), si el modelo genera su razonamiento en `reasoning_content` (OpenAI format) o `<think>...</think>` y satura los tokens antes de generar `content`, `content` queda vacío o cortado, pero la invocación a la herramienta ya existe en el razonamiento.
 2. **Disparidad de Endpoints**: Ollama nativo entrega `done_reason`, mientras que OpenAI compatible entrega `finish_reason`.
-3. **Truncación Dura**: Cuando `done_reason == "length"`, la acción queda con etiquetas XML/JSON incompletas (e.g. `<parameter=content>texto incom...`).
+3. **Truncación Dura**: Cuando `finish_reason == "length"` o `done_reason == "length"`, la acción puede quedar con etiquetas XML o bloques JSON incompletos. Si bien `core/action_parse.py` ya incorporó soporte defensivo para `UNCLOSED_PARAM_RE` y `TOOL_CALL_UNCLOSED_RE`, se requiere una función unificada `parse_llm_result(content, thinking)` que inspeccione de forma priorizada el contenido y el pensamiento antes de fallar.
 
 ### 2.2. Arquitectura de Resiliencia
 
 ```mermaid
 graph TD
-    A[Respuesta del LLM] --> B[Normalizador de done_reason]
+    A[Respuesta del LLM] --> B[Normalizador de done_reason / finish_reason]
     B --> C{¿Content Válido?}
     C -->|Sí| D[Parsear Acción Normal]
     C -->|Vacío o Truncado| E{¿Thinking Contiene Tool Call?}
@@ -89,11 +90,11 @@ graph TD
 - `[NEW]` `tests/test_llm_truncation_guards.py`
 
 #### Cambios Concretos
-1. **Función `parse_llm_result(content: str, thinking: str) -> tuple[dict, str | None]`**:
-   - Intenta primero parsear `content`.
-   - Si falla y `thinking` tiene un bloque `<tool_call>` o `<function=...>`, rescata la invocación directamente del pensamiento.
+1. **Función `parse_llm_result(content: str, thinking: str) -> tuple[list[dict], str]`**:
+   - Intenta primero parsear `content` con `extract_actions_from_text`.
+   - Si no encuentra acciones y `thinking` contiene bloques `<tool_call>`, `<function=...>`, o JSON de herramienta, rescata la invocación directamente del pensamiento y añade una advertencia de diagnóstico.
 2. **Normalización Unificada de `done_reason`**:
-   - Mapear `finish_reason` de OpenAI ("stop" $\to$ "stop", "length" $\to$ "length") a un campo de primer nivel `result["done_reason"]`.
+   - Mapear `finish_reason` de OpenAI ("stop" $\to$ "stop", "length" $\to$ "length") y de Ollama a un campo normalizado `result["done_reason"]`.
 3. **Turno de Continuación (`chat_continue`)**:
    - En `core/runtime_loop.py` / `core/runtime_execution.py`, si se detecta `done_reason == "length"` y un XML/JSON sin cerrar, ejecutar una solicitud de continuación:
      `"Continue the XML/JSON tool call exactly from where you stopped. Output only the continuation."`
@@ -208,14 +209,15 @@ Sustituir revisiones de código y salidas de error en texto libre por un contrat
 
 ---
 
-## 6. Plan de Pruebas Integradas con `ollama-planner`
+## 6. Plan de Pruebas Integradas con `qwen3.8-64k`
 
 ### 6.1. Configuración de Entorno de Pruebas
-- **Endpoint Activo**: `http://localhost:11434`
-- **Modelo Activo**: `qwythos-9b-96k:latest` / Qwen 3.8 9B
-- **Pruebas a Ejecutar**:
-  1. `pytest tests/test_llm_truncation_guards.py` (con mocks + live check opcional).
-  2. `pytest tests/test_dream_immunization.py` (con fixtures de sesiones fallidas y limpias).
-  3. `pytest tests/test_service_kernel.py` (verificando ejecución headless).
-  4. `pytest tests/test_mcp_server.py` (invocación de herramientas FastMCP).
-  5. `pytest tests/test_phase_evaluator.py` (verificación de reglas y esquemas).
+- **Endpoint Activo**: `http://127.0.0.1:11434`
+- **Modelo Activo**: `qwen3.8-64k:latest` (Ollama, OpenAI API compatible, ctx: 65536, max_tokens: 8192)
+- **Ejecución Base**: `python -m pytest -q` (177 tests pasando)
+- **Nuevas Pruebas a Integrar**:
+  1. `python -m pytest tests/test_llm_truncation_guards.py` (con fixtures de CoT y rescates de `<think>`).
+  2. `python -m pytest tests/test_dream_immunization.py` (con fixtures de sesiones fallidas, logs ruidosos y sanas).
+  3. `python -m pytest tests/test_service_kernel.py` (verificando ejecución headless de `StewardEngine`).
+  4. `python -m pytest tests/test_mcp_server.py` (invocación de herramientas FastMCP).
+  5. `python -m pytest tests/test_phase_evaluator.py` (verificación de reglas y esquemas `finding.schema.json`).
