@@ -27,13 +27,15 @@ Return ONLY a single JSON object (no markdown fences) with this schema:
   "falsified": [{"statement": str, "evidence_refs": [str], "confidence": float}],
   "hypotheses": [{"statement": str, "evidence_refs": [str], "confidence": float}],
   "ideas": [{"statement": str, "evidence_refs": [str], "confidence": float}],
-  "open_questions": [{"statement": str, "evidence_refs": [str], "confidence": float}]
+  "open_questions": [{"statement": str, "evidence_refs": [str], "confidence": float}],
+  "lessons": [{"mistake": str, "root_cause": str, "rule_or_fix": str, "evidence_refs": [str]}]
 }
 Rules:
 - facts = experienced / tool-verified outcomes (paths read, commands that worked).
 - validated = claims confirmed by evidence in the traces.
 - falsified = claims disproven by evidence.
 - hypotheses / ideas = unverified speculation — do not promote to facts.
+- lessons = errors, unexpected failures, misunderstandings or retry attempts and their root causes / permanent fixes or rules.
 - evidence_refs: think timestamps (ts) or action names when known.
 - confidence in [0,1]. Be concise. Prefer Spanish or English as in the traces.
 - Empty arrays are fine. Do not invent tools or files not mentioned.
@@ -66,6 +68,13 @@ def memory_md_path(sessions_dir: Path, session_name: str) -> Path:
     p = Path(sessions_dir) / safe_name
     p.mkdir(parents=True, exist_ok=True)
     return p / f"{session_name}.memory.md"
+
+
+def lessons_md_path(sessions_dir: Path, session_name: str) -> Path:
+    safe_name = "".join(c if c.isalnum() or c in "-_" else "_" for c in session_name)
+    p = Path(sessions_dir) / safe_name
+    p.mkdir(parents=True, exist_ok=True)
+    return p / "lessons.md"
 
 
 def interactions_path(sessions_dir: Path, session_name: str) -> Path:
@@ -286,7 +295,7 @@ def parse_extract_json(raw: str) -> dict[str, Any]:
     data = json.loads(text)
     if not isinstance(data, dict):
         raise ValueError("dream extract root must be an object")
-    for key in ("facts", "validated", "falsified", "hypotheses", "ideas", "open_questions"):
+    for key in ("facts", "validated", "falsified", "hypotheses", "ideas", "open_questions", "lessons"):
         val = data.get(key)
         if val is None:
             data[key] = []
@@ -303,7 +312,46 @@ def empty_extract() -> dict[str, Any]:
         "hypotheses": [],
         "ideas": [],
         "open_questions": [],
+        "lessons": [],
     }
+
+
+def render_lessons_md(session_name: str, extract: dict[str, Any], *, watermark: str) -> str:
+    """Render a dedicated lessons.md file detailing errors, root causes, and learned fixes."""
+    lines = [
+        f"# Lecciones Aprendidas y Corrección de Errores — {session_name}",
+        "",
+        f"_Última consolidación: `{watermark}`_",
+        "",
+    ]
+    items = extract.get("lessons") or []
+    if not items:
+        lines.append("## Estado de Errores")
+        lines.append("")
+        lines.append("No se detectaron fallos críticos o errores no resueltos en las trazas recientes.")
+        lines.append("")
+    else:
+        lines.append("## 🔍 Errores Identificados y Correcciones")
+        lines.append("")
+        for idx, it in enumerate(items, 1):
+            if not isinstance(it, dict):
+                continue
+            mistake = str(it.get("mistake", "")).strip()
+            cause = str(it.get("root_cause", "")).strip()
+            fix = str(it.get("rule_or_fix", "")).strip()
+            refs = it.get("evidence_refs") or []
+            ref_s = f" — Traza: {', '.join(str(r) for r in refs[:5])}" if refs else ""
+
+            lines.append(f"### Lección #{idx}: {mistake or 'Fallo de Ejecución'}")
+            lines.append("")
+            if cause:
+                lines.append(f"- **Causa Raíz:** {cause}")
+            if fix:
+                lines.append(f"- **Solución Canónica / Regla:** {fix}{ref_s}")
+            lines.append("")
+            lines.append("---")
+            lines.append("")
+    return "\n".join(lines)
 
 
 def render_memory_md(session_name: str, extract: dict[str, Any], *, watermark: str) -> str:
@@ -341,6 +389,29 @@ def render_memory_md(session_name: str, extract: dict[str, Any], *, watermark: s
     _section("Hypotheses", "hypotheses")
     _section("Ideas", "ideas")
     _section("Open questions", "open_questions")
+
+    # Dedicated lessons section in memory.md
+    lessons = extract.get("lessons") or []
+    if lessons:
+        lines.append("## Lessons & Error Corrections")
+        lines.append("")
+        for it in lessons:
+            if not isinstance(it, dict):
+                continue
+            mistake = str(it.get("mistake", "")).strip()
+            cause = str(it.get("root_cause", "")).strip()
+            fix = str(it.get("rule_or_fix", "")).strip()
+            refs = it.get("evidence_refs") or []
+            ref_s = f" — refs: {', '.join(str(r) for r in refs[:5])}" if refs else ""
+            if mistake:
+                desc = f"- **{mistake}**"
+                if cause:
+                    desc += f" (Causa: {cause})"
+                if fix:
+                    desc += f" → Fix: {fix}{ref_s}"
+                lines.append(desc)
+        lines.append("")
+
     text = "\n".join(lines)
     if len(text) > MEMORY_MD_CAP:
         text = text[:MEMORY_MD_CAP].rstrip() + "\n\n[… truncated …]\n"
@@ -472,6 +543,11 @@ def run_dream(
     md = render_memory_md(session_name, extract, watermark=new_wm)
     memory_md_path(sessions_dir, session_name).write_text(md, encoding="utf-8")
 
+    # Render and persist lessons.md
+    lessons_md = render_lessons_md(session_name, extract, watermark=new_wm)
+    lessons_path = lessons_md_path(sessions_dir, session_name)
+    lessons_path.write_text(lessons_md, encoding="utf-8")
+
     return {
         "ok": True,
         "skipped": False,
@@ -479,6 +555,7 @@ def run_dream(
         "watermark": new_wm,
         "count": len(slice_),
         "memory_md": str(memory_md_path(sessions_dir, session_name)),
+        "lessons_md": str(lessons_path),
         "extract_counts": {k: len(extract.get(k) or []) for k in extract},
         "manifest": record["manifest"],
     }

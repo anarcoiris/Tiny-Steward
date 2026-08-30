@@ -111,6 +111,7 @@ class TestDreaming(unittest.TestCase):
             self.assertTrue(result["ok"])
             self.assertFalse(result["skipped"])
             self.assertTrue(Path(result["memory_md"]).exists())
+            self.assertTrue(Path(result["lessons_md"]).exists())
             self.assertEqual(llm.gate_priority, "interactive")
             # Second dream with watermark should skip
             result2 = run_dream(
@@ -120,6 +121,28 @@ class TestDreaming(unittest.TestCase):
                 watermark=result["watermark"],
             )
             self.assertTrue(result2["skipped"])
+
+    def test_render_lessons_md_with_entries(self):
+        from core.dreaming import render_lessons_md
+        extract = {
+            "facts": [],
+            "validated": [],
+            "falsified": [],
+            "hypotheses": [],
+            "ideas": [],
+            "open_questions": [],
+            "lessons": [{
+                "mistake": "Unpacking 3 vars from 2-tuple",
+                "root_cause": "Expected length mismatch in loop header",
+                "rule_or_fix": "Use dictionary for test cases with explicit expected key",
+                "evidence_refs": ["ts_err_1"],
+            }],
+        }
+        md = render_lessons_md("demo_sess", extract, watermark="ts_now")
+        self.assertIn("Lecciones Aprendidas", md)
+        self.assertIn("Unpacking 3 vars from 2-tuple", md)
+        self.assertIn("Expected length mismatch", md)
+        self.assertIn("Use dictionary for test cases", md)
 
 
 if __name__ == "__main__":

@@ -134,6 +134,7 @@ def banner(session_name: str, skills_count: int, *, color: bool = True):
         f"[{_C.BRAND}]/image[/{_C.BRAND}]  "
         f"[{_C.BRAND}]/dream[/{_C.BRAND}]  "
         f"[{_C.BRAND}]/memory[/{_C.BRAND}]  "
+        f"[{_C.BRAND}]/lessons[/{_C.BRAND}]  "
         f"[{_C.BRAND}]/backend[/{_C.BRAND}]  "
         f"[{_C.BRAND}]/checkpoint[/{_C.BRAND}]  "
         f"[{_C.BRAND}]/reindex[/{_C.BRAND}]  "

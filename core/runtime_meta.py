@@ -9,6 +9,7 @@ from typing import Any
 
 from core.dreaming import (
     memory_md_path,
+    lessons_md_path,
     run_dream,
 )
 from core.mailbox import mailbox_for
@@ -224,6 +225,22 @@ class RuntimeMetaMixin:
             # Refresh system message memory block
             if messages and messages[0].get("role") == "system":
                 messages[0]["content"] = self._fresh_system_messages()[0]["content"]
+            return True
+
+        # ── /lessons ───────────────────────────────────────────────────
+        if command == "/lessons":
+            if not self.session_manager:
+                display.print_event("error", "Session manager not available.")
+                return True
+            path = lessons_md_path(self.session_manager.dir, self.session.name)
+            if not path.exists():
+                display.print_event(
+                    "info",
+                    "No lessons.md yet — run /dream to consolidate error corrections and lessons.",
+                )
+                return True
+            text = path.read_text(encoding="utf-8")
+            display.print_event("info", f"{path.name}:\n{text}")
             return True
 
         # ── /stream on|off ─────────────────────────────────────────────
