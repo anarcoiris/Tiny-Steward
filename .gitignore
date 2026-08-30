@@ -4,28 +4,36 @@ __pycache__/
 .pytest_cache/
 .vscode/
 .idea/
+.cursor/
 *.log
 
 # Environment — never commit real env files
 .env
 # Committing .env.example (template without secrets) is fine
 
-# Generated skill index — rebuilt on demand
+# Generated skill index & graphs — rebuilt on demand
 skills/_index.json
-.git/
-*/__pycache__/*
-core/__pycache__/
-*/references/roadmap.md
-**/questionary.md
-**/references/
+skills/_index.npy
+skills-assembled-graph.json
+assembled-graph.json
+skills.zip
 
-# Session transcripts — local only (never push personal chats)
+# Session transcripts & memories — local only (never push personal chats)
 sessions/**
 !sessions/.gitkeep
 !sessions/template-review.md
+memory/**
+!memory/.gitkeep
 *.think.jsonl
 *.crash-events.jsonl
+
+# Scratch and Workspace directories
 workspace/
+scratch/
 ejercicios/
 MagicMock/
+test_output*.txt
+skills/_policy/references/
+
+
 
