@@ -24,3 +24,8 @@ sessions/**
 !sessions/.gitkeep
 !sessions/template-review.md
 *.think.jsonl
+*.crash-events.jsonl
+workspace/
+ejercicios/
+MagicMock/
+

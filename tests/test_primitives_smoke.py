@@ -60,6 +60,28 @@ class TestPrimitivesSmoke(unittest.TestCase):
         self.assertNotIn("error", r)
         self.assertIn("findme", r["content"])
 
+    def test_workspace_isolation(self):
+        ws = self.temp / "sandbox"
+        old_ws = primitives.get_workspace_dir()
+        try:
+            primitives.set_workspace_dir(ws)
+            self.assertEqual(primitives.get_workspace_dir(), ws.resolve())
+
+            # Relative write should go into sandbox
+            res = primitives.write("isolated.txt", "content_in_sandbox")
+            self.assertNotIn("error", res)
+            self.assertTrue((ws / "isolated.txt").exists())
+
+            # Relative read should read from sandbox
+            res_read = primitives.read("isolated.txt")
+            self.assertIn("content_in_sandbox", res_read.get("content", ""))
+
+            # Relative ls should list sandbox
+            res_ls = primitives.ls(".")
+            self.assertIn("isolated.txt", res_ls.get("content", ""))
+        finally:
+            primitives.set_workspace_dir(old_ws)
+
 
 if __name__ == "__main__":
     unittest.main()

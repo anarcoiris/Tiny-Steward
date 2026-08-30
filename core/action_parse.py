@@ -94,12 +94,11 @@ def parse_qwythos_tool_call(inner: str) -> dict[str, Any] | None:
     args: dict[str, Any] = {}
     for param_match in QWEN_PARAM_RE.finditer(inner):
         args[param_match.group(1).strip()] = param_match.group(2).strip()
-    if not args:
-        for param_match in UNCLOSED_PARAM_RE.finditer(inner):
-            k = param_match.group(1).strip()
-            v = param_match.group(2).strip()
-            if k and v and k not in args:
-                args[k] = v
+    for param_match in UNCLOSED_PARAM_RE.finditer(inner):
+        k = param_match.group(1).strip()
+        v = param_match.group(2).strip()
+        if k and v and k not in args:
+            args[k] = v
     # Fallback: bare <path>…</path> / hybrid <path>…</parameter>
     if not args or (name in ("write", "append", "read", "mkdir", "ls") and "path" not in args):
         for bare in list(BARE_PARAM_RE.finditer(inner)) + list(DRIFT_PARAM_RE.finditer(inner)):

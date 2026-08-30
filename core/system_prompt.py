@@ -104,6 +104,7 @@ You can call help() multiple times with narrower queries.
 - Execute one action at a time. Wait for the result before continuing.
 - Explain your reasoning briefly before each action.
 {_OS_PATH_RULE}
+- When executing multi-step tasks or when asked to continue, ALWAYS follow the Active Session Task Plan or read() the task.md first to adhere strictly to the established objectives.
 - When a task is complete, say DONE and summarize what was accomplished.
 - If you're stuck after 3 help() calls on the same problem, ask the user.
 """
@@ -161,8 +162,12 @@ def format_os_invariants(invariants: dict) -> str:
     return "\n".join(lines)
 
 
-def compose_system_prompt(rules_text: str = "", invariants: dict | None = None) -> str:
-    """Built-in SYSTEM_PROMPT plus invariants prefix and optional global rules block."""
+def compose_system_prompt(
+    rules_text: str = "",
+    invariants: dict | None = None,
+    task_plan_text: str = "",
+) -> str:
+    """Built-in SYSTEM_PROMPT plus invariants prefix, optional global rules, and active task plan."""
     parts = []
     
     # Layer 0 OS Invariants
@@ -180,6 +185,15 @@ def compose_system_prompt(rules_text: str = "", invariants: dict | None = None) 
             "## Global rules (RULES.md)\n\n"
             "Follow these project rules in addition to the above:\n\n"
             f"{rules}"
+        )
+        
+    # Layer 2 Active Task Plan (task.md / plan.md)
+    task_plan = (task_plan_text or "").strip()
+    if task_plan:
+        parts.append(
+            "## Active Session Task Plan (task.md)\n\n"
+            "The following task plan governs the current session. Adhere to these exact objectives and follow the numbered steps in sequence:\n\n"
+            f"{task_plan}"
         )
         
     return "\n\n".join(parts)

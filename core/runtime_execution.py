@@ -62,6 +62,7 @@ class RuntimeExecutionMixin:
         backend: str = "primary",
         allow_delegate: bool = True,
         log_actions: bool = False,
+        persist_session: bool = True,
     ) -> tuple[bool, list[str]]:
         """Execute actions from an LLM response. Returns (had_actions, errors_list)."""
         if "<tool_call>" in response and not self._extract_actions(response, backend=backend):
@@ -85,7 +86,7 @@ class RuntimeExecutionMixin:
                 self.interaction_log.record_action(action["name"], action.get("body", ""), code)
 
             display.print_result(action["name"], result_text, is_error=is_error)
-            persist = backend != "secondary" or getattr(self, "_is_delegate_child", False)
+            persist = persist_session and (backend != "secondary" or getattr(self, "_is_delegate_child", False))
             self._append_tool_result(messages, action["name"], result_text, persist=persist)
 
             if is_error:
@@ -225,7 +226,12 @@ class RuntimeExecutionMixin:
                             "(not bare <path> tags)."
                         )
                     }
-                return primitive(path, content)
+                res = primitive(path, content)
+                if not self._action_failed(res) and getattr(self, "session", None) and hasattr(self.session, "metadata"):
+                    p_norm = path.replace("\\", "/")
+                    if p_norm.endswith("task.md") or p_norm.endswith("plan.md"):
+                        self.session.metadata["task_file"] = path
+                return res
             elif name == "append":
                 path = attrs.get("path") or ""
                 content = body if body else attrs.get("content", "")
@@ -237,7 +243,12 @@ class RuntimeExecutionMixin:
                             "<parameter=content>…</parameter>."
                         )
                     }
-                return primitive(path, content)
+                res = primitive(path, content)
+                if not self._action_failed(res) and getattr(self, "session", None) and hasattr(self.session, "metadata"):
+                    p_norm = path.replace("\\", "/")
+                    if p_norm.endswith("task.md") or p_norm.endswith("plan.md"):
+                        self.session.metadata["task_file"] = path
+                return res
             elif name == "mkdir":
                 path = attrs.get("path") or body
                 if not path:

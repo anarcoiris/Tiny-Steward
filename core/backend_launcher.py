@@ -401,7 +401,11 @@ class BackendLauncher:
                     if resp.status_code == 200:
                         consecutive_failures = 0
                     else:
-                        consecutive_failures += 1
+                        resp_root = httpx.get(f"{url}/", timeout=5.0)
+                        if resp_root.status_code == 200:
+                            consecutive_failures = 0
+                        else:
+                            consecutive_failures += 1
                 except Exception:
                     consecutive_failures += 1
 

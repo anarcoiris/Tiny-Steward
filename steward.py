@@ -59,11 +59,16 @@ from core.runtime import Runtime
 import core.display as display
 
 
+STEWARD_ROOT = Path(__file__).resolve().parent
+
+
 def load_config(path: str = "config.yaml") -> dict:
-    """Load configuration from YAML."""
+    """Load configuration from YAML (checks cwd and STEWARD_ROOT)."""
     config_path = Path(path)
     if not config_path.exists():
-        print(f"  [error] Config not found: {config_path.resolve()}")
+        config_path = STEWARD_ROOT / path
+    if not config_path.exists():
+        print(f"  [error] Config not found: {Path(path).resolve()}")
         sys.exit(1)
     with config_path.open("r", encoding="utf-8") as f:
         return yaml.safe_load(f)
@@ -92,6 +97,7 @@ def main():
         description="Tiny Steward — Semantic Capability Graph",
     )
     parser.add_argument("--config", default="config.yaml", help="Path to config.yaml")
+    parser.add_argument("--workspace", "-w", default=None, help="Working directory for agent file operations and execution (default: ./workspace or current directory)")
     parser.add_argument("--session", default="default", help="Session name")
     parser.add_argument("--task", help="Run a single task and exit")
     parser.add_argument("--build-index", action="store_true", help="Rebuild skill index")
@@ -107,6 +113,14 @@ def main():
 
     # Load config
     config = load_config(args.config)
+
+    # Configure isolated workspace directory if specified or in config
+    from core.primitives import set_workspace_dir, get_workspace_dir
+    ws_target = args.workspace or config.get("workspace")
+    if ws_target:
+        set_workspace_dir(ws_target)
+    elif (STEWARD_ROOT / "workspace").exists():
+        set_workspace_dir(STEWARD_ROOT / "workspace")
 
     # UI config
     ui_cfg = config.get("ui", {})
@@ -224,7 +238,11 @@ def main():
     # Skills
     skills_cfg = config["skills"]
     skills_root = Path(skills_cfg["root"])
+    if not skills_root.is_absolute() and not skills_root.exists():
+        skills_root = (STEWARD_ROOT / skills_root).resolve()
     index_path = Path(skills_cfg["index"])
+    if not index_path.is_absolute() and not index_path.exists():
+        index_path = (STEWARD_ROOT / index_path).resolve()
 
     # Build index if requested or if it doesn't exist
     if args.build_index or not index_path.exists() or skills_cfg.get("rebuild_on_start"):
@@ -260,7 +278,10 @@ def main():
 
     # Session
     session_cfg = config.get("sessions", {})
-    session_mgr = SessionManager(session_cfg.get("dir", "./sessions"))
+    session_dir = Path(session_cfg.get("dir", "./sessions"))
+    if not session_dir.is_absolute() and not session_dir.exists():
+        session_dir = (STEWARD_ROOT / session_dir).resolve()
+    session_mgr = SessionManager(str(session_dir))
     session = session_mgr.switch(args.session)
 
     if args.parent:
@@ -274,6 +295,9 @@ def main():
         "newline": "c-j"
     })
     rules_cfg = config.get("rules") or {}
+    rules_p = Path(rules_cfg.get("path", "RULES.md"))
+    if not rules_p.is_absolute() and not rules_p.exists():
+        rules_p = (STEWARD_ROOT / rules_p).resolve()
     # Delegate children always use the atomic lane as their primary LLM client.
     runtime_llm = atomic_llm if (args.delegate_mode and atomic_llm) else llm
 
@@ -300,7 +324,7 @@ def main():
         shortcuts=shortcuts,
         delegate_terminal=delegate_terminal,
         config_path=args.config,
-        rules_path=rules_cfg.get("path", "RULES.md"),
+        rules_path=str(rules_p),
         rules_enabled=bool(rules_cfg.get("enabled", True)),
         backend_launcher=backend_launcher,
         primary_provider=primary_provider,

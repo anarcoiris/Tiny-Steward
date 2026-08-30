@@ -107,18 +107,23 @@ class RuntimeCompactionMixin:
                 )
             if mem_summary:
                 summary_parts.append("[Integrated memories]\n" + mem_summary)
+            if hasattr(self, "_get_active_task_text"):
+                tpath, tcontent = self._get_active_task_text(max_chars=800)
+                if tcontent:
+                    summary_parts.append(f"[Active Task Plan ({tpath})]\n{tcontent}")
             for msg in dropped[-5:]:
-                role = msg["role"]
+                role = msg.get("role", "user")
                 content = scrub_chrome(msg.get("content", "") or "")[:200]
                 if not content.strip():
                     continue
                 summary_parts.append(f"[{role}] {content}...")
 
-            summary = {
-                "role": "system",
-                "content": f"[Context compacted. {len(dropped)} earlier messages summarized. Recent context:]\n"
-                + "\n".join(summary_parts),
-            }
-            return [system, summary] + recent
+            summary_text = (
+                f"\n\n[Context compacted: {len(dropped)} earlier messages summarized. Recent progress:]\n"
+                + "\n".join(summary_parts)
+            )
+            compacted_system = dict(system)
+            compacted_system["content"] = str(compacted_system.get("content", "")) + summary_text
+            return [compacted_system] + recent
 
         return [system] + recent
