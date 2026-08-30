@@ -366,6 +366,41 @@ def mcp(tool: str, body: str = "") -> dict[str, Any]:
         return {"stdout": "", "stderr": str(e), "exit_code": -1}
 
 
+def reindex(path: str = "skills", embedder: Any = None) -> dict[str, Any]:
+    """Rebuild and save the skills index in memory and on disk.
+
+    Args:
+        path: Path to the skills directory (defaults to "skills").
+        embedder: Optional Embedder instance. If None, initializes Embedder.from_config({}).
+    """
+    import time
+    from core.skill_loader import build_index
+    from core.embedder import Embedder
+
+    t0 = time.time()
+    try:
+        skills_root = resolve_path(path)
+        if not skills_root.exists() and (Path(__file__).resolve().parent.parent / path).exists():
+            skills_root = Path(__file__).resolve().parent.parent / path
+
+        if embedder is None:
+            embedder = Embedder.from_config({})
+
+        idx = build_index(skills_root, embedder)
+        idx_path = skills_root / "_index.json"
+        idx.save(idx_path)
+        elapsed = round(time.time() - t0, 2)
+        return {
+            "ok": True,
+            "skills_indexed": idx.size,
+            "index_path": str(idx_path),
+            "elapsed_sec": elapsed,
+            "content": f"Successfully reindexed {idx.size} skills into {idx_path} in {elapsed}s",
+        }
+    except Exception as e:
+        return {"error": f"Failed to reindex skills: {e}"}
+
+
 # ------------------------------------------------------------------
 # Registry
 # ------------------------------------------------------------------
@@ -382,6 +417,7 @@ PRIMITIVES = {
     "grep": grep,
     "http": http,
     "mcp": mcp,
+    "reindex": reindex,
     # "help" is handled specially by the runtime, not here
 }
 
@@ -400,6 +436,7 @@ PRIMARY_ARGS: dict[str, str | None] = {
     "grep": "pattern",
     "http": "body",
     "mcp": "body",
+    "reindex": "path",
     "help": "query",
     "delegate": "task",
     "checkpoint": "note",
@@ -442,6 +479,7 @@ PRIMITIVES_TOOLS: list[dict] = [
         "body": {"type": "string"},
     }, ["method", "url"]),
     _fn("mcp", "Execute a tool on the nina-mcp server.", {"tool": {"type": "string"}, "body": {"type": "string"}}, ["tool"]),
+    _fn("reindex", "Rebuild the semantic skill index (RAG) on demand.", {"path": {"type": "string"}}),
     _fn("delegate", "Delegate a task to a specialist micro-agent.", {
         "agent": {"type": "string"},
         "task": {"type": "string"},

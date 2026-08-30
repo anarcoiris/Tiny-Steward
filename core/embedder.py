@@ -31,6 +31,25 @@ class Embedder:
             timeout=httpx.Timeout(timeout, connect=10.0),
         )
 
+    @classmethod
+    def from_config(cls, cfg: dict[str, Any] | None = None, **overrides: Any) -> "Embedder":
+        """Build an embedder client from config dictionary (or default config.yaml)."""
+        import yaml
+        from pathlib import Path
+        cfg = cfg or {}
+        if not cfg:
+            cfg_path = Path(__file__).resolve().parent.parent / "config.yaml"
+            if cfg_path.exists():
+                try:
+                    cfg = yaml.safe_load(cfg_path.read_text(encoding="utf-8")) or {}
+                except Exception:
+                    cfg = {}
+        emb_cfg = cfg.get("embedder", {})
+        base_url = overrides.get("base_url") or emb_cfg.get("base_url", "http://127.0.0.1:11438")
+        model = overrides.get("model") or emb_cfg.get("model", "nomic-embed-text")
+        timeout = overrides.get("timeout") or float(emb_cfg.get("timeout", 60.0))
+        return cls(base_url=base_url, model=model, timeout=timeout)
+
     def embed(self, text: str) -> np.ndarray:
         """Embed a single text string. Returns a 1-D float32 array."""
         with get_gate().hold("embed", priority=self.gate_priority):

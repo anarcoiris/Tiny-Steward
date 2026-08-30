@@ -197,6 +197,10 @@ class RuntimeMetaMixin:
         if command == "/mcp":
             return self._handle_mcp(arg)
 
+        # ── /reindex [path] ───────────────────────────────────────────
+        if command == "/reindex":
+            return self._handle_reindex(arg)
+
         # ── /dream [session] ───────────────────────────────────────────
         if command == "/dream":
             return self._handle_dream(arg, messages)
@@ -472,6 +476,29 @@ class RuntimeMetaMixin:
             f"(facts={counts.get('facts', 0)} validated={counts.get('validated', 0)} "
             f"hypotheses={counts.get('hypotheses', 0)})",
         )
+        return True
+
+    def _handle_reindex(self, arg: str) -> bool:
+        """Run /reindex [path] — rebuild the semantic skill index (RAG) and update in-memory index."""
+        skills_path = arg.strip() or "skills"
+        display.print_event("info", f"Rebuilding semantic skill index from '{skills_path}'...")
+        embedder = getattr(self.help_engine, "embedder", None)
+        res = primitives.reindex(path=skills_path, embedder=embedder)
+        if res.get("ok"):
+            count = res.get("skills_indexed", 0)
+            elapsed = res.get("elapsed_sec", 0.0)
+            display.print_event("ok", f"Reindexed {count} skills in {elapsed}s.")
+            if hasattr(self, "help_engine") and hasattr(self.help_engine, "index"):
+                try:
+                    from core.skill_loader import SkillIndex
+                    from pathlib import Path
+                    idx_path = Path(res["index_path"])
+                    skills_root = idx_path.parent
+                    self.help_engine.index = SkillIndex.load(idx_path, skills_root)
+                except Exception as e:
+                    display.print_event("warn", f"Could not hot-reload in-memory index: {e}")
+        else:
+            display.print_event("error", res.get("error", "Failed to reindex skills."))
         return True
 
     def _read_attachment(self, raw_path: str) -> tuple[str, str | None]:

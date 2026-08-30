@@ -19,6 +19,7 @@ from typing import Any, Callable
 
 from core.backend_gate import get_gate
 from core.dreaming import run_dream, think_path
+from core.scheduler import TaskScheduler, ScheduledJob
 
 logger = logging.getLogger(__name__)
 
@@ -313,18 +314,21 @@ class IdleState:
     health_check_interval: float = 30.0
     dream_check_interval: float = 60.0
     alert_check_interval: float = 3.0
+    schedule_check_interval: float = 10.0
     last_health_check: float = 0.0
     last_dream_check: float = 0.0
     last_alert_check: float = 0.0
+    last_schedule_check: float = 0.0
     health_status: dict[str, Any] = field(default_factory=dict)
     dream_runs_count: int = 0
     alerts_processed_count: int = 0
+    scheduled_jobs_run_count: int = 0
     last_run_ts: str | None = None
     last_error: str | None = None
 
 
 class IdleLoop:
-    """Background daemon thread performing continuous health checks, dreaming, and alertness."""
+    """Background daemon thread performing continuous health checks, dreaming, alertness, and scheduled jobs."""
 
     def __init__(
         self,
@@ -335,18 +339,21 @@ class IdleLoop:
         health_check_interval: float = 30.0,
         dream_check_interval: float = 60.0,
         alert_check_interval: float = 3.0,
+        schedule_check_interval: float = 10.0,
     ):
         self.runtime = runtime
         sessions_dir = getattr(runtime.session_manager, "dir", "./sessions") if hasattr(runtime, "session_manager") else "./sessions"
         session_name = getattr(runtime.session, "name", "default") if hasattr(runtime, "session") else "default"
 
         self.lock = getattr(runtime, "execution_lock", None) or SharedExecutionLock(sessions_dir, session_name)
+        self.scheduler = TaskScheduler(sessions_dir, session_name)
         self.state = IdleState(
             enabled=enabled,
             tick_interval=max(0.05, float(tick_interval)),
             health_check_interval=max(0.1, float(health_check_interval)),
             dream_check_interval=max(0.1, float(dream_check_interval)),
             alert_check_interval=max(0.1, float(alert_check_interval)),
+            schedule_check_interval=max(0.1, float(schedule_check_interval)),
         )
         self._thread: threading.Thread | None = None
         self._stop_event = threading.Event()
@@ -370,19 +377,21 @@ class IdleLoop:
         return self._thread is not None and self._thread.is_alive()
 
     def trigger_now(self) -> dict[str, Any]:
-        """Manually trigger an immediate idle pass (health, dreaming, alertness)."""
+        """Manually trigger an immediate idle pass (health, dreaming, alertness, scheduled jobs)."""
         if not self.lock.acquire_idle():
             return {"ok": False, "reason": "Execution lock busy (active turn running on host)"}
         try:
             res_health = self._do_health_check()
             res_alert = self._do_alert_check()
             res_dream = self._do_dream_check()
+            res_schedule = self._do_schedule_check()
             self.state.last_run_ts = datetime.now(timezone.utc).isoformat()
             return {
                 "ok": True,
                 "health": res_health,
                 "alerts": res_alert,
                 "dream": res_dream,
+                "schedule": res_schedule,
             }
         finally:
             self.lock.release_idle()
@@ -398,8 +407,9 @@ class IdleLoop:
             due_health = (now - self.state.last_health_check) >= self.state.health_check_interval
             due_alert = (now - self.state.last_alert_check) >= self.state.alert_check_interval
             due_dream = (now - self.state.last_dream_check) >= self.state.dream_check_interval
+            due_schedule = (now - self.state.last_schedule_check) >= self.state.schedule_check_interval
 
-            if not (due_health or due_alert or due_dream):
+            if not (due_health or due_alert or due_dream or due_schedule):
                 continue
 
             # Try acquiring non-overlapping shared lock across processes
@@ -418,6 +428,10 @@ class IdleLoop:
                 if due_dream:
                     self._do_dream_check()
                     self.state.last_dream_check = time.time()
+
+                if due_schedule:
+                    self._do_schedule_check()
+                    self.state.last_schedule_check = time.time()
 
                 self.state.last_run_ts = datetime.now(timezone.utc).isoformat()
                 self.state.last_error = None
@@ -495,3 +509,26 @@ class IdleLoop:
             self.state.dream_runs_count += 1
 
         return res
+
+    def _do_schedule_check(self) -> dict[str, Any]:
+        """Execute any due scheduled jobs autonomously."""
+        results = self.scheduler.tick(self._execute_scheduled_job)
+        if results:
+            self.state.scheduled_jobs_run_count += len(results)
+        return {"executed_jobs_count": len(results), "results": results}
+
+    def _execute_scheduled_job(self, job: ScheduledJob) -> dict[str, Any]:
+        """Execute a single scheduled job."""
+        task_str = (job.task or "").strip()
+        logger.info("Executing scheduled job %s: %s", job.id, task_str)
+
+        # Built-in tasks
+        if task_str.startswith("reindex"):
+            from core import primitives
+            return primitives.reindex()
+
+        # Custom agent task execution if runtime supports it
+        if hasattr(self.runtime, "execute_autonomous_task"):
+            return self.runtime.execute_autonomous_task(task_str, lane=job.lane)
+
+        return {"status": "dispatched", "task": task_str, "ts": datetime.now(timezone.utc).isoformat()}

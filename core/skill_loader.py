@@ -105,8 +105,9 @@ def load_skill(filepath: Path, skills_root: Path) -> Skill:
     content = filepath.read_text(encoding="utf-8")
     fm, body = parse_frontmatter(content, filepath)
 
-    name = fm.get("name", filepath.stem)
-    slug = fm.get("slug", filepath.stem)
+    default_name = filepath.parent.name if filepath.stem.upper() == "SKILL" else filepath.stem
+    name = fm.get("name", default_name)
+    slug = fm.get("slug", default_name)
     rel_path = str(filepath.relative_to(skills_root)).replace("\\", "/")
 
     return Skill(
