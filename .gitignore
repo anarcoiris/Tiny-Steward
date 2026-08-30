@@ -24,3 +24,4 @@ sessions/**
 !sessions/.gitkeep
 !sessions/template-review.md
 *.think.jsonl
+ejercicios/**

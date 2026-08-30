@@ -1,0 +1,10 @@
+# Conclusiones Principales — Fase 1
+
+## Conclusión 1: Motor de Auto-Placement 2D Implementado y Funcional
+El módulo `core/auto_placement.py` implementa una maquetación basada en fuerzas (atracción/repulsión) con heurísticas de hardware. Coloca automáticamente conectores de borde, MCUs, matriz D-Pad y condensadores de desacoplamiento.
+
+## Conclusión 2: Validador Pydantic + Auto-Placement Integrado
+El módulo `core/schema_validator.py` valida JSONs con tipos estrictos de Pydantic y dispara el motor de auto-placement cuando faltan coordenadas `position`, cerrando el loop entre LLM → validación → colocación automática.
+
+---
+Verificado: 0 unconnected pads, 0 isolated copper (DRC limpio).

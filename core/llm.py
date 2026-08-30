@@ -55,6 +55,7 @@ class LLMClient:
         repeat_penalty: float = 1.05,
         timeout: float = 300.0,
         *,
+        ctx: int = 65536,
         chat_template_kwargs: dict[str, Any] | None = None,
         thinking_budget_tokens: int | None = -1,
         cache_prompt: bool = True,
@@ -66,6 +67,7 @@ class LLMClient:
     ):
         self.base_url = base_url.rstrip("/")
         self.model = model
+        self.ctx = int(ctx)
         self.max_tokens = max_tokens
         self.temperature = temperature
         self.top_p = top_p
@@ -118,6 +120,7 @@ class LLMClient:
         params = {
             "base_url": cfg["base_url"],
             "model": cfg["model"],
+            "ctx": cfg.get("ctx", 65536),
             "max_tokens": cfg.get("max_tokens", 16384),
             "temperature": cfg.get("temperature", 0.6),
             "top_p": cfg.get("top_p", 0.95),
@@ -143,6 +146,9 @@ class LLMClient:
         try:
             resp = self._client.get("/health", timeout=3.0)
             primary_healthy = (resp.status_code == 200)
+            if not primary_healthy:
+                resp = self._client.get("/", timeout=3.0)
+                primary_healthy = (resp.status_code == 200)
         except Exception as e:
             err_msg = str(e)
         lat_ms = round((time.perf_counter() - start) * 1000, 1)
@@ -188,7 +194,7 @@ class LLMClient:
             data = self._post("/v1/chat/completions", body)
             msg = data["choices"][0]["message"]
             content = msg.get("content") or ""
-            reasoning = msg.get("reasoning_content") or ""
+            reasoning = msg.get("reasoning_content") or msg.get("reasoning") or ""
             self._last_reasoning = reasoning
             timings = data.get("timings") if isinstance(data.get("timings"), dict) else {}
             self._last_timings = timings or {}
@@ -274,7 +280,7 @@ class LLMClient:
                         if not choices:
                             continue
                         delta = choices[0].get("delta", {})
-                        reasoning = delta.get("reasoning_content") or ""
+                        reasoning = delta.get("reasoning_content") or delta.get("reasoning") or ""
                         if reasoning:
                             reasoning_parts.append(reasoning)
                             yield ("reasoning", reasoning)
@@ -373,6 +379,18 @@ class LLMClient:
         """Check if the primary endpoint is reachable and healthy."""
         try:
             resp = self._client.get("/health")
+            if resp.status_code == 200:
+                return True
+        except httpx.HTTPError:
+            pass
+        try:
+            resp = self._client.get("/")
+            if resp.status_code == 200:
+                return True
+        except httpx.HTTPError:
+            pass
+        try:
+            resp = self._client.get("/api/tags")
             return resp.status_code == 200
         except httpx.HTTPError:
             return False
@@ -389,10 +407,23 @@ class LLMClient:
         temperature: float | None,
         tools: list[dict] | None = None,
     ) -> dict[str, Any]:
+        from core.runtime_messages import normalize_messages_for_llm
+        norm_messages = normalize_messages_for_llm(
+            messages,
+            preserve_thinking=getattr(self, "preserve_thinking", False),
+        )
+        target_max = max_tokens if max_tokens is not None else self.max_tokens
+        if target_max is None or target_max <= 0:
+            est_prompt = sum(len(str(m.get("content", ""))) // 4 for m in norm_messages)
+            headroom = max(1024, getattr(self, "ctx", 65536) - est_prompt - 1024)
+            eff_max_tokens = min(headroom, 16384)
+        else:
+            eff_max_tokens = target_max
+
         body: dict[str, Any] = {
             "model": self.model,
-            "messages": messages,
-            "max_tokens": max_tokens or self.max_tokens,
+            "messages": norm_messages,
+            "max_tokens": eff_max_tokens,
             "temperature": temperature if temperature is not None else self.temperature,
             "top_p": self.top_p,
             "top_k": self.top_k,

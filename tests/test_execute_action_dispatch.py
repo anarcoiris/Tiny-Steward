@@ -131,6 +131,29 @@ class TestExecuteActionDispatch(unittest.TestCase):
             self.runtime.session.metadata.get("force_tools_payload_primary_next", False)
         )
 
+    def test_process_response_actions_persist_session_false(self):
+        target = self.temp / "rethink_out.txt"
+        messages: list = []
+        response = (
+            '<tool_call>\n'
+            '<function=write>\n'
+            f'<parameter=path>\n{target.as_posix()}\n</parameter>\n'
+            '<parameter=content>\nhello rethink\n</parameter>\n'
+            '</function>\n'
+            '</tool_call>'
+        )
+        had_actions, errors = self.runtime._process_response_actions(
+            response, messages, backend="primary", persist_session=False
+        )
+        self.assertTrue(had_actions)
+        self.assertEqual(errors, [])
+        self.assertEqual(len(messages), 1)
+        self.assertEqual(messages[0]["role"], "tool")
+        # Ensure message was NOT added to session history because persist_session=False
+        session_tool_msgs = [m for m in self.runtime.session.messages if m.get("role") == "tool"]
+        self.assertEqual(len(session_tool_msgs), 0)
+
 
 if __name__ == "__main__":
     unittest.main()
+

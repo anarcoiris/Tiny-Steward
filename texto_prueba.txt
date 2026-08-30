@@ -1,0 +1,6 @@
+Python es un lenguaje de programación muy popular.
+Python permite crear scripts simples y potentes.
+La sintaxis de Python es clara y legible.
+Python es poderoso, escalable y fácil de aprender.
+Python se usa en data science, machine learning, web, automatización.
+Python es una herramienta versátil para desarrolladores.

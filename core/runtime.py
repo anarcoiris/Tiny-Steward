@@ -175,8 +175,39 @@ class Runtime(
         self._rules_text = load_rules_text(self.rules_path, enabled=self.rules_enabled)
         return f"Reloaded rules from {self.rules_path} ({len(self._rules_text)} chars)."
 
+    def _get_active_task_text(self, max_chars: int = 2500) -> tuple[str, str]:
+        """Find and load the active task.md / plan.md for this session. Returns (path_str, content)."""
+        candidates: list[Path] = []
+        if getattr(self, "session", None) and hasattr(self.session, "metadata"):
+            recorded = self.session.metadata.get("task_file")
+            if recorded:
+                candidates.append(Path(recorded))
+        if getattr(self, "session_manager", None) and getattr(self, "session", None):
+            candidates.append(Path(self.session_manager.session_dir(self.session.name)) / "task.md")
+            candidates.append(Path(self.session_manager.session_dir(self.session.name)) / "plan.md")
+        if getattr(self, "session", None):
+            candidates.append(Path(self.session.name) / "task.md")
+            candidates.append(Path(self.session.name.replace("python_", "")) / "task.md")
+            candidates.append(Path("ejercicios") / "task.md")
+        candidates.append(Path("task.md"))
+
+        for p in candidates:
+            try:
+                resolved = p.expanduser().resolve()
+                if resolved.is_file():
+                    content = resolved.read_text(encoding="utf-8").strip()
+                    if content:
+                        if len(content) > max_chars:
+                            content = content[:max_chars].rstrip() + "\n\n[... task.md truncated ...]"
+                        return str(p).replace("\\", "/"), content
+            except OSError:
+                continue
+        return "", ""
+
     def _fresh_system_messages(self) -> list[dict[str, Any]]:
-        prompt = compose_system_prompt(self._rules_text, self.invariants)
+        task_path, task_content = self._get_active_task_text()
+        task_block = f"Path: `{task_path}`\n\n{task_content}" if task_content else ""
+        prompt = compose_system_prompt(self._rules_text, self.invariants, task_plan_text=task_block)
         return [{"role": "system", "content": prompt}]
 
     def _update_current_state(self, status: str) -> None:

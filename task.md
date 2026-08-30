@@ -1,19 +1,24 @@
-# Task: Deep Codebase Audit for Subjacent Architectural & Runtime Issues
+# Task: KiCad 10.0 EDA & PCB/SCH Synthesis & Architectural Synchronization (v0.6)
 
 ## User Request Goal
-Investigate `tiny_steward` and `Pulse-main` codebases to uncover hidden, subjacent bugs, edge-case failure modes, structural vulnerabilities, and latent runtime issues.
+Synthesize KiCad 10.0 schematic and PCB generation pipeline, enforce SSOT domain net naming, implement 350-micron pad clearance envelopes, eliminate trace/pad collisions, and resolve S-expression loading errors.
 
-## Action Plan
-- [x] **Phase 1: Deep Codebase Investigation & Edge-Case Audit**
-  - [x] Audit `tiny_steward` runtime loop, tool parsing, rethink handling, and delegate execution paths.
-  - [x] Audit `tiny_steward` error handling in `core/runtime_delegate.py`, `core/runtime_execution.py`, `core/providers/`, `core/llm.py`, and `core/mailbox.py`.
-  - [x] Audit `Pulse-main` LLM provider implementations (`knowledge/providers/llm_provider.py`), fallback mechanisms in `llm_client.py`, and integration interfaces.
-- [x] **Phase 2: Formulate Audit Findings & Fix Strategy (`plan.md`)**
-  - [x] Group findings by severity (Critical Runtime Bugs, Latent Parsing Edge Cases, Resilience/Fallback Flaws, Structural Debt).
-  - [x] Draft concrete remediation steps in `implementation_plan.md` and obtain user approval.
-- [x] **Phase 3: Remediation & Verification**
-  - [x] Implemented array JSON tool call parsing & `AttributeError` handling in `tiny_steward/core/action_parse.py`.
-  - [x] Implemented safe string conversion before error string slicing in `tiny_steward/core/runtime_execution.py`.
-  - [x] Implemented streaming multi-provider fallback failover loop in `Pulse-main/knowledge/llm_client.py`.
-  - [x] Verified test suites: 175 tests passed in `tiny_steward`, 129 tests passed in `Pulse-main`.- [x] **Phase 2: Provider Implementation Audit**
-  - [x] All providers in `knowledge/providers/llm_provider.py` already exist (LlamaCpp, Ollama, GitHubModels, OpenRouter, Groq, Gemini) with a factory `create_provider_from_config`. No new provider code required.
+## Action Plan & Completed Phases
+- [x] **Phase 1: Single Source of Truth & Core Consolidation**
+  - [x] Consolidated core engine files (`kicad_audit.py`, `sch_pcb_crosscheck.py`, `RULES.md`, `README.md`).
+  - [x] Created `core/ARCHITECTURE.md` establishing top-down unidirectionality: `JSON (SSOT) -> CircuitGraph -> (kicad_sch + kicad_pcb) -> Audit`.
+- [x] **Phase 2: KiCad 10.0 Schematic & Symbol Synchronization**
+  - [x] Updated schematic header to `(version 20241228)` with `(generator_version "10.0.3")`.
+  - [x] Generated sub-symbols `(symbol "{lib_id}_0_1" ...)` with explicit `(pin ...)` definitions for 100% pin coverage.
+  - [x] Injected `(property "Footprint" "...")` into all schematic symbol instances.
+- [x] **Phase 3: KiCad 10.0 PCB S-Expression & Netclass Compliance**
+  - [x] Fixed root-level `(net_class "Default" "Default netclass" (clearance 0.15) (trace_width 0.25) (via_dia 0.6) (via_drill 0.3))` format.
+  - [x] Verified 100% clean CLI loading in KiCad 10.0 (`Returncode: 0`, `Trazado a 'test_out.svg'`).
+- [x] **Phase 4: Physical Pad Clearance Envelope & Keepout Engine**
+  - [x] Implemented pad copper bounds + 350-micron DRC clearance margin (`cl_margin = 0.35mm`) in A* grid.
+  - [x] Implemented 2-cell (0.50mm) trace clearance corridor reservation in A* grid.
+  - [x] Shifted `Header_000` to $x = -31.0\text{mm}$ to clear mounting holes `H1` and `H3`.
+  - [x] Converted mounting holes to `np_thru_hole` (NPTH M3 mechanical holes).
+- [x] **Phase 5: Automated Test Suite Verification**
+  - [x] 100% signal net routing completion (33/33 segments routed, 0 unrouted).
+  - [x] 18/18 core tests passed (`test_kicad_audit.py` 15/15, `test_sch_pcb_crosscheck.py` 3/3).
