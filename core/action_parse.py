@@ -217,3 +217,31 @@ def extract_actions(text: str, *, dialect: str | None = None) -> list[dict[str, 
         if actions:
             return actions
     return parse_actions(text)
+
+
+def parse_llm_result(
+    content: str | None,
+    thinking: str | None = None,
+    *,
+    dialect: str | None = None,
+) -> tuple[list[dict[str, Any]], str | None]:
+    """Parse actions prioritizing response content, with fallback recovery from thinking block.
+
+    Returns:
+        (actions, source) where source is None if extracted from content (or empty),
+        or "rescued_from_thinking" if recovered from thinking trace.
+    """
+    content_text = (content or "").strip()
+    if content_text:
+        actions = extract_actions(content_text, dialect=dialect)
+        if actions:
+            return actions, None
+
+    thinking_text = (thinking or "").strip()
+    if thinking_text:
+        actions = extract_actions(thinking_text, dialect=dialect)
+        if actions:
+            return actions, "rescued_from_thinking"
+
+    return [], None
+

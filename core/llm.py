@@ -33,6 +33,26 @@ def merge_reasoning_into_content(content: str, reasoning: str) -> str:
     return f"<think>\n{reasoning}\n</think>"
 
 
+def normalize_done_reason(raw: str | None) -> str:
+    """Map provider-specific finish_reason/done_reason to standard tokens:
+    'stop', 'length', 'tool_calls', 'content_filter', 'abort', 'unknown'.
+    """
+    if not raw:
+        return "stop"
+    r = str(raw).strip().lower()
+    if r in ("stop", "stop_sequence", "end_turn"):
+        return "stop"
+    if r in ("length", "max_tokens", "context_length_exceeded"):
+        return "length"
+    if r in ("tool_calls", "function_call", "tool_call"):
+        return "tool_calls"
+    if r in ("content_filter", "safety"):
+        return "content_filter"
+    if r in ("abort", "repetition_loop", "cancelled"):
+        return "abort"
+    return r
+
+
 class LLMClient:
     """Thin wrapper around a llamacpp / OpenAI-compatible chat endpoint with multi-provider fallbacks."""
 
@@ -43,6 +63,7 @@ class LLMClient:
         "cache_prompt", "enable_thinking", "preserve_thinking", "add_vision_id",
         "launch", "id_slot", "provider", "vision", "fallbacks",
     })
+
 
     def __init__(
         self,
@@ -87,11 +108,18 @@ class LLMClient:
         self.active_provider_name: str = "primary"
         self._last_reasoning: str = ""
         self._last_timings: dict[str, Any] = {}
+        self._last_done_reason: str = "stop"
         self._active_resp: Any = None
         self._client = httpx.Client(
             base_url=self.base_url,
             timeout=httpx.Timeout(timeout, connect=15.0),
         )
+
+    @property
+    def last_done_reason(self) -> str:
+        """Normalized termination reason of the last completed request ('stop', 'length', 'tool_calls', 'abort')."""
+        return self._last_done_reason
+
 
     @classmethod
     def from_lane_config(cls, cfg: dict[str, Any], **overrides: Any) -> "LLMClient":
@@ -192,10 +220,13 @@ class LLMClient:
                 tools=tools,
             )
             data = self._post("/v1/chat/completions", body)
-            msg = data["choices"][0]["message"]
+            choice = data["choices"][0]
+            msg = choice["message"]
             content = msg.get("content") or ""
             reasoning = msg.get("reasoning_content") or msg.get("reasoning") or ""
             self._last_reasoning = reasoning
+            raw_reason = choice.get("finish_reason") or data.get("done_reason")
+            self._last_done_reason = normalize_done_reason(raw_reason)
             timings = data.get("timings") if isinstance(data.get("timings"), dict) else {}
             self._last_timings = timings or {}
             self.active_provider_name = "primary"
@@ -209,6 +240,7 @@ class LLMClient:
                     print(f"\n  [LLM Gateway] Primary endpoint failed ({primary_err}). Falling back to provider: {fb_provider.name} ({fb_provider.model})")
                     res = fb_provider.chat(messages, max_tokens=max_tokens, temperature=temperature, tools=tools)
                     self.active_provider_name = fb_provider.name
+                    self._last_done_reason = "stop"
                     return res
                 except Exception as fb_err:
                     print(f"  [LLM Gateway] Fallback provider {fb_provider.name} failed: {fb_err}")
@@ -255,6 +287,7 @@ class LLMClient:
         recent_lines: list[str] = []
         repetition_count = 0
         should_abort = False
+        self._last_done_reason = "stop"
 
         try:
             with self._stream_request("/v1/chat/completions", body) as resp:
@@ -276,9 +309,14 @@ class LLMClient:
                             }
                         if isinstance(chunk.get("timings"), dict):
                             timings = chunk["timings"]
+                        if "done_reason" in chunk and chunk["done_reason"]:
+                            self._last_done_reason = normalize_done_reason(chunk["done_reason"])
                         choices = chunk.get("choices") or []
                         if not choices:
                             continue
+                        fin = choices[0].get("finish_reason")
+                        if fin:
+                            self._last_done_reason = normalize_done_reason(fin)
                         delta = choices[0].get("delta", {})
                         reasoning = delta.get("reasoning_content") or delta.get("reasoning") or ""
                         if reasoning:
@@ -304,6 +342,7 @@ class LLMClient:
                                         if len(recent_lines) > 10:
                                             recent_lines.pop(0)
                         if should_abort:
+                            self._last_done_reason = "abort"
                             print("\n  [warn] Repetition loop detected during streaming; terminating response early.")
                             break
                     except (json.JSONDecodeError, KeyError, IndexError, TypeError):
@@ -323,12 +362,14 @@ class LLMClient:
                             reasoning_parts.append(text)
                         yield (kind, text)
                     self._last_reasoning = "".join(reasoning_parts)
+                    self._last_done_reason = "stop"
                     return usage
                 except Exception as fb_err:
                     print(f"  [LLM Gateway] Fallback provider {fb_provider.name} failed: {fb_err}")
             raise primary_err
         finally:
             self._active_resp = None
+
 
         self._last_reasoning = "".join(reasoning_parts)
         self._last_timings = timings

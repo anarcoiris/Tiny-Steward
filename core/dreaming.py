@@ -7,6 +7,7 @@ advances ``session.metadata["dream_watermark"]``.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 from datetime import datetime, timezone
@@ -51,6 +52,13 @@ def memory_jsonl_path(sessions_dir: Path, session_name: str) -> Path:
     p = Path(sessions_dir) / safe_name
     p.mkdir(parents=True, exist_ok=True)
     return p / f"{session_name}.memory.jsonl"
+
+
+def quarantine_memory_jsonl_path(sessions_dir: Path, session_name: str) -> Path:
+    safe_name = "".join(c if c.isalnum() or c in "-_" else "_" for c in session_name)
+    p = Path(sessions_dir) / "quarantine"
+    p.mkdir(parents=True, exist_ok=True)
+    return p / f"{safe_name}.memory.quarantine.jsonl"
 
 
 def memory_md_path(sessions_dir: Path, session_name: str) -> Path:
@@ -104,6 +112,111 @@ def filter_dream_entries(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return kept
 
 
+def clean_trace_content(text: str) -> str:
+    """Strip raw stacktraces, crash logs, and repetitive error noise before dreaming."""
+    if not text:
+        return ""
+    # Clean full multiline python tracebacks
+    cleaned = re.sub(
+        r"Traceback \(most recent call last\):[\s\S]*?(?:\n[A-Za-z0-9_.]+(?:Error|Exception|Interrupt)[^\n]*|\n(?=[A-Z#])|\Z)",
+        "[traceback stripped]",
+        text,
+    )
+    # Clean repetitive failure notes
+    cleaned = re.sub(r"(?:Remediated issue:[^\n]+\n)+", "[remediation loop stripped]\n", cleaned)
+    cleaned = re.sub(r"\[aborted:[^\]]+\]", "", cleaned)
+    return cleaned.strip()
+
+
+
+def compute_traces_sha256(entries: list[dict[str, Any]]) -> str:
+    """Calculate cryptographic SHA-256 fingerprint for input reasoning traces."""
+    payload = json.dumps(entries, sort_keys=True, ensure_ascii=False)
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def assess_session_health(
+    interactions_p: Path,
+    think_entries: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    """Assess health of session interactions to prevent memory poisoning."""
+    if not interactions_p.exists():
+        return {
+            "healthy": True,
+            "error_rate": 0.0,
+            "total_actions": 0,
+            "failed_actions": 0,
+            "reason": None,
+        }
+
+    rows: list[dict[str, Any]] = []
+    for line in interactions_p.read_text(encoding="utf-8").splitlines():
+        if not line.strip():
+            continue
+        try:
+            rows.append(json.loads(line))
+        except json.JSONDecodeError:
+            continue
+
+    total_actions = 0
+    failed_actions = 0
+    for r in rows:
+        actions = r.get("actions")
+        if actions is None and "name" in r:
+            actions = [r]
+        elif actions is None:
+            actions = []
+
+        errs = r.get("errors") or []
+        if errs:
+            failed_actions += len(errs)
+            if not actions:
+                total_actions += len(errs)
+
+        for a in actions:
+            total_actions += 1
+            code = a.get("exit_code")
+            res = a.get("result")
+            if code is None and isinstance(res, dict):
+                code = res.get("exit_code")
+            preview = str(a.get("body_preview") or "").lower()
+            if isinstance(res, dict):
+                if res.get("error") or res.get("stderr"):
+                    preview += f" {str(res.get('error') or '')} {str(res.get('stderr') or '')}".lower()
+            if code is not None and code != 0:
+                failed_actions += 1
+            elif (
+                "traceback (most recent call last)" in preview
+                or "error:" in preview
+                or "fatal error" in preview
+                or "file not found" in preview
+                or "permission denied" in preview
+                or "out of memory" in preview
+                or "[aborted]" in preview
+            ):
+                failed_actions += 1
+
+    error_rate = failed_actions / max(1, total_actions)
+
+    is_unhealthy = False
+    reason = None
+    if total_actions >= 3 and error_rate > 0.35:
+        is_unhealthy = True
+        reason = f"High error rate ({error_rate:.1%}) across {total_actions} actions"
+    elif total_actions > 0 and failed_actions == total_actions:
+        is_unhealthy = True
+        reason = f"All {total_actions} executed actions failed"
+
+    return {
+        "healthy": not is_unhealthy,
+        "error_rate": round(error_rate, 3),
+        "total_actions": total_actions,
+        "failed_actions": failed_actions,
+        "reason": reason,
+    }
+
+
+
 def load_recent_actions(path: Path, *, limit: int = 40) -> list[dict[str, Any]]:
     if not path.exists():
         return []
@@ -140,7 +253,8 @@ def build_dream_user_payload(
         preview = (e.get("content_preview") or "").strip()
         block = f"### ts={ts}\n"
         if reasoning:
-            block += f"reasoning:\n{reasoning[:2000]}\n"
+            sanitized_reasoning = clean_trace_content(reasoning)
+            block += f"reasoning:\n{sanitized_reasoning[:2000]}\n"
         if preview and not looks_like_repl_chrome(preview):
             block += f"content_preview:\n{preview[:400]}\n"
         parts.append(block)
@@ -268,6 +382,7 @@ def run_dream(
     llm: Any,
     watermark: str | None = None,
     force_all: bool = False,
+    allow_quarantined: bool = False,
 ) -> dict[str, Any]:
     """Run one dream cycle. Returns status dict.
 
@@ -291,7 +406,33 @@ def run_dream(
             "count": 0,
         }
 
-    actions = load_recent_actions(interactions_path(sessions_dir, session_name))
+    ipath = interactions_path(sessions_dir, session_name)
+    health = assess_session_health(ipath, slice_)
+    if not health["healthy"] and not force_all and not allow_quarantined:
+        sha256 = compute_traces_sha256(slice_)
+        qrecord = {
+            "ts": datetime.now(timezone.utc).isoformat(),
+            "session": session_name,
+            "watermark": watermark,
+            "quarantined": True,
+            "health": health,
+            "entry_count": len(slice_),
+            "source_think_sha256": sha256,
+        }
+        qpath = quarantine_memory_jsonl_path(sessions_dir, session_name)
+        append_memory_jsonl(qpath, qrecord)
+        return {
+            "ok": True,
+            "skipped": False,
+            "quarantined": True,
+            "reason": f"Session quarantined to prevent memory poisoning: {health['reason']}",
+            "health": health,
+            "watermark": watermark,
+            "count": len(slice_),
+            "quarantine_path": str(qpath),
+        }
+
+    actions = load_recent_actions(ipath)
     user_payload = build_dream_user_payload(slice_, actions)
     messages = [
         {"role": "system", "content": EXTRACT_SYSTEM},
@@ -315,12 +456,17 @@ def run_dream(
         }
 
     new_wm = str(slice_[-1].get("ts") or datetime.now(timezone.utc).isoformat())
+    sha256 = compute_traces_sha256(slice_)
     record = {
         "ts": datetime.now(timezone.utc).isoformat(),
         "session": session_name,
         "watermark": new_wm,
         "entry_count": len(slice_),
         "extract": extract,
+        "manifest": {
+            "source_think_sha256": sha256,
+            "health": health,
+        },
     }
     append_memory_jsonl(memory_jsonl_path(sessions_dir, session_name), record)
     md = render_memory_md(session_name, extract, watermark=new_wm)
@@ -329,8 +475,11 @@ def run_dream(
     return {
         "ok": True,
         "skipped": False,
+        "quarantined": False,
         "watermark": new_wm,
         "count": len(slice_),
         "memory_md": str(memory_md_path(sessions_dir, session_name)),
         "extract_counts": {k: len(extract.get(k) or []) for k in extract},
+        "manifest": record["manifest"],
     }
+
