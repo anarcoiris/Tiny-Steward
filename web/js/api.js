@@ -135,3 +135,37 @@ export async function streamChat(prompt, sessionName, onChunk, onError, onComple
     if (onError) onError(err);
   }
 }
+
+export async function fetchSessionTree() {
+  const res = await fetch(`${BASE_URL}/api/v1/sessions/tree`);
+  if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
+  return await res.json();
+}
+
+export async function fetchMailboxQueue() {
+  const res = await fetch(`${BASE_URL}/api/v1/mailbox/queue`);
+  if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
+  return await res.json();
+}
+
+export async function fetchBackgroundTasks() {
+  const res = await fetch(`${BASE_URL}/api/v1/tasks/background`);
+  if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
+  return await res.json();
+}
+
+export async function killBackgroundTask(taskId) {
+  const res = await fetch(`${BASE_URL}/api/v1/tasks/kill`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ task_id: taskId })
+  });
+  if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
+  return await res.json();
+}
+
+export async function fetchTaskLogTail(taskId, lines = 50) {
+  const res = await fetch(`${BASE_URL}/api/v1/tasks/tail?task_id=${encodeURIComponent(taskId)}&lines=${lines}`);
+  if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
+  return await res.json();
+}

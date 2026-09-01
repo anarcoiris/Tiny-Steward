@@ -12,6 +12,7 @@ from __future__ import annotations
 import os
 import subprocess
 import json
+import time
 from pathlib import Path
 from typing import Any
 
@@ -42,6 +43,9 @@ def resolve_path(path: str | Path) -> Path:
     return (_WORKSPACE_DIR / p).resolve()
 
 
+from core.task_runner import get_augmented_env, get_task_runner
+
+
 def _run_shell(
     command: str,
     shell_exe: str,
@@ -51,6 +55,7 @@ def _run_shell(
 ) -> dict[str, Any]:
     """Run a shell command and capture output."""
     eff_cwd = str(cwd) if cwd else str(_WORKSPACE_DIR)
+    eff_env = get_augmented_env()
     try:
         result = subprocess.run(
             [shell_exe, *shell_args, command],
@@ -60,6 +65,7 @@ def _run_shell(
             errors="replace",
             timeout=timeout,
             cwd=eff_cwd,
+            env=eff_env,
         )
         return {
             "stdout": result.stdout,
@@ -78,9 +84,27 @@ def _run_shell(
 # Shell primitives
 # ------------------------------------------------------------------
 
-def pwsh(command: str, *, cwd: str | None = None, timeout: float = 120.0) -> dict[str, Any]:
-    """Execute a PowerShell command."""
+def pwsh(
+    command: str,
+    *,
+    cwd: str | None = None,
+    timeout: float = 120.0,
+    is_async: bool = False,
+) -> dict[str, Any]:
+    """Execute a PowerShell command (synchronously or in background)."""
     eff_cwd = str(cwd) if cwd else str(_WORKSPACE_DIR)
+    if is_async:
+        runner = get_task_runner(_WORKSPACE_DIR)
+        task = runner.spawn(command, shell="pwsh", cwd=eff_cwd)
+        return {
+            "content": f"Task started in background: {task.task_id} (PID: {task.pid})\nLog: {task.log_path}",
+            "task_id": task.task_id,
+            "pid": task.pid,
+            "log_path": task.log_path,
+            "status": task.status,
+            "exit_code": 0,
+        }
+
     res = _run_shell(
         command,
         shell_exe="pwsh",
@@ -99,9 +123,27 @@ def pwsh(command: str, *, cwd: str | None = None, timeout: float = 120.0) -> dic
     return res
 
 
-def bash(command: str, *, cwd: str | None = None, timeout: float = 60.0) -> dict[str, Any]:
-    """Execute a bash command (WSL or native)."""
+def bash(
+    command: str,
+    *,
+    cwd: str | None = None,
+    timeout: float = 120.0,
+    is_async: bool = False,
+) -> dict[str, Any]:
+    """Execute a bash command (synchronously or in background)."""
     eff_cwd = str(cwd) if cwd else str(_WORKSPACE_DIR)
+    if is_async:
+        runner = get_task_runner(_WORKSPACE_DIR)
+        task = runner.spawn(command, shell="bash", cwd=eff_cwd)
+        return {
+            "content": f"Task started in background: {task.task_id} (PID: {task.pid})\nLog: {task.log_path}",
+            "task_id": task.task_id,
+            "pid": task.pid,
+            "log_path": task.log_path,
+            "status": task.status,
+            "exit_code": 0,
+        }
+
     # Try WSL first on Windows, native bash on Linux/macOS
     if os.name == "nt":
         return _run_shell(
@@ -206,6 +248,35 @@ def append(path: str, content: str) -> dict[str, Any]:
         with p.open("a", encoding="utf-8") as f:
             f.write(content)
         return {"content": f"Appended {len(content)} bytes to {p}"}
+    except Exception as e:
+        return {"error": str(e)}
+
+
+def replace(path: str, old_str: str, new_str: str, count: int = 1) -> dict[str, Any]:
+    """Replace occurrences of old_str with new_str in a file without overwriting the whole file."""
+    try:
+        p = resolve_path(path)
+        if not p.exists():
+            return {"error": f"File not found: {path}"}
+        if p.is_dir():
+            return {"error": f"Path is a directory, not a file: {path}"}
+
+        content = p.read_text(encoding="utf-8")
+        if old_str not in content:
+            return {"error": f"Target string not found in {path}. Ensure whitespace, indentation, and characters match exactly."}
+
+        occurrences = content.count(old_str)
+        if count and count > 0:
+            new_content = content.replace(old_str, new_str, count)
+            replaced = min(occurrences, count)
+        else:
+            new_content = content.replace(old_str, new_str)
+            replaced = occurrences
+
+        p.write_text(new_content, encoding="utf-8")
+        return {"content": f"Successfully replaced {replaced} occurrence(s) in {p.name}"}
+    except PermissionError:
+        return {"error": f"Permission denied: {path}"}
     except Exception as e:
         return {"error": str(e)}
 
@@ -401,6 +472,34 @@ def reindex(path: str = "skills", embedder: Any = None) -> dict[str, Any]:
         return {"error": f"Failed to reindex skills: {e}"}
 
 
+def task_status(task_id: str, tail: int = 30) -> dict[str, Any]:
+    """Check status and recent log output of a background task."""
+    runner = get_task_runner(_WORKSPACE_DIR)
+    task = runner.poll(task_id)
+    if not task:
+        return {"error": f"Task not found: {task_id}"}
+    log_tail = runner.tail_log(task_id, lines=tail)
+    return {
+        "task_id": task.task_id,
+        "status": task.status,
+        "exit_code": task.exit_code,
+        "runtime_s": round((task.end_time or time.time()) - task.start_time, 2),
+        "content": f"Status: {task.status} (exit_code: {task.exit_code})\n\n=== Recent Log Output ===\n{log_tail}",
+    }
+
+
+def task_kill(task_id: str) -> dict[str, Any]:
+    """Terminate a running background task."""
+    runner = get_task_runner(_WORKSPACE_DIR)
+    success = runner.kill(task_id)
+    if success:
+        return {"content": f"Task {task_id} killed successfully."}
+    task = runner.poll(task_id)
+    if not task:
+        return {"error": f"Task not found: {task_id}"}
+    return {"content": f"Task {task_id} is not running (current status: {task.status})."}
+
+
 # ------------------------------------------------------------------
 # Registry
 # ------------------------------------------------------------------
@@ -409,8 +508,11 @@ PRIMITIVES = {
     "pwsh": pwsh,
     "bash": bash,
     "python": python,
+    "task_status": task_status,
+    "task_kill": task_kill,
     "read": read,
     "write": write,
+    "replace": replace,
     "append": append,
     "mkdir": mkdir,
     "ls": ls,
@@ -428,8 +530,11 @@ PRIMARY_ARGS: dict[str, str | None] = {
     "pwsh": "command",
     "bash": "command",
     "python": "code",
+    "task_status": "task_id",
+    "task_kill": "task_id",
     "read": "path",
     "write": "content",
+    "replace": "new_str",
     "append": "content",
     "mkdir": "path",
     "ls": "path",
@@ -460,8 +565,23 @@ def _fn(name: str, description: str, properties: dict, required: list[str] | Non
 
 
 PRIMITIVES_TOOLS: list[dict] = [
-    _fn("pwsh", "Execute a PowerShell command.", {"command": {"type": "string"}, "cwd": {"type": "string"}}, ["command"]),
-    _fn("bash", "Execute a bash command (WSL on Windows).", {"command": {"type": "string"}, "cwd": {"type": "string"}}, ["command"]),
+    _fn("pwsh", "Execute a PowerShell command (primary shell on Windows). Set is_async=true for long-running background tasks.", {
+        "command": {"type": "string"},
+        "cwd": {"type": "string"},
+        "is_async": {"type": "boolean", "description": "Run in background asynchronously without blocking"},
+    }, ["command"]),
+    _fn("bash", "Execute a bash command (Linux/macOS only — on Windows use pwsh). Set is_async=true for background tasks.", {
+        "command": {"type": "string"},
+        "cwd": {"type": "string"},
+        "is_async": {"type": "boolean"},
+    }, ["command"]),
+    _fn("task_status", "Check status and recent log output of a background task.", {
+        "task_id": {"type": "string", "description": "Task ID returned when starting an async task"},
+        "tail": {"type": "integer", "description": "Number of log lines to inspect (default: 30)"},
+    }, ["task_id"]),
+    _fn("task_kill", "Terminate a running background task.", {
+        "task_id": {"type": "string", "description": "Task ID to terminate"},
+    }, ["task_id"]),
     _fn("python", "Execute a Python snippet.", {"code": {"type": "string"}}, ["code"]),
     _fn("read", "Read file contents (capped to 500 lines).", {
         "path": {"type": "string"},
@@ -469,6 +589,12 @@ PRIMITIVES_TOOLS: list[dict] = [
         "end_line": {"type": "integer"},
     }, ["path"]),
     _fn("write", "Create or overwrite a file.", {"path": {"type": "string"}, "content": {"type": "string"}}, ["path", "content"]),
+    _fn("replace", "Surgical find-and-replace in an existing file (preferred over write for editing/fixing code).", {
+        "path": {"type": "string"},
+        "old_str": {"type": "string", "description": "Exact text/lines to find"},
+        "new_str": {"type": "string", "description": "New replacement text/lines"},
+        "count": {"type": "integer", "description": "Number of occurrences to replace (default: 1)"},
+    }, ["path", "old_str", "new_str"]),
     _fn("append", "Append to a file.", {"path": {"type": "string"}, "content": {"type": "string"}}, ["path", "content"]),
     _fn("mkdir", "Create a directory.", {"path": {"type": "string"}}, ["path"]),
     _fn("ls", "List directory contents. Directory path only — do not pass cwd.", {"path": {"type": "string"}}),

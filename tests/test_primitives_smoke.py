@@ -34,6 +34,21 @@ class TestPrimitivesSmoke(unittest.TestCase):
         self.assertNotIn("error", r)
         self.assertIn("note.txt", r["content"])
 
+    def test_replace_ok(self):
+        target = self.temp / "sample.py"
+        target.write_text("def foo():\n    print('bad')\n", encoding="utf-8")
+        r = primitives.replace(str(target), "print('bad')", "print('good')")
+        self.assertNotIn("error", r)
+        self.assertIn("Successfully replaced", r["content"])
+        self.assertEqual(target.read_text(encoding="utf-8"), "def foo():\n    print('good')\n")
+
+    def test_replace_target_not_found(self):
+        target = self.temp / "sample2.py"
+        target.write_text("x = 1\n", encoding="utf-8")
+        r = primitives.replace(str(target), "nonexistent", "new")
+        self.assertIn("error", r)
+        self.assertIn("Target string not found", r["error"])
+
     def test_pwsh_ok(self):
         r = primitives.pwsh("Write-Output 'ok'")
         self.assertNotIn("error", r)

@@ -38,11 +38,12 @@ You execute operations using primitive actions and call help() when stuck or nee
 
 ## Available Actions
 
-- pwsh(command): execute a PowerShell command (Windows)
-- bash(command): execute a Bash command (Linux/macOS)
+- pwsh(command): execute a PowerShell command (primary shell on Windows)
+- bash(command): execute a Bash command (Linux/macOS only; do NOT use on Windows — use pwsh instead)
 - python(code): execute inline Python script
 - read(path, start_line?, end_line?): read a file
-- write(path, content): create/overwrite a file
+- write(path, content): create/overwrite a file (use for new files or complete rewrites)
+- replace(path, old_str, new_str, count?): surgical find-and-replace in an existing file (PREFER THIS over write for bug fixes and edits to avoid truncating files!)
 - append(path, content): append to a file
 - mkdir(path): create directory
 - ls(path): list directory contents
@@ -61,6 +62,21 @@ Emit native Qwen/Qwythos tool calls (one at a time). Schema is also sent via the
 tools payload on the first turn of a session — do not invent alternate XML.
 
 Parameters MUST use <parameter=NAME>…</parameter> (never bare <path> or <content> tags).
+
+Example (surgical edit/replace — prefer this for fixes):
+
+<tool_call>
+<function=replace>
+<parameter=path>
+app.py
+</parameter>
+<parameter=old_str>
+print("Result: " + old_value)
+</parameter>
+<parameter=new_str>
+print("Result: " + new_value)
+</parameter>
+</tool_call>
 
 Example (list dir):
 
@@ -86,22 +102,32 @@ Notes here.
 </function>
 </tool_call>
 
+Example (discover skills / playbooks via help):
+
+<tool_call>
+<function=help>
+<parameter=query>
+wireshark tshark network capture
+</parameter>
+</function>
+</tool_call>
+
 Workspace home is the process cwd (typically the Tiny Steward repo root). Prefer relative paths from that home. ls takes a directory path only — do not pass cwd. Use pwsh/bash when you need cwd.
+For modifying existing code: always prefer `replace()` over `write()` to keep files intact and prevent cut-offs.
 For delegate(agent, task): task must be a complete problem statement (or path to one), never a placeholder.
 Long transcripts: the user should /attach <path> instead of pasting; you may also read() the path.
 
 ## When to use help() and reindex()
 
-Call help() when you:
-- Encounter an error you're unsure how to fix
-- Need a capability outside your primitives
-- Want guidance on a domain-specific task (git, docker, python env, etc.)
+Call help(query) proactively:
+- At the start of tasks in specialized technical domains (e.g. `help("tshark packet capture")`, `help("git worktrees")`, `help("docker compose")`, `help("python venv")`) to load relevant playbooks, tools, and expert practices before executing actions.
+- Whenever you encounter an unexpected error, unfamiliar format, or need specialist capabilities.
+- You can call help() multiple times with narrower queries to discover specific skills.
 
 Call reindex() when you:
-- Create a new skill in `skills/<domain>/<name>/SKILL.md` or modify existing skills, so the RAG index updates immediately.
+- Create a new skill in `skills/<domain>/<name>/SKILL.md` or modify existing skills, so the semantic RAG index updates immediately.
 
 help() returns relevant skill documents. Read them and continue working.
-You can call help() multiple times with narrower queries.
 
 ## Rules
 
@@ -147,17 +173,21 @@ def load_rules_text(
 
 
 def format_os_invariants(invariants: dict) -> str:
-    """Format OS-level invariants for prompt injection."""
+    """Format OS-level invariants and active workspace for prompt injection."""
     if not invariants:
         return ""
     lines = []
-    lines.append("## OS and Shell Invariants (Layer 0)")
+    lines.append("## OS, Shell & Workspace Invariants (Layer 0)")
     os_name = invariants.get("os", "windows")
     shell_name = invariants.get("shell", "powershell")
     path_style = invariants.get("path_style", "absolute")
     lines.append(f"- Operating System: {os_name}")
     lines.append(f"- Active Shell: {shell_name} (pwsh)")
     lines.append(f"- Path Style: {path_style}")
+    ws_dir = invariants.get("workspace_dir")
+    if ws_dir:
+        lines.append(f"- Active Workspace Directory: `{ws_dir}`")
+        lines.append(f"  All relative file paths (read/write/append/ls/grep) and command executions resolve inside this workspace directory.")
     mandatories = invariants.get("mandatory_primitives", [])
     if mandatories:
         lines.append("- Mandatory Primitive Constraints:")
@@ -170,12 +200,16 @@ def compose_system_prompt(
     rules_text: str = "",
     invariants: dict | None = None,
     task_plan_text: str = "",
+    workspace_dir: str = "",
 ) -> str:
-    """Built-in SYSTEM_PROMPT plus invariants prefix, optional global rules, and active task plan."""
+    """Built-in SYSTEM_PROMPT plus invariants prefix, active workspace, optional global rules, and active task plan."""
     parts = []
     
-    # Layer 0 OS Invariants
-    inv_text = format_os_invariants(invariants or {})
+    # Layer 0 OS & Workspace Invariants
+    inv = dict(invariants or {})
+    if workspace_dir:
+        inv["workspace_dir"] = workspace_dir
+    inv_text = format_os_invariants(inv)
     if inv_text:
         parts.append(inv_text)
         

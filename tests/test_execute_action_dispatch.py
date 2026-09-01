@@ -115,6 +115,22 @@ class TestExecuteActionDispatch(unittest.TestCase):
         self.assertIn("error", result)
         self.assertIn("Missing path", result["error"])
 
+    def test_replace_action_dispatch(self):
+        target = self.temp / "target.py"
+        target.write_text("x = 10\ny = 20\n", encoding="utf-8")
+        result = self.runtime._execute_action({
+            "name": "replace",
+            "body": "",
+            "attrs": {
+                "path": str(target),
+                "old_str": "x = 10",
+                "new_str": "x = 99",
+            },
+        })
+        self.assertNotIn("error", result)
+        self.assertIn("Successfully replaced", result["content"])
+        self.assertEqual(target.read_text(encoding="utf-8"), "x = 99\ny = 20\n")
+
     def test_benign_fs_error_does_not_force_tools_resend(self):
         missing = self.temp / "nope"
         messages: list = []

@@ -22,7 +22,7 @@ UNCLOSED_PARAM_RE = re.compile(r"<parameter=([^>]+)>\n?(.*?)(?=\n?</parameter>|\
 BARE_PARAM_RE = re.compile(r"<([a-zA-Z_][\w]*)>\n?(.*?)\n?</\1>", re.DOTALL)
 # Hybrid drift: <path>…</parameter> (open bare, close parameter)
 DRIFT_PARAM_RE = re.compile(
-    r"<(path|content|command|code|pattern|url|method|query|agent|task|note|key|value|tool|body)>"
+    r"<(path|content|old_str|new_str|count|target|replacement|command|code|pattern|url|method|query|agent|task|task_id|is_async|tail|note|key|value|tool|body)>"
     r"\n?(.*?)\n?</(?:parameter|\1)>",
     re.DOTALL | re.IGNORECASE,
 )
@@ -99,13 +99,12 @@ def parse_qwythos_tool_call(inner: str) -> dict[str, Any] | None:
         v = param_match.group(2).strip()
         if k and v and k not in args:
             args[k] = v
-    # Fallback: bare <path>…</path> / hybrid <path>…</parameter>
-    if not args or (name in ("write", "append", "read", "mkdir", "ls") and "path" not in args):
-        for bare in list(BARE_PARAM_RE.finditer(inner)) + list(DRIFT_PARAM_RE.finditer(inner)):
-            key = bare.group(1).strip()
-            if key.lower() in _BARE_PARAM_SKIP or key.lower().startswith("parameter"):
-                continue
-            args.setdefault(key, bare.group(2).strip())
+    # Fallback / drift: bare <tag>…</tag> or hybrid <tag>…</parameter> across all tools
+    for bare in list(BARE_PARAM_RE.finditer(inner)) + list(DRIFT_PARAM_RE.finditer(inner)):
+        key = bare.group(1).strip()
+        if key.lower() in _BARE_PARAM_SKIP or key.lower().startswith("parameter"):
+            continue
+        args.setdefault(key, bare.group(2).strip())
     return args_to_action(name, args)
 
 

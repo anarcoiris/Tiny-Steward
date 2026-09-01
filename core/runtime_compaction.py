@@ -78,16 +78,28 @@ class RuntimeCompactionMixin:
         return len(drained)
 
     def _compact_messages(self, messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
-        """Compact conversation when approaching context budget."""
+        """Compact conversation when approaching context budget while preserving chat template invariants."""
         if hasattr(self, "session_stats") and self.session_stats:
             self.session_stats.record_compaction()
+
+        # Force refreshing tool payload on next turn following compaction
+        if hasattr(self, "_force_tools_resend") and getattr(self, "session", None):
+            try:
+                self._force_tools_resend("primary")
+                self._force_tools_resend("secondary")
+            except Exception:
+                pass
 
         if not messages:
             return []
 
         system = messages[0]
         body = messages[1:]
-        recent_raw = body[-10:] if len(body) > 10 else body
+        
+        # Take the most recent messages (dynamic window: 14 to 24 messages)
+        keep_count = min(max(len(body) // 2, 14), 24)
+        recent_raw = body[-keep_count:] if len(body) > keep_count else list(body)
+        dropped = body[:-keep_count] if len(body) > keep_count else []
 
         recent = []
         for msg in recent_raw:
@@ -96,11 +108,43 @@ class RuntimeCompactionMixin:
                 m["content"] = m["content"][:4000] + "\n\n[... tool output truncated for context compaction ...]"
             recent.append(m)
 
-        dropped = body[:-10] if len(body) > 10 else []
+        # Ensure we don't start recent with an orphaned 'tool' message
+        while recent and recent[0].get("role") == "tool":
+            recent.pop(0)
+
+        # Ensure there is at least one 'user' query in the conversation (required by Jinja templates / Qwen / OpenAI)
+        has_user = any(m.get("role") == "user" for m in recent)
+        if not has_user:
+            # Find the most recent user query from dropped
+            last_user_msg = None
+            for msg in reversed(dropped):
+                if msg.get("role") == "user":
+                    last_user_msg = dict(msg)
+                    break
+            
+            if last_user_msg:
+                recent.insert(0, last_user_msg)
+            else:
+                # If no user message was ever present, synthesize one from active task or context
+                task_desc = "Continue current task"
+                if hasattr(self, "_get_active_task_text"):
+                    _, tcontent = self._get_active_task_text(max_chars=200)
+                    if tcontent:
+                        first_line = tcontent.strip().splitlines()[0]
+                        task_desc = f"Continue working on: {first_line}"
+                recent.insert(0, {"role": "user", "content": task_desc})
+
+        # If recent starts with an assistant message, ensure the user message is placed before it
+        if recent and recent[0].get("role") != "user":
+            user_idx = next((i for i, m in enumerate(recent) if m.get("role") == "user"), None)
+            if user_idx is not None and user_idx > 0:
+                user_msg = recent.pop(user_idx)
+                recent.insert(0, user_msg)
+
         if dropped:
             summary_parts = []
             mem_summary = ""
-            if getattr(self, "session_manager", None):
+            if getattr(self, "session_manager", None) and getattr(self, "session", None):
                 mem_summary = memory_summary_for_compact(
                     memory_md_path(self.session_manager.dir, self.session.name),
                     max_chars=1200,
@@ -111,6 +155,11 @@ class RuntimeCompactionMixin:
                 tpath, tcontent = self._get_active_task_text(max_chars=800)
                 if tcontent:
                     summary_parts.append(f"[Active Task Plan ({tpath})]\n{tcontent}")
+            # Include discovered skills so agent remembers capabilities acquired in this session
+            if getattr(self, "session", None) and getattr(self.session, "discovered_skills", None):
+                skills = self.session.discovered_skills
+                if skills:
+                    summary_parts.append(f"[Discovered Skills in Session]: {', '.join(skills)} (call help() to review any skill manual)")
             for msg in dropped[-5:]:
                 role = msg.get("role", "user")
                 content = scrub_chrome(msg.get("content", "") or "")[:200]

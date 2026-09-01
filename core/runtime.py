@@ -176,20 +176,25 @@ class Runtime(
         return f"Reloaded rules from {self.rules_path} ({len(self._rules_text)} chars)."
 
     def _get_active_task_text(self, max_chars: int = 2500) -> tuple[str, str]:
-        """Find and load the active task.md / plan.md for this session. Returns (path_str, content)."""
+        """Find and load the active task.md / plan.md for this session and workspace. Returns (path_str, content)."""
+        from core.primitives import get_workspace_dir
         candidates: list[Path] = []
         if getattr(self, "session", None) and hasattr(self.session, "metadata"):
             recorded = self.session.metadata.get("task_file")
             if recorded:
                 candidates.append(Path(recorded))
         if getattr(self, "session_manager", None) and getattr(self, "session", None):
-            candidates.append(Path(self.session_manager.session_dir(self.session.name)) / "task.md")
-            candidates.append(Path(self.session_manager.session_dir(self.session.name)) / "plan.md")
+            sdir = self.session_manager.session_dir(self.session.name)
+            candidates.append(sdir / "task.md")
+            candidates.append(sdir / "plan.md")
+        ws = get_workspace_dir()
+        candidates.append(ws / "task.md")
+        candidates.append(ws / "plan.md")
         if getattr(self, "session", None):
-            candidates.append(Path(self.session.name) / "task.md")
-            candidates.append(Path(self.session.name.replace("python_", "")) / "task.md")
-            candidates.append(Path("ejercicios") / "task.md")
-        candidates.append(Path("task.md"))
+            candidates.append(ws / self.session.name / "task.md")
+            candidates.append(ws / self.session.name / "plan.md")
+        candidates.append(ws / "web" / "task.md")
+        candidates.append(ws / "web" / "plan.md")
 
         for p in candidates:
             try:
@@ -205,9 +210,16 @@ class Runtime(
         return "", ""
 
     def _fresh_system_messages(self) -> list[dict[str, Any]]:
+        from core.primitives import get_workspace_dir
         task_path, task_content = self._get_active_task_text()
         task_block = f"Path: `{task_path}`\n\n{task_content}" if task_content else ""
-        prompt = compose_system_prompt(self._rules_text, self.invariants, task_plan_text=task_block)
+        ws_dir = str(get_workspace_dir())
+        prompt = compose_system_prompt(
+            self._rules_text,
+            self.invariants,
+            task_plan_text=task_block,
+            workspace_dir=ws_dir,
+        )
         return [{"role": "system", "content": prompt}]
 
     def _update_current_state(self, status: str) -> None:
@@ -261,9 +273,12 @@ class Runtime(
 
     def run_interactive(self):
         """Interactive REPL mode."""
+        from core.primitives import get_workspace_dir
+        ws_dir = str(get_workspace_dir())
         display.banner(
             session_name=self.session.name,
             skills_count=self.help_engine.index.size,
+            workspace=ws_dir,
         )
 
         messages = self._fresh_system_messages()
@@ -271,12 +286,15 @@ class Runtime(
         if self.session.messages:
             recent = self.session.messages[-20:]
             messages.extend(recent)
-            display.print_event("info", f"Restored {len(recent)} messages from session '{self.session.name}'")
+            display.print_event("info", f"Restored {len(recent)} messages from session '{self.session.name}' (Workspace: {ws_dir})")
         if self._rules_text:
             display.print_event("info", f"Global RULES.md loaded ({len(self._rules_text)} chars)")
+        task_path, task_content = self._get_active_task_text()
+        if task_content:
+            display.print_event("info", f"Active Task Plan loaded: {task_path}")
 
         if estimate_messages_tokens(messages) > self.context_budget:
-            messages = self._compact_messages(messages)
+            messages[:] = self._compact_messages(messages)
             display.print_event("compact", "Session history compacted to fit context budget")
 
         try:

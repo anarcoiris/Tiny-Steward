@@ -110,8 +110,14 @@ class LLMClient:
         self._last_timings: dict[str, Any] = {}
         self._last_done_reason: str = "stop"
         self._active_resp: Any = None
+        lane_hint = "planner" if self.gate_lane == "orch" else "atomic"
+        client_headers = {
+            "X-Ollama-Lane": lane_hint,
+            "X-Guard-Client": "tiny_steward",
+        }
         self._client = httpx.Client(
             base_url=self.base_url,
+            headers=client_headers,
             timeout=httpx.Timeout(timeout, connect=15.0),
         )
 

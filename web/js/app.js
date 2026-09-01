@@ -7,6 +7,7 @@ import { initChatComponent } from './components/chat.js';
 import { initEditorComponent } from './components/editor.js';
 import { initKanbanComponent } from './components/kanban.js';
 import { initGraphComponent } from './components/graph.js';
+import { initQueuesComponent } from './components/queues.js';
 import { initTelemetryComponent } from './components/telemetry.js';
 
 export const AppState = {
@@ -25,6 +26,7 @@ document.addEventListener('DOMContentLoaded', () => {
   initEditorComponent(AppState);
   initKanbanComponent(AppState);
   initGraphComponent(AppState);
+  initQueuesComponent(AppState);
   initTelemetryComponent(AppState);
 });
 

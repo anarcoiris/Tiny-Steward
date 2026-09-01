@@ -296,3 +296,98 @@ async def get_extensions_list():
     mgr = ExtensionManager(workspace_root=WORKSPACE_ROOT, config=cfg)
     return {"status": "ok", "extensions": mgr.get_all_extensions()}
 
+
+# ─── Dashboard & Monitoring Endpoints ─────────────────────────
+
+@app.get("/api/v1/sessions/tree")
+async def get_sessions_tree():
+    """Return tree of active, child, and ephemeral sessions."""
+    all_sessions = session_manager.list_sessions()
+    ephemeral = session_manager.list_ephemeral()
+    return {
+        "current": session_manager.current.name if session_manager.current else "default",
+        "persistent_sessions": all_sessions,
+        "ephemeral_sessions": ephemeral,
+        "total_sessions": len(all_sessions) + len(ephemeral),
+    }
+
+
+@app.get("/api/v1/mailbox/queue")
+async def get_mailbox_queue():
+    """Inspect all active session mailboxes and message priority counts."""
+    mb_root = SESSIONS_DIR / ".mailbox"
+    boxes = {}
+    priority_counts = {"urgent": 0, "high": 0, "normal": 0, "low": 0}
+    total_messages = 0
+
+    if mb_root.exists():
+        for sdir in mb_root.iterdir():
+            if not sdir.is_dir():
+                continue
+            inbox = sdir / "inbox"
+            if not inbox.exists():
+                continue
+            messages = []
+            for p in sorted(inbox.glob("*.json")):
+                try:
+                    data = json.loads(p.read_text(encoding="utf-8"))
+                    prio = data.get("priority", "normal")
+                    if prio in priority_counts:
+                        priority_counts[prio] += 1
+                    total_messages += 1
+                    messages.append({
+                        "id": data.get("id", p.stem),
+                        "from": data.get("from", "unknown"),
+                        "to": data.get("to", sdir.name),
+                        "type": data.get("type", "message"),
+                        "priority": prio,
+                        "blocking": bool(data.get("blocking", False)),
+                        "content_preview": str(data.get("content", ""))[:120],
+                        "ts": data.get("ts", p.stat().st_mtime),
+                    })
+                except Exception:
+                    continue
+            if messages:
+                boxes[sdir.name] = messages
+
+    return {
+        "total_messages": total_messages,
+        "priority_breakdown": priority_counts,
+        "mailboxes": boxes,
+    }
+
+
+@app.get("/api/v1/tasks/background")
+async def get_background_tasks():
+    """Return all background tasks tracked by TaskRunner."""
+    from core.task_runner import get_task_runner
+    runner = get_task_runner(WORKSPACE_ROOT)
+    tasks = runner.list_all()
+    return {
+        "total_tasks": len(tasks),
+        "running": sum(1 for t in tasks if t.get("status") == "running"),
+        "tasks": tasks,
+    }
+
+
+class KillTaskRequest(BaseModel):
+    task_id: str
+
+
+@app.post("/api/v1/tasks/kill")
+async def kill_background_task(req: KillTaskRequest):
+    """Terminate a background task by ID."""
+    from core.task_runner import get_task_runner
+    runner = get_task_runner(WORKSPACE_ROOT)
+    success = runner.kill(req.task_id)
+    return {"status": "ok" if success else "failed", "task_id": req.task_id, "killed": success}
+
+
+@app.get("/api/v1/tasks/tail")
+async def tail_task_log(task_id: str = Query(...), lines: int = Query(50)):
+    """Tail log output of a specific background task."""
+    from core.task_runner import get_task_runner
+    runner = get_task_runner(WORKSPACE_ROOT)
+    tail = runner.tail_log(task_id, lines=lines)
+    return {"task_id": task_id, "lines": lines, "output": tail}
+

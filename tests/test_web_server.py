@@ -41,3 +41,30 @@ def test_tasks_endpoint():
     data = response.json()
     assert "todo" in data
     assert "done" in data
+
+
+def test_sessions_tree_endpoint():
+    response = client.get("/api/v1/sessions/tree")
+    assert response.status_code == 200
+    data = response.json()
+    assert "persistent_sessions" in data
+    assert "ephemeral_sessions" in data
+    assert "total_sessions" in data
+
+
+def test_mailbox_queue_endpoint():
+    response = client.get("/api/v1/mailbox/queue")
+    assert response.status_code == 200
+    data = response.json()
+    assert "priority_breakdown" in data
+    assert "total_messages" in data
+    assert "mailboxes" in data
+
+
+def test_background_tasks_endpoint():
+    response = client.get("/api/v1/tasks/background")
+    assert response.status_code == 200
+    data = response.json()
+    assert "total_tasks" in data
+    assert "running" in data
+    assert "tasks" in data

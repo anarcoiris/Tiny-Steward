@@ -60,6 +60,8 @@ import core.display as display
 
 
 STEWARD_ROOT = Path(__file__).resolve().parent
+if str(STEWARD_ROOT) not in sys.path:
+    sys.path.insert(0, str(STEWARD_ROOT))
 
 
 def load_config(path: str = "config.yaml") -> dict:
@@ -98,7 +100,7 @@ def main():
     )
     parser.add_argument("--config", default="config.yaml", help="Path to config.yaml")
     parser.add_argument("--workspace", "-w", default=None, help="Working directory for agent file operations and execution (default: ./workspace or current directory)")
-    parser.add_argument("--session", default="default", help="Session name")
+    parser.add_argument("--session", default=None, help="Session name (default: workspace directory name or 'default')")
     parser.add_argument("--task", help="Run a single task and exit")
     parser.add_argument("--build-index", action="store_true", help="Rebuild skill index")
     parser.add_argument("--list-skills", action="store_true", help="List all indexed skills")
@@ -113,14 +115,6 @@ def main():
 
     # Load config
     config = load_config(args.config)
-
-    # Configure isolated workspace directory if specified or in config
-    from core.primitives import set_workspace_dir, get_workspace_dir
-    ws_target = args.workspace or config.get("workspace")
-    if ws_target:
-        set_workspace_dir(ws_target)
-    elif (STEWARD_ROOT / "workspace").exists():
-        set_workspace_dir(STEWARD_ROOT / "workspace")
 
     # UI config
     ui_cfg = config.get("ui", {})
@@ -238,10 +232,10 @@ def main():
     # Skills
     skills_cfg = config["skills"]
     skills_root = Path(skills_cfg["root"])
-    if not skills_root.is_absolute() and not skills_root.exists():
+    if not skills_root.is_absolute():
         skills_root = (STEWARD_ROOT / skills_root).resolve()
     index_path = Path(skills_cfg["index"])
-    if not index_path.is_absolute() and not index_path.exists():
+    if not index_path.is_absolute():
         index_path = (STEWARD_ROOT / index_path).resolve()
 
     # Build index if requested or if it doesn't exist
@@ -276,27 +270,59 @@ def main():
         max_inject_tokens=help_cfg.get("max_inject_tokens", 4000),
     )
 
-    # Session
+    # Workspace directory resolution
+    import time
+    from core.primitives import set_workspace_dir, get_workspace_dir
+    original_cwd = Path.cwd().resolve()
+    if args.workspace:
+        ws_target = Path(args.workspace).expanduser().resolve()
+    elif config.get("workspace"):
+        ws_target = Path(config["workspace"]).expanduser().resolve()
+    else:
+        ws_target = original_cwd
+
+    set_workspace_dir(ws_target)
+
+    # Session resolution
     session_cfg = config.get("sessions", {})
     session_dir = Path(session_cfg.get("dir", "./sessions"))
-    if not session_dir.is_absolute() and not session_dir.exists():
+    if not session_dir.is_absolute():
         session_dir = (STEWARD_ROOT / session_dir).resolve()
     session_mgr = SessionManager(str(session_dir))
-    session = session_mgr.switch(args.session)
+
+    if args.session:
+        target_session_name = args.session
+    else:
+        if ws_target != STEWARD_ROOT:
+            target_session_name = ws_target.name.lower().replace(" ", "_")
+        else:
+            target_session_name = "default"
+
+    session = session_mgr.switch(target_session_name)
+
+    # If session has recorded workspace and user launched from steward home without explicit workspace
+    if session.metadata.get("workspace") and Path(session.metadata["workspace"]).exists() and not args.workspace and original_cwd == STEWARD_ROOT:
+        ws_target = Path(session.metadata["workspace"]).resolve()
+        set_workspace_dir(ws_target)
+
+    session.metadata["workspace"] = str(ws_target)
+    session.metadata["turn_count"] = len(session.messages)
+    session.metadata["last_active"] = time.time()
 
     if args.parent:
         session.metadata["parent"] = args.parent
-        session_mgr.save()
+
+    session_mgr.save()
 
     # Runtime
-    context_budget = int(orch_cfg.get("ctx", 32768) * 0.8)
+    context_budget = int(orch_cfg.get("context_budget") or int(orch_cfg.get("ctx", 65536) * 0.75))
     shortcuts = ui_cfg.get("shortcuts", {
         "send": "escape, enter",
         "newline": "c-j"
     })
     rules_cfg = config.get("rules") or {}
     rules_p = Path(rules_cfg.get("path", "RULES.md"))
-    if not rules_p.is_absolute() and not rules_p.exists():
+    if not rules_p.is_absolute():
         rules_p = (STEWARD_ROOT / rules_p).resolve()
     # Delegate children always use the atomic lane as their primary LLM client.
     runtime_llm = atomic_llm if (args.delegate_mode and atomic_llm) else llm
@@ -326,6 +352,7 @@ def main():
         config_path=args.config,
         rules_path=str(rules_p),
         rules_enabled=bool(rules_cfg.get("enabled", True)),
+        invariants=config.get("os_invariants", {}),
         backend_launcher=backend_launcher,
         primary_provider=primary_provider,
         secondary_provider=secondary_provider,

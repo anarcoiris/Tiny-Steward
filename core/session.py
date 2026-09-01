@@ -10,6 +10,7 @@ import json
 import os
 import tempfile
 import time
+import uuid
 from dataclasses import dataclass, field, asdict
 from pathlib import Path
 from typing import Any
@@ -85,10 +86,72 @@ class SessionManager:
     # ------------------------------------------------------------------
     def new(self, name: str) -> Session:
         """Create a new session."""
-        session = Session(name=name)
+        from core.primitives import get_workspace_dir
+        session = Session(
+            name=name,
+            metadata={
+                "workspace": str(get_workspace_dir()),
+                "turn_count": 0,
+                "last_active": time.time(),
+            },
+        )
         self.current = session
         self.save()
         return session
+
+    def new_ephemeral(self, parent: str = "default", task_label: str = "") -> Session:
+        """Create an isolated, ephemeral sandbox session with zero context carryover."""
+        from core.primitives import get_workspace_dir
+        e_id = f"eph_{time.strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:6]}"
+        eph_dir = self.dir / ".ephemeral" / e_id
+        eph_dir.mkdir(parents=True, exist_ok=True)
+        
+        session = Session(
+            name=e_id,
+            metadata={
+                "workspace": str(get_workspace_dir()),
+                "is_ephemeral": True,
+                "parent": parent,
+                "task_label": task_label,
+                "turn_count": 0,
+                "last_active": time.time(),
+                "created_at": time.time(),
+            },
+        )
+        # Write initial session file inside .ephemeral directory
+        eph_path = eph_dir / f"{e_id}.json"
+        self._atomic_json_write(eph_path, asdict(session))
+        return session
+
+    def cleanup_ephemeral(self, name: str) -> bool:
+        """Remove an ephemeral session directory from disk."""
+        eph_dir = self.dir / ".ephemeral" / name
+        if eph_dir.exists():
+            import shutil
+            shutil.rmtree(eph_dir, ignore_errors=True)
+            return True
+        return False
+
+    def list_ephemeral(self) -> list[dict[str, Any]]:
+        """List active ephemeral sessions."""
+        eph_root = self.dir / ".ephemeral"
+        if not eph_root.exists():
+            return []
+        items = []
+        for p in eph_root.glob("*/*.json"):
+            try:
+                data = json.loads(p.read_text(encoding="utf-8"))
+                items.append({
+                    "name": data.get("name", p.stem),
+                    "parent": data.get("metadata", {}).get("parent", ""),
+                    "task_label": data.get("metadata", {}).get("task_label", ""),
+                    "turn_count": len(data.get("messages", [])),
+                    "created_at": data.get("created_at", p.stat().st_ctime),
+                    "last_active": data.get("metadata", {}).get("last_active", p.stat().st_mtime),
+                })
+            except Exception:
+                continue
+        return items
 
     def _atomic_json_write(self, path: Path, data: dict) -> None:
         """Write JSON atomically via temp-file-rename (NTFS same-volume safe)."""
@@ -107,6 +170,11 @@ class SessionManager:
         """Save the current session to disk."""
         if not self.current:
             return
+        from core.primitives import get_workspace_dir
+        if "workspace" not in self.current.metadata:
+            self.current.metadata["workspace"] = str(get_workspace_dir())
+        self.current.metadata["turn_count"] = len(self.current.messages)
+        self.current.metadata["last_active"] = time.time()
         path = self._session_path(self.current.name)
         data = asdict(self.current)
         self._atomic_json_write(path, data)
@@ -174,6 +242,8 @@ class SessionManager:
                     "messages": len(data.get("messages", [])),
                     "skills": len(data.get("discovered_skills", [])),
                     "updated_at": data.get("updated_at", 0),
+                    "workspace": meta.get("workspace", ""),
+                    "turn_count": meta.get("turn_count", len(data.get("messages", []))),
                     "parent": meta.get("parent"),
                     "status": meta.get("status"),
                     "children": list(meta.get("children") or []),

@@ -175,14 +175,22 @@ class SharedExecutionLock:
     def acquire_active(self) -> None:
         """Acquired by main execution turns (interactive / single task).
 
-        Blocks until any local or remote background idle task finishes.
+        Blocks only if a background idle task is actively running.
+        Multiple active interactive sessions can run concurrently in parallel.
         """
         while True:
             with self._thread_lock:
                 if not self._idle_running:
-                    if self._try_os_lock():
+                    # Check if an idle background task is holding the lock
+                    data = self._read_registry()
+                    holder = data.get("lock_holder")
+                    is_idle_holder = (
+                        holder
+                        and holder.get("mode") == "IDLE_RUNNING"
+                        and _is_pid_alive(int(holder.get("pid", 0)))
+                    )
+                    if not is_idle_holder:
                         self._active_running = True
-                        data = self._read_registry()
                         data["lock_holder"] = {
                             "pid": self.pid,
                             "session": self.session_name,
@@ -198,12 +206,22 @@ class SharedExecutionLock:
         """Released when main execution turn ends."""
         with self._thread_lock:
             self._active_running = False
-            self._release_os_lock()
-            data = self._read_registry()
-            if (data.get("lock_holder") or {}).get("pid") == self.pid:
-                data["lock_holder"] = None
-                self._write_registry(data)
             self._register_process("IDLE_WAITING")
+            data = self._read_registry()
+            procs = data.get("registered_processes", {})
+            other_active = None
+            for p_str, p_info in procs.items():
+                p_id = int(p_str)
+                if p_id != self.pid and p_info.get("status") == "ACTIVE_BUSY" and _is_pid_alive(p_id):
+                    other_active = {
+                        "pid": p_id,
+                        "session": p_info.get("session", "unknown"),
+                        "mode": "ACTIVE_BUSY",
+                        "acquired_at": p_info.get("updated_ts", datetime.now(timezone.utc).isoformat()),
+                    }
+                    break
+            data["lock_holder"] = other_active
+            self._write_registry(data)
 
     class _ActiveContext:
         def __init__(self, parent: SharedExecutionLock):
@@ -229,16 +247,20 @@ class SharedExecutionLock:
             if self._active_running or self._idle_running:
                 return False
 
-            # Check shared registry for active turns in other processes
+            # Check shared registry for active turns in any running process
             data = self._read_registry()
+            procs = data.get("registered_processes", {})
+            for p_str, p_info in procs.items():
+                p_id = int(p_str)
+                if p_info.get("status") == "ACTIVE_BUSY" and _is_pid_alive(p_id):
+                    return False
+
             holder = data.get("lock_holder")
             if holder and holder.get("pid"):
                 h_pid = int(holder["pid"])
                 if _is_pid_alive(h_pid):
-                    # Busy active turn in another process
                     return False
                 else:
-                    # Clean dead holder
                     data["lock_holder"] = None
                     self._write_registry(data)
 
@@ -272,6 +294,40 @@ class SharedExecutionLock:
         data = self._read_registry()
         holder = data.get("lock_holder")
         procs = data.get("registered_processes", {})
+
+        clean_procs: list[dict[str, Any]] = []
+        active_proc = None
+        for p_str, p_info in list(procs.items()):
+            p_id = int(p_str)
+            if _is_pid_alive(p_id):
+                info = dict(p_info)
+                info["is_current_process"] = (p_id == self.pid)
+                clean_procs.append(info)
+                if info.get("status") == "ACTIVE_BUSY" and not active_proc:
+                    active_proc = {
+                        "pid": p_id,
+                        "session": info.get("session", "unknown"),
+                        "mode": "ACTIVE_BUSY",
+                        "acquired_at": info.get("updated_ts", datetime.now(timezone.utc).isoformat()),
+                    }
+
+        if active_proc:
+            holder = active_proc
+            lock_state = "LOCKED_ACTIVE_BUSY"
+        elif holder and holder.get("pid") and _is_pid_alive(int(holder["pid"])):
+            lock_state = f"LOCKED_{holder.get('mode', 'BUSY')}"
+        else:
+            holder = None
+            lock_state = "FREE"
+
+        return {
+            "shared_lock_state": lock_state,
+            "lock_holder": holder,
+            "current_pid": self.pid,
+            "current_session": self.session_name,
+            "registered_processes_count": len(clean_procs),
+            "registered_processes": clean_procs,
+        }
 
         # Verify holder liveness
         if holder and holder.get("pid"):

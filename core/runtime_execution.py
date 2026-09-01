@@ -202,9 +202,16 @@ class RuntimeExecutionMixin:
             if name in ("pwsh", "bash"):
                 cmd = attrs.get("command") or body
                 cwd = attrs.get("cwd")
-                if cwd:
-                    return primitive(cmd, cwd=cwd)
-                return primitive(cmd)
+                is_async_val = attrs.get("is_async")
+                is_async = str(is_async_val).lower() in ("true", "1", "yes") if is_async_val is not None else False
+                return primitive(cmd, cwd=cwd, is_async=is_async)
+            elif name == "task_status":
+                tid = attrs.get("task_id") or body
+                tail = int(attrs.get("tail", 30))
+                return primitive(tid, tail=tail)
+            elif name == "task_kill":
+                tid = attrs.get("task_id") or body
+                return primitive(tid)
             elif name == "python":
                 return primitive(attrs.get("code") or body)
             elif name == "read":
@@ -232,6 +239,17 @@ class RuntimeExecutionMixin:
                     if p_norm.endswith("task.md") or p_norm.endswith("plan.md"):
                         self.session.metadata["task_file"] = path
                 return res
+            elif name == "replace":
+                path = attrs.get("path") or ""
+                old_str = attrs.get("old_str") or attrs.get("target") or attrs.get("find") or ""
+                new_str = attrs.get("new_str") or attrs.get("replacement") or body
+                count_val = attrs.get("count")
+                count = int(count_val) if count_val is not None else 1
+                if not path:
+                    return {"error": "Missing path for replace. Use <parameter=path>…</parameter>."}
+                if not old_str:
+                    return {"error": "Missing old_str (text to find) for replace. Use <parameter=old_str>…</parameter> and <parameter=new_str>…</parameter>."}
+                return primitive(path, old_str, new_str, count=count)
             elif name == "append":
                 path = attrs.get("path") or ""
                 content = body if body else attrs.get("content", "")

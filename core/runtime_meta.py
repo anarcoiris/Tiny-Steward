@@ -20,6 +20,7 @@ from core.vision import (
     vision_disabled_message,
 )
 import core.display as display
+import core.primitives as primitives
 
 from core.system_prompt import ATTACH_MAX_CHARS
 

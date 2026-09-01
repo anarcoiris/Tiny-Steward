@@ -36,6 +36,7 @@
       <button class="tab-btn" data-tab="editor">📁 File IDE</button>
       <button class="tab-btn" data-tab="kanban">📋 Kanban Board</button>
       <button class="tab-btn" data-tab="graph">🧠 Memory Graph</button>
+      <button class="tab-btn" data-tab="queues">📬 Sessions & Queues</button>
       <button class="tab-btn" data-tab="telemetry">⚡ Telemetry</button>
     </nav>
 
@@ -127,7 +128,12 @@
       <div id="graph-canvas-container" style="width:100%; height:100%; position:relative;"></div>
     </section>
 
-    <!-- 5. Telemetry View -->
+    <!-- 5. Sessions, Queues & Background Tasks View -->
+    <section id="tab-queues" class="tab-content">
+      <div style="padding:16px; color:var(--text-muted);">Loading Queues Dashboard...</div>
+    </section>
+
+    <!-- 6. Telemetry View -->
     <section id="tab-telemetry" class="tab-content">
       <div id="gpu-metrics-grid" class="telemetry-container">
         <div class="glass-panel gpu-card" style="padding:16px;">

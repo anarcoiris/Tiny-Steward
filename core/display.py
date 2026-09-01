@@ -102,24 +102,27 @@ def _p(renderable=None, *, markup: bool = True, **kwargs):
 # ---------------------------------------------------------------------------
 # Banner
 # ---------------------------------------------------------------------------
-def banner(session_name: str, skills_count: int, *, color: bool = True):
+def banner(session_name: str, skills_count: int, *, color: bool = True, workspace: str = ""):
     """Print the startup banner."""
     import datetime
     now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
+    ws_plain = f"  │  Workspace: {workspace}" if workspace else ""
     if not _RICH:
         print("\n  Tiny Steward — Semantic Capability Graph")
         print("  ─────────────────────────────────────────")
-        print(f"  Session: {session_name}  │  Skills: {skills_count}  │  {now_str}")
+        print(f"  Session: {session_name}{ws_plain}  │  Skills: {skills_count}  │  {now_str}")
         print("  Commands: /session <name>, /sessions, /set, /stats, /quit")
         return
 
     _console.print()
     _console.rule(
-        f"[{_C.BRAND}]Tiny Steward[/{_C.BRAND}] [dim]\u2014 Semantic Capability Graph[/dim]",
+        f"[{_C.BRAND}]Tiny Steward[/{_C.BRAND}] [dim]— Semantic Capability Graph[/dim]",
         style=_C.BORDER,
     )
+    ws_rich = f"   [dim]│[/dim]   [dim]Workspace:[/dim] [bold]{workspace}[/bold]" if workspace else ""
     _console.print(
         f"  [dim]Session:[/dim] [bold]{session_name}[/bold]"
+        f"{ws_rich}"
         f"   [dim]│[/dim]   [dim]Skills:[/dim] [bold]{skills_count}[/bold]"
         f"   [dim]│[/dim]   [dim]{now_str}[/dim]",
     )

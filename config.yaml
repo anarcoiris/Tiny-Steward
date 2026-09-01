@@ -1,10 +1,11 @@
 llm:
   orchestrator:
-    base_url: http://127.0.0.1:11434
+    base_url: http://127.0.0.1:11800
     api: openai
-    model: qwen3.8-64k
+    model: qwen3.8-128k
     provider: qwythos
-    ctx: 65536
+    ctx: 131072
+    context_budget: 120000
     max_tokens: 8192
     temperature: 0.6
     top_p: 0.95
@@ -38,7 +39,7 @@ llm:
       - -File
       - C:\Users\soyko\Documents\Ollama\docker\llamacpp\start-qwythos-server.ps1
       - -CudaDevices
-      - 1,2
+      - '1'
       - -WithVision
       cwd: C:\Users\soyko\Documents\Ollama\docker\llamacpp
       autostart: false
@@ -51,11 +52,11 @@ llm:
       - --ctx-checkpoints
       - '0'
   atomic:
-    base_url: http://127.0.0.1:11434
+    base_url: http://127.0.0.1:11800
     api: openai
-    model: qwen3.8-64k
+    model: qwen3.8-128k
     provider: qwen3_json
-    ctx: 65536
+    ctx: 131072
     max_tokens: 8192
     temperature: 0.15
     enable_thinking: false

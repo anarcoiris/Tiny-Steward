@@ -367,7 +367,9 @@ class RuntimeLoopMixin:
             current_est = sum(len(str(m.get("content", ""))) // 4 for m in messages)
             if current_est > self.context_budget:
                 display.print_event("compaction", f"Context est. {current_est} tokens > budget {self.context_budget}. Compacting...")
-                messages = self._compact_messages(messages)
+                compacted = self._compact_messages(messages)
+                messages.clear()
+                messages.extend(compacted)
 
             # Auto-checkpoint every N turns
             if turn > 1 and turn % self.checkpoint_every == 0:
