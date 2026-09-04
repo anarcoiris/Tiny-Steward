@@ -147,12 +147,12 @@ class RuntimeCompactionMixin:
             if getattr(self, "session_manager", None) and getattr(self, "session", None):
                 mem_summary = memory_summary_for_compact(
                     memory_md_path(self.session_manager.dir, self.session.name),
-                    max_chars=1200,
+                    max_chars=2000,
                 )
             if mem_summary:
                 summary_parts.append("[Integrated memories]\n" + mem_summary)
             if hasattr(self, "_get_active_task_text"):
-                tpath, tcontent = self._get_active_task_text(max_chars=800)
+                tpath, tcontent = self._get_active_task_text(max_chars=2500)
                 if tcontent:
                     summary_parts.append(f"[Active Task Plan ({tpath})]\n{tcontent}")
             # Include discovered skills so agent remembers capabilities acquired in this session

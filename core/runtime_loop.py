@@ -7,6 +7,7 @@ and multi-turn cognitive sprints for Runtime.
 from __future__ import annotations
 
 import json
+import re
 import time
 from pathlib import Path
 from typing import Any, TYPE_CHECKING
@@ -210,6 +211,41 @@ class RuntimeLoopMixin:
             except Exception as e:
                 display.print_error(f"Failed to save checkpoint: {e}")
 
+    def _has_recent_verification(self, messages: list[dict[str, Any]], lookback: int = 6) -> bool:
+        """Check if any verification/inspection action executed in recent messages."""
+        if not messages:
+            return False
+        recent = messages[-lookback:]
+        for m in recent:
+            if m.get("role") == "tool":
+                content = str(m.get("content", "")).strip()
+                if content and not content.startswith("[Execution Error"):
+                    return True
+        return False
+
+    def _detect_unverified_completion(self, response_text: str, messages: list[dict[str, Any]]) -> bool:
+        """True if the response asserts completion/success without recent tool evidence."""
+        if not response_text:
+            return False
+        completion_patterns = [
+            r"\bDONE\b",
+            r"\btask complete\b",
+            r"\ball tests pass\b",
+            r"\bhe corregido el\b",
+            r"\bsolucionado\b",
+            r"\bproblema resuelto\b",
+            r"\bfix is complete\b",
+            r"\bpruebas pasan\b",
+        ]
+        text_lower = response_text.lower()
+        claims_done = any(
+            re.search(pat, response_text if pat.startswith(r"\bDONE") else text_lower)
+            for pat in completion_patterns
+        )
+        if not claims_done:
+            return False
+        return not self._has_recent_verification(messages)
+
     def _handle_rethink_loop(
         self,
         messages: list[dict[str, Any]],
@@ -227,10 +263,35 @@ class RuntimeLoopMixin:
         # Save snapshot of messages before the failed assistant turn + actions
         pre_failed_history = [dict(m) for m in messages]
         
+        # G4: Introspection guidance for API signature and import errors
+        guidance_parts = []
+        low_err = first_err.lower()
+        if "unexpected keyword argument" in low_err or ("takes" in low_err and "positional argument" in low_err):
+            guidance_parts.append(
+                "SIGNATURE MISMATCH: Do NOT guess parameter names. "
+                "Inspect the function signature using python code (e.g. `import inspect; print(inspect.signature(...))`) before replacing code."
+            )
+        elif "has no attribute" in low_err or "cannot import name" in low_err:
+            guidance_parts.append(
+                "ATTRIBUTE / IMPORT MISMATCH: Do NOT guess attribute names. "
+                "Inspect module contents with python (e.g. `import <mod>; print(dir(<mod>))`) before making assumptions."
+            )
+        elif "skill immutability lock" in low_err:
+            guidance_parts.append(
+                "SKILL PROTECTION: Do NOT edit skills/ files directly. "
+                "Instead, create local test/sandbox files in your workspace or document the issue in lessons.md."
+            )
+        elif "workspace isolation" in low_err:
+            guidance_parts.append(
+                "WORKSPACE BOUNDARY: All paths must be relative or resolve inside your active workspace directory."
+            )
+
+        extra_guidance = ("\n" + "\n".join(f"- {g}" for g in guidance_parts)) if guidance_parts else ""
+
         nudge = (
             f"[SYSTEM NOTE: The action failed with: {first_err}. "
             f"Carefully analyze what went wrong. Do NOT repeat the exact same parameters or approach. "
-            f"Think step-by-step about why it failed before trying another action.]"
+            f"Think step-by-step about why it failed before trying another action.{extra_guidance}]"
         )
         temp_messages = list(messages)
         temp_messages.append({"role": "user", "content": nudge})
@@ -409,6 +470,11 @@ class RuntimeLoopMixin:
 
             # Check for DONE signal if no errors
             if not errors and "DONE" in final_response:
+                if self._detect_unverified_completion(final_response, messages):
+                    display.print_event(
+                        "warn",
+                        "EMPIRICAL PRECEDENCE WARNING: Model declared completion without recent tool verification.",
+                    )
                 display.print_success("Task complete (DONE signal received).")
                 if interactive and hasattr(self, "interaction_log") and self.interaction_log:
                     total_elapsed = time.time() - t_start

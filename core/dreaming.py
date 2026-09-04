@@ -98,13 +98,26 @@ def load_think_entries(path: Path) -> list[dict[str, Any]]:
     return out
 
 
+def _extract_ts(entry: dict[str, Any]) -> str:
+    """Extract and normalize timestamp string from think trace entry."""
+    val = entry.get("ts") if entry.get("ts") is not None else entry.get("timestamp")
+    if val is None:
+        return ""
+    if isinstance(val, (int, float)):
+        try:
+            return datetime.fromtimestamp(val, timezone.utc).isoformat()
+        except Exception:
+            return str(val)
+    return str(val)
+
+
 def entries_after_watermark(
     entries: list[dict[str, Any]],
     watermark: str | None,
 ) -> list[dict[str, Any]]:
     if not watermark:
         return entries
-    return [e for e in entries if str(e.get("ts", "")) > watermark]
+    return [e for e in entries if _extract_ts(e) > watermark]
 
 
 def filter_dream_entries(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -257,7 +270,7 @@ def build_dream_user_payload(
 ) -> str:
     parts = ["## Think traces (new since last dream)\n"]
     for e in think_entries:
-        ts = e.get("ts", "")
+        ts = _extract_ts(e)
         reasoning = (e.get("reasoning") or "").strip()
         preview = (e.get("content_preview") or "").strip()
         block = f"### ts={ts}\n"
@@ -514,6 +527,13 @@ def run_dream(
     try:
         llm.gate_priority = "dream"
         raw = llm.chat(messages, tools=None)
+    except Exception as e:
+        return {
+            "ok": False,
+            "error": f"LLM error during dream: {e}",
+            "watermark": watermark,
+            "count": len(slice_),
+        }
     finally:
         llm.gate_priority = prev_priority
 
@@ -526,7 +546,7 @@ def run_dream(
             "raw_preview": (raw or "")[:500],
         }
 
-    new_wm = str(slice_[-1].get("ts") or datetime.now(timezone.utc).isoformat())
+    new_wm = _extract_ts(slice_[-1]) or datetime.now(timezone.utc).isoformat()
     sha256 = compute_traces_sha256(slice_)
     record = {
         "ts": datetime.now(timezone.utc).isoformat(),

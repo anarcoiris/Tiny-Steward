@@ -22,7 +22,7 @@ DEFAULT_RULES_CANDIDATES = (
     Path("sessions") / "RULES.md",
 )
 
-RULES_MAX_CHARS = 6000
+RULES_MAX_CHARS = 3500
 ATTACH_MAX_CHARS = 48_000
 
 SYSTEM_PROMPT = f"""\
@@ -42,8 +42,8 @@ You execute operations using primitive actions and call help() when stuck or nee
 - bash(command): execute a Bash command (Linux/macOS only; do NOT use on Windows — use pwsh instead)
 - python(code): execute inline Python script
 - read(path, start_line?, end_line?): read a file
-- write(path, content): create/overwrite a file (use for new files or complete rewrites)
-- replace(path, old_str, new_str, count?): surgical find-and-replace in an existing file (PREFER THIS over write for bug fixes and edits to avoid truncating files!)
+- write(path, content): create a new file or write complete standalone scripts
+- replace(path, old_str, new_str, count?): surgical find-and-replace in an existing file (always prefer this over write for editing existing code to prevent truncating files)
 - append(path, content): append to a file
 - mkdir(path): create directory
 - ls(path): list directory contents
@@ -88,16 +88,19 @@ skills/_policy
 </function>
 </tool_call>
 
-Example (write file — path AND content are both parameters):
+Example (create new file with write — path AND content are both parameters):
 
 <tool_call>
 <function=write>
 <parameter=path>
-task.md
+scripts/validate.py
 </parameter>
 <parameter=content>
-# Task title
-Notes here.
+def main():
+    print("Validating...")
+
+if __name__ == "__main__":
+    main()
 </parameter>
 </function>
 </tool_call>
@@ -107,7 +110,7 @@ Example (discover skills / playbooks via help):
 <tool_call>
 <function=help>
 <parameter=query>
-wireshark tshark network capture
+git worktrees branching
 </parameter>
 </function>
 </tool_call>
@@ -120,7 +123,7 @@ Long transcripts: the user should /attach <path> instead of pasting; you may als
 ## When to use help() and reindex()
 
 Call help(query) proactively:
-- At the start of tasks in specialized technical domains (e.g. `help("tshark packet capture")`, `help("git worktrees")`, `help("docker compose")`, `help("python venv")`) to load relevant playbooks, tools, and expert practices before executing actions.
+- At the start of tasks requiring specialist domain capabilities or tool playbooks to load relevant practices before executing actions.
 - Whenever you encounter an unexpected error, unfamiliar format, or need specialist capabilities.
 - You can call help() multiple times with narrower queries to discover specific skills.
 

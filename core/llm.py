@@ -62,6 +62,8 @@ class LLMClient:
         "repeat_penalty", "chat_template_kwargs", "thinking_budget_tokens",
         "cache_prompt", "enable_thinking", "preserve_thinking", "add_vision_id",
         "launch", "id_slot", "provider", "vision", "fallbacks",
+        "context_budget", "profile", "expect_total_slots", "parallel", "autostart",
+        "extra_args", "cwd", "cmd",
     })
 
 
@@ -150,6 +152,9 @@ class LLMClient:
                     fallback_providers.append(p)
                 except Exception as e:
                     print(f"  [warn] Failed to initialize fallback provider {fb_name}: {e}")
+
+        if not fallback_providers and "fallback_providers" in overrides:
+            fallback_providers = overrides.pop("fallback_providers") or []
 
         params = {
             "base_url": cfg["base_url"],
@@ -487,7 +492,10 @@ class LLMClient:
         if tools is not None:
             body["tools"] = tools
         for k, v in self.extra_params.items():
-            if k in ("chat_template_kwargs", "thinking_budget_tokens", "cache_prompt", "id_slot", "launch", "fallbacks"):
+            if k in self._RESERVED_CFG or k in (
+                "chat_template_kwargs", "thinking_budget_tokens", "cache_prompt",
+                "id_slot", "launch", "fallbacks",
+            ):
                 continue
             body[k] = v
         return body
@@ -509,15 +517,36 @@ class LLMClient:
     ) -> dict[str, Any]:
         """POST with gate acquire + retry on 503 (slot busy)."""
         with self._gate_hold():
+            resp = None
             for attempt in range(max_retries):
                 resp = self._client.post(path, json=body)
                 if resp.status_code == 503 and attempt < max_retries - 1:
                     time.sleep(retry_delay * (attempt + 1))
                     continue
-                resp.raise_for_status()
+                if resp.is_error:
+                    detail = ""
+                    try:
+                        detail = resp.text.strip()
+                    except Exception:
+                        pass
+                    msg = f"HTTP {resp.status_code} from {self.base_url}{path}"
+                    if detail:
+                        msg += f": {detail}"
+                    raise httpx.HTTPStatusError(msg, request=resp.request, response=resp)
                 return resp.json()
-            resp.raise_for_status()
-            return resp.json()
+            if resp is not None and resp.is_error:
+                detail = ""
+                try:
+                    detail = resp.text.strip()
+                except Exception:
+                    pass
+                msg = f"HTTP {resp.status_code} from {self.base_url}{path}"
+                if detail:
+                    msg += f": {detail}"
+                raise httpx.HTTPStatusError(msg, request=resp.request, response=resp)
+            if resp is not None:
+                return resp.json()
+            raise RuntimeError("POST request failed with no response")
 
     def _stream_request(
         self,
@@ -540,7 +569,18 @@ class LLMClient:
                     cm.__exit__(None, None, None)
                     time.sleep(retry_delay * (attempt + 1))
                     continue
-                resp.raise_for_status()
+                if resp.is_error:
+                    detail = ""
+                    try:
+                        resp.read()
+                        detail = resp.text.strip()
+                    except Exception:
+                        pass
+                    cm.__exit__(None, None, None)
+                    msg = f"HTTP {resp.status_code} from {self.base_url}{path}"
+                    if detail:
+                        msg += f": {detail}"
+                    raise httpx.HTTPStatusError(msg, request=resp.request, response=resp)
                 return _GatedStreamContext(cm, resp, gate_cm)
             except httpx.HTTPStatusError as e:
                 last_exc = e

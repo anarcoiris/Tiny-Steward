@@ -51,12 +51,14 @@ def calcular_checksum(
 
     hash_obj = hashlib.new(algoritmo.lower())
 
-    with open(ruta, "rb" if binario else "r", encoding="utf-8") as f:
+    mode = "rb" if binario else "r"
+    with open(ruta, mode, encoding="utf-8" if not binario else None) as f:
         while True:
             data = f.read(tamanio_bloque or 8 * 1024)
             if not data:
                 break
-            hash_obj.update(data)
+            payload = data if binario else data.encode("utf-8")
+            hash_obj.update(payload)
 
     return hash_obj.hexdigest()
 

@@ -549,13 +549,17 @@ class IdleLoop:
         if not llm:
             return {"skipped": True, "reason": "no LLM client available for dream"}
 
-        res = run_dream(
-            sessions_dir=sessions_dir,
-            session_name=session_name,
-            llm=llm,
-            watermark=watermark,
-            force_all=False,
-        )
+        try:
+            res = run_dream(
+                sessions_dir=sessions_dir,
+                session_name=session_name,
+                llm=llm,
+                watermark=watermark,
+                force_all=False,
+            )
+        except Exception as e:
+            logger.warning("Idle dream failed for session '%s': %s", session_name, e)
+            return {"ok": False, "error": str(e)}
 
         if res.get("ok") and not res.get("skipped"):
             new_wm = res.get("watermark")

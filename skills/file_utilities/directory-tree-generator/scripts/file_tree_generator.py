@@ -19,7 +19,7 @@ def arbol_directorio(
     max_profundidad: int | None = None,
     prefijos: list[str] | None = None,
     mostrar_tamano: bool = True,
-    formato: str = "ascii"
+    formato: str = "ascii",
 ) -> str:
     """Generar un árbol visual de directorios.
 
@@ -55,9 +55,9 @@ def arbol_directorio(
 
 
 def construir_arbol(
-    path_actual: Path,
+    path_actual: str,
     prefijos: list[str] | None = None,
-    profundidad_actual: int = 0
+    profundidad_actual: int = 0,
 ) -> tuple[list[dict], dict]:
     """Construir una estructura de árbol desde un directorio.
 
@@ -93,9 +93,9 @@ def construir_arbol(
         if item.is_dir(follow_symlinks=False):
             # Es un directorio: recursividad
             sub_nodos, sub_estadisticas = construir_arbol(
-                Path(path_actual) / nombre,
+                os.path.join(str(path_actual), nombre),
                 prefijos=prefijos,
-                profundidad_actual=profundidad_actual + 1
+                profundidad_actual=profundidad_actual + 1,
             )
 
             nodo = {
@@ -135,7 +135,7 @@ def construir_arbol(
 
 def formateo_ascii(
     nodos: list[dict],
-    mostrar_tamano: bool = True
+    mostrar_tamano: bool = True,
 ) -> str:
     """Formatear el árbol en estilo ASCII art.
 
@@ -162,7 +162,7 @@ def formateo_ascii(
     lineas.append(f"  Archivos: {total_archivos} | Directorios: {total_direc}")
     if mostrar_tamano and total_tamano_bytes > 0:
         import os
-        tamanio_humanizado = _formatar_tamanio(total_tamano_bytes)
+        tamanio_humanizado = formatear_tamano(total_tamano_bytes)
         lineas.append(f"  Tamaño total: {tamanio_humanizado}")
 
     lineas.append("")
@@ -176,7 +176,7 @@ def formateo_ascii(
             contenido = nodo.get("contenido", [])
             linea = f"├── {tipo}  {nombre:<40}"
             if mostrar_tamano and nodo.get("tamanio_bytes") is not None:
-                t = _formatar_tamanio(nodo["tamanio_bytes"])
+                t = formatear_tamano(nodo["tamanio_bytes"])
                 linea += f"  [{t}]"
 
             # Añadir sub-nodos con ramas
@@ -189,14 +189,14 @@ def formateo_ascii(
 
                 # Tamaño del sub-nodo
                 if mostrar_tamano and sub.get("tamanio_bytes") is not None:
-                    t = _formatar_tamanio(sub["tamanio_bytes"])
+                    t = formatear_tamano(sub["tamanio_bytes"])
                     linea += f"  [{t}]"
 
             lineas.append(linea)
         else:
             linea = f"├── {tipo:<5} {nombre}"
             if mostrar_tamano and nodo.get("tamanio_bytes") is not None:
-                t = _formatar_tamanio(nodo["tamanio_bytes"])
+                t = formatear_tamano(nodo["tamanio_bytes"])
                 linea += f"  [{t}]"
             lineas.append(linea)
 
@@ -209,7 +209,7 @@ def formateo_ascii(
 
 def formateo_simple(
     nodos: list[dict],
-    mostrar_tamano: bool = True
+    mostrar_tamano: bool = True,
 ) -> str:
     """Formatear el árbol con indentación simple (sin arte ASCII).
 
@@ -240,7 +240,7 @@ def formateo_simple(
     return "\n".join(lineas)
 
 
-def _formatar_tamanio(tamano_bytes: int) -> str:
+def formatear_tamano(tamano_bytes: int) -> str:
     """Convertir bytes a una representación humana legible.
 
     Args:
@@ -249,14 +249,14 @@ def _formatar_tamanio(tamano_bytes: int) -> str:
     Returns:
         String con formato (ej. "2.3 MB").
     """
-    if tamanio_bytes < 1024:
-        return f"{tamanio_bytes} B"
-    elif tamanio_bytes < 1024 ** 2:
-        return f"{tamanio_bytes / 1024:.1f} KB"
-    elif tamanio_bytes < 1024 ** 3:
-        return f"{tamanio_bytes / (1024**2):.1f} MB"
+    if tamano_bytes < 1024:
+        return f"{tamano_bytes} B"
+    elif tamano_bytes < 1024 ** 2:
+        return f"{tamano_bytes / 1024:.1f} KB"
+    elif tamano_bytes < 1024 ** 3:
+        return f"{tamano_bytes / (1024**2):.1f} MB"
     else:
-        return f"{tamanio_bytes / (1024**3):.1f} GB"
+        return f"{tamano_bytes / (1024**3):.1f} GB"
 
 
 if __name__ == "__main__":

@@ -36,8 +36,13 @@ class TestExecuteActionDispatch(unittest.TestCase):
             use_streaming=False,
         )
         self.temp = Path(tempfile.mkdtemp())
+        from core import primitives
+        self.old_ws = primitives.get_workspace_dir()
+        primitives.set_workspace_dir(self.temp)
 
     def tearDown(self):
+        from core import primitives
+        primitives.set_workspace_dir(self.old_ws)
         import shutil
         shutil.rmtree(self.temp, ignore_errors=True)
 

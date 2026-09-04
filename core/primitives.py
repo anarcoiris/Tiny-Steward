@@ -18,7 +18,10 @@ from typing import Any
 
 import httpx
 
+import tempfile
+
 _WORKSPACE_DIR: Path = Path.cwd()
+_ALLOW_SKILL_MUTATION: bool = False
 
 
 def get_workspace_dir() -> Path:
@@ -35,12 +38,49 @@ def set_workspace_dir(path: Path | str) -> Path:
     return _WORKSPACE_DIR
 
 
+def set_allow_skill_mutation(val: bool) -> None:
+    """Toggle whether primitives can mutate files under skills/."""
+    global _ALLOW_SKILL_MUTATION
+    _ALLOW_SKILL_MUTATION = bool(val)
+
+
+def is_path_within(target: Path, parent: Path) -> bool:
+    """Check if target path is within or equal to parent path."""
+    try:
+        target.resolve().relative_to(parent.resolve())
+        return True
+    except (ValueError, RuntimeError):
+        return False
+
+
 def resolve_path(path: str | Path) -> Path:
     """Resolve a path relative to the active workspace directory unless absolute."""
     p = Path(path).expanduser()
     if p.is_absolute():
         return p.resolve()
     return (_WORKSPACE_DIR / p).resolve()
+
+
+def validate_write_path(path: str | Path) -> tuple[Path, str | None]:
+    """Validate that path is safe for mutation (workspace confinement + skill immutability lock)."""
+    p = resolve_path(path)
+    
+    # G2: Skill Immutability Lock
+    skills_dir = (_WORKSPACE_DIR / "skills").resolve()
+    if not _ALLOW_SKILL_MUTATION and is_path_within(p, skills_dir):
+        return p, (
+            f"Skill Immutability Lock: Direct mutation of skill source file '{path}' is locked. "
+            "Test your logic using local sandbox/test files or record findings in lessons.md."
+        )
+
+    # G1: Workspace Sandboxing & Confinement
+    if not is_path_within(p, _WORKSPACE_DIR):
+        return p, (
+            f"Workspace Isolation Error: Path '{path}' resolves to '{p}', which is outside "
+            f"the active workspace directory '{_WORKSPACE_DIR}'. "
+            "All created and modified files must reside inside the active workspace."
+        )
+    return p, None
 
 
 from core.task_runner import get_augmented_env, get_task_runner
@@ -230,7 +270,9 @@ def read(path: str, start_line: int | None = None, end_line: int | None = None) 
 def write(path: str, content: str) -> dict[str, Any]:
     """Write content to a file (creates parent dirs)."""
     try:
-        p = resolve_path(path)
+        p, err = validate_write_path(path)
+        if err:
+            return {"error": err}
         p.parent.mkdir(parents=True, exist_ok=True)
         p.write_text(content, encoding="utf-8")
         return {"content": f"Written {len(content)} bytes to {p}"}
@@ -243,7 +285,9 @@ def write(path: str, content: str) -> dict[str, Any]:
 def append(path: str, content: str) -> dict[str, Any]:
     """Append content to a file."""
     try:
-        p = resolve_path(path)
+        p, err = validate_write_path(path)
+        if err:
+            return {"error": err}
         p.parent.mkdir(parents=True, exist_ok=True)
         with p.open("a", encoding="utf-8") as f:
             f.write(content)
@@ -255,26 +299,46 @@ def append(path: str, content: str) -> dict[str, Any]:
 def replace(path: str, old_str: str, new_str: str, count: int = 1) -> dict[str, Any]:
     """Replace occurrences of old_str with new_str in a file without overwriting the whole file."""
     try:
-        p = resolve_path(path)
+        p, err = validate_write_path(path)
+        if err:
+            return {"error": err}
         if not p.exists():
             return {"error": f"File not found: {path}"}
         if p.is_dir():
             return {"error": f"Path is a directory, not a file: {path}"}
 
         content = p.read_text(encoding="utf-8")
-        if old_str not in content:
-            return {"error": f"Target string not found in {path}. Ensure whitespace, indentation, and characters match exactly."}
+        is_crlf = "\r\n" in content
 
-        occurrences = content.count(old_str)
-        if count and count > 0:
-            new_content = content.replace(old_str, new_str, count)
-            replaced = min(occurrences, count)
-        else:
-            new_content = content.replace(old_str, new_str)
-            replaced = occurrences
+        if old_str in content:
+            occurrences = content.count(old_str)
+            if count and count > 0:
+                new_content = content.replace(old_str, new_str, count)
+                replaced = min(occurrences, count)
+            else:
+                new_content = content.replace(old_str, new_str)
+                replaced = occurrences
+            p.write_text(new_content, encoding="utf-8")
+            return {"content": f"Successfully replaced {replaced} occurrence(s) in {p.name}"}
 
-        p.write_text(new_content, encoding="utf-8")
-        return {"content": f"Successfully replaced {replaced} occurrence(s) in {p.name}"}
+        # Fallback: line-ending normalization (CRLF vs LF)
+        norm_content = content.replace("\r\n", "\n")
+        norm_old = old_str.replace("\r\n", "\n")
+        norm_new = new_str.replace("\r\n", "\n")
+
+        if norm_old in norm_content:
+            occurrences = norm_content.count(norm_old)
+            if count and count > 0:
+                norm_result = norm_content.replace(norm_old, norm_new, count)
+                replaced = min(occurrences, count)
+            else:
+                norm_result = norm_content.replace(norm_old, norm_new)
+                replaced = occurrences
+            new_content = norm_result.replace("\n", "\r\n") if is_crlf else norm_result
+            p.write_text(new_content, encoding="utf-8")
+            return {"content": f"Successfully replaced {replaced} occurrence(s) in {p.name}"}
+
+        return {"error": f"Target string not found in {path}. Ensure whitespace, indentation, and characters match exactly."}
     except PermissionError:
         return {"error": f"Permission denied: {path}"}
     except Exception as e:
@@ -284,7 +348,9 @@ def replace(path: str, old_str: str, new_str: str, count: int = 1) -> dict[str, 
 def mkdir(path: str) -> dict[str, Any]:
     """Create a directory (including parents)."""
     try:
-        p = resolve_path(path)
+        p, err = validate_write_path(path)
+        if err:
+            return {"error": err}
         p.mkdir(parents=True, exist_ok=True)
         return {"content": f"Created directory: {p}"}
     except Exception as e:
@@ -588,8 +654,8 @@ PRIMITIVES_TOOLS: list[dict] = [
         "start_line": {"type": "integer"},
         "end_line": {"type": "integer"},
     }, ["path"]),
-    _fn("write", "Create or overwrite a file.", {"path": {"type": "string"}, "content": {"type": "string"}}, ["path", "content"]),
-    _fn("replace", "Surgical find-and-replace in an existing file (preferred over write for editing/fixing code).", {
+    _fn("write", "Create a new file or write complete standalone scripts. For modifying existing code or documents, use replace() to preserve file contents.", {"path": {"type": "string"}, "content": {"type": "string"}}, ["path", "content"]),
+    _fn("replace", "Surgical find-and-replace in an existing file (preferred for editing code and preserving existing file integrity).", {
         "path": {"type": "string"},
         "old_str": {"type": "string", "description": "Exact text/lines to find"},
         "new_str": {"type": "string", "description": "New replacement text/lines"},

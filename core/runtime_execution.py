@@ -11,6 +11,7 @@ from typing import Any, TYPE_CHECKING
 
 from core.primitives import PRIMITIVES
 from core.system_prompt import DELEGATE_EXAMPLE_STUB
+from core.shell_guard import validate_shell_action
 import core.display as display
 
 if TYPE_CHECKING:
@@ -201,6 +202,9 @@ class RuntimeExecutionMixin:
 
             if name in ("pwsh", "bash"):
                 cmd = attrs.get("command") or body
+                is_valid, err_msg = validate_shell_action(name, cmd)
+                if not is_valid:
+                    return {"error": err_msg or "Invalid shell command."}
                 cwd = attrs.get("cwd")
                 is_async_val = attrs.get("is_async")
                 is_async = str(is_async_val).lower() in ("true", "1", "yes") if is_async_val is not None else False

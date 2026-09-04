@@ -116,7 +116,11 @@ class StewardEngine:
         rules_cfg = self.config.get("rules", {})
 
         self.llm = LLMClient.from_lane_config(orch_cfg, gate_lane="orch")
-        self.atomic_llm = LLMClient.from_lane_config(atomic_cfg, gate_lane="atomic")
+        self.atomic_llm = LLMClient.from_lane_config(
+            atomic_cfg,
+            gate_lane="atomic",
+            fallback_providers=self.llm.fallback_providers if not atomic_cfg.get("fallbacks") else None,
+        )
         self.embedder = Embedder.from_config(embed_cfg)
 
         skills_root_path = Path(skills_cfg.get("root", "./skills"))
@@ -391,13 +395,17 @@ class StewardEngine:
         allow_quarantined: bool = False,
     ) -> DreamResult:
         """Run a dream cycle for the session to consolidate durable memories & lessons."""
-        res = run_dream(
-            sessions_dir=self.sessions_dir,
-            session_name=session_name,
-            llm=self.atomic_llm,
-            force_all=force_all,
-            allow_quarantined=allow_quarantined,
-        )
+        try:
+            res = run_dream(
+                sessions_dir=self.sessions_dir,
+                session_name=session_name,
+                llm=self.atomic_llm,
+                force_all=force_all,
+                allow_quarantined=allow_quarantined,
+            )
+        except Exception as e:
+            return DreamResult(ok=False, reason=f"Dream execution error: {e}")
+
         return DreamResult(
             ok=res.get("ok", False),
             quarantined=res.get("quarantined", False),

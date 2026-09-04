@@ -211,13 +211,10 @@ class Runtime(
 
     def _fresh_system_messages(self) -> list[dict[str, Any]]:
         from core.primitives import get_workspace_dir
-        task_path, task_content = self._get_active_task_text()
-        task_block = f"Path: `{task_path}`\n\n{task_content}" if task_content else ""
         ws_dir = str(get_workspace_dir())
         prompt = compose_system_prompt(
             self._rules_text,
             self.invariants,
-            task_plan_text=task_block,
             workspace_dir=ws_dir,
         )
         return [{"role": "system", "content": prompt}]
@@ -396,10 +393,14 @@ class Runtime(
                     continue
 
                 if user_input.startswith("/"):
-                    handled = self._handle_meta_command(user_input, messages)
-                    if handled == "quit":
-                        break
-                    if handled:
+                    try:
+                        handled = self._handle_meta_command(user_input, messages)
+                        if handled == "quit":
+                            break
+                        if handled:
+                            continue
+                    except Exception as e:
+                        display.print_event("error", f"Command error ({user_input.split()[0]}): {e}")
                         continue
 
                 user_content, valid = self._process_user_input(user_input, messages)

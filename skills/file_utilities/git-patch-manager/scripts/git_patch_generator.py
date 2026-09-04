@@ -19,7 +19,7 @@ Ejemplo:
 
 import difflib
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 
 def generar_diff_unificado(
@@ -45,122 +45,57 @@ def generar_diff_unificado(
     with open(archivo_b, "r", encoding="utf-8") as f:
         contenido_b = [linea.rstrip("\n") for linea in f.readlines()]
 
-    dif = difflib.UnifiedDiff(
+    dif = difflib.unified_diff(
+        contenido_a,
+        contenido_b,
         fromfile=Path(archivo_a).name,
         tofile=Path(archivo_b).name,
-        fromlines=contenido_a,
-        tolines=contenido_b,
         lineterm="",
-        context=contexto,
-        n=num_líneas if num_líneas else None,  # difflib no acepta None aquí
+        n=contexto,
     )
 
-    return list(dif)
+    diff_lines = list(dif)
+    if num_líneas is not None and num_líneas > 0:
+        diff_lines = diff_lines[:num_líneas]
+
+    return diff_lines
 
 
 def generar_patch(
     archivo_original: str,
     archivo_modificado: str,
     formato: str = "patch",
+    contexto: int = 3,
 ) -> str:
     """Generar un patch aplicable entre dos archivos.
 
     Args:
         archivo_original: Archivo original.
         archivo_modificado: Archivo modificado.
-        formato: "patch" (unified diff aplicable) o "diff".
+        formato: "patch" (unified diff aplicable) o "diff" (comparación cruda Differ).
+        contexto: Líneas de contexto para el patch unificado.
 
     Returns:
         String con el contenido del patch.
     """
-    with open(archivo_original, "r", encoding="utf-8") as f:
-        contenido_a = [linea.rstrip("\n") for linea in f.readlines()]
-
-    with open(archivo_modificado, "r", encoding="utf-8") as f:
-        contenido_b = [linea.rstrip("\n") for linea in f.readlines()]
-
-    dif = difflib.Differ()
-    diferencias = list(dif.compare(contenido_a, contenido_b))
-
     if formato == "patch":
-        return _formato_patch(diferencias)
+        diff_lines = generar_diff_unificado(archivo_original, archivo_modificado, contexto=contexto)
+        return "\n".join(diff_lines)
     else:
-        return "\n".join(diferencias)
-
-
-def _formato_patch(
-    diferencias: list[str],
-) -> str:
-    """Convertir una lista de líneas de diff al formato patch.
-
-    El formato patch usa:
-        @@ -lineas_originales +lineas_nuevas @@
-            contexto
-        - línea eliminada
-        + línea agregada
-
-    Args:
-        diferencias: Lista de strings generada por difflib.Differ().
-
-    Returns:
-        String en formato unified diff (patch).
-    """
-    import re
-
-    lineas_originales = []
-    lineas_nuevas = []
-    bloques = []
-    bloque_actual = []
-    indice_original = 0
-    indice_nuevo = 0
-
-    for linea in diferencias:
-        if linea.startswith(" "):
-            # Línea idéntica (contexto)
-            bloques[-1][0]["lineas"].append(linea[1:])
-            bloque_actual.append(linea[1:])
-        elif linea.startswith("-"):
-            # Línea eliminada del original
-            lineas_originales.append(indice_original)
-            indice_original += 1
-            if bloques:
-                bloques[-1][0]["lineas"].append(linea[1:])
-                bloque_actual.append(linea[1:])
-        elif linea.startswith("+"):
-            # Línea agregada al modificado
-            lineas_nuevas.append(indice_nuevo)
-            indice_nuevo += 1
-            if bloques:
-                bloques[-1][0]["lineas"].append(linea[1:])
-                bloque_actual.append(linea[1:])
-
-    # Construir el patch
-    salida = []
-    for bloq in bloques:
-        info_original, info_nuevo = bloq[0]
-
-        if lineas_originales and lineas_nuevas:
-            salida.append(f"@@ -{lineas_originales[0]}+{lineas_nuevas[0]} @@")
-        elif not lineas_originales and lineas_nuevas:
-            salida.append(f"@@ -0,0 +1 @@")
-        elif lineas_originales and not lineas_nuevas:
-            salida.append(f"@@ -1,0 +0 @@")
-
-        for linea in bloque_actual:
-            if linea.startswith("-"):
-                salida.append(linea[1:])  # eliminar el prefijo '-'
-            else:
-                salida.append(linea)
-
-    return "\n".join(salida)
+        with open(archivo_original, "r", encoding="utf-8", errors="replace") as f:
+            contenido_a = [linea.rstrip("\r\n") for linea in f.readlines()]
+        with open(archivo_modificado, "r", encoding="utf-8", errors="replace") as f:
+            contenido_b = [linea.rstrip("\r\n") for linea in f.readlines()]
+        dif = difflib.Differ()
+        return "\n".join(dif.compare(contenido_a, contenido_b))
 
 
 def aplicar_patch(
     archivo_destino: str,
     contenido_patch: str,
     crear_archivo: bool = False,
-) -> dict[str, any]:
-    """Aplicar un patch a un archivo.
+) -> dict[str, Any]:
+    """Aplicar un patch unified a un archivo.
 
     Args:
         archivo_destino: Archivo donde aplicar el patch.
@@ -172,65 +107,82 @@ def aplicar_patch(
     """
     import re
 
-    lineas = contenido_patch.split("\n")
-    archivo_destino_contento = []
-
-    if not Path(archivo_destino).exists() and crear_archivo:
-        with open(archivo_destino, "w", encoding="utf-8") as f:
-            f.write("")
-        archivo_destino_contento = ["" for _ in range(1)]
+    dest_path = Path(archivo_destino)
+    if not dest_path.exists():
+        if crear_archivo:
+            orig_lines: list[str] = []
+        else:
+            return {"error": f"Archivo no encontrado: {archivo_destino}"}
     else:
         try:
-            with open(archivo_destino, "r", encoding="utf-8") as f:
-                archivo_destino_contento = [linea.rstrip("\n") for linea in f.readlines()]
-        except FileNotFoundError:
-            return {"error": f"Archivo no encontrado: {archivo_destino}"}
+            with open(archivo_destino, "r", encoding="utf-8", errors="replace") as f:
+                orig_lines = [line.rstrip("\r\n") for line in f.readlines()]
+        except Exception as e:
+            return {"error": f"Error leyendo {archivo_destino}: {e}"}
 
-    # Parsear el patch y aplicar cambios
-    lineas_originales = []
-    lineas_nuevas = []
-    i_original = 0
-    i_nuevo = 0
+    patch_lines = contenido_patch.splitlines()
+    if not patch_lines:
+        return {
+            "archivos_modificados": [archivo_destino],
+            "lineas_agregadas": 0,
+            "lineas_eliminadas": 0,
+        }
 
-    for linea in lineas:
-        if linea.startswith("@@"):
-            continue  # saltar encabezado del hunk
-        elif linea.startswith("diff "):
-            continue  # saltar línea de diff
-        elif linea.startswith("---"):
-            continue  # saltar archivo original
-        elif linea.startswith("+++"):
-            continue  # saltar archivo modificado
+    hunk_regex = re.compile(r"^@@\s+-(\d+)(?:,(\d+))?\s+\+(\d+)(?:,(\d+))?\s+@@")
+    result_lines = list(orig_lines)
+    offset = 0
+    added_count = 0
+    deleted_count = 0
 
-        if not lineas_originales and i_original == 0:
-            lineas_originales.append(i_original)
-        if not lineas_nuevas and i_nuevo == 0:
-            lineas_nuevas.append(i_nuevo)
+    i = 0
+    while i < len(patch_lines):
+        line = patch_lines[i]
+        match = hunk_regex.match(line)
+        if not match:
+            i += 1
+            continue
 
-        if linea.startswith("-"):
-            lineas_originales[-1] = linea[2:]  # reemplazar línea eliminada
-            i_original += 1
-        elif linea.startswith("+"):
-            archivo_destino_contento.insert(i_nuevo, linea[2:])
-            i_nuevo += 1
-        else:
-            if lineas_originales and lineas_nuevas:
-                file_index = min(lineas_originales[-1], len(archivo_destino_contento) - 1)
-                archivo_destino_contento[file_index] = linea[1:]
+        orig_start = int(match.group(1))
+        orig_idx = max(0, orig_start - 1) + offset
 
-    # Escribir el resultado
+        i += 1
+        hunk_lines = []
+        while i < len(patch_lines) and not patch_lines[i].startswith("@@"):
+            hunk_lines.append(patch_lines[i])
+            i += 1
+
+        cur_idx = orig_idx
+        for hline in hunk_lines:
+            if not hline:
+                continue
+            prefix = hline[0]
+            val = hline[1:]
+            if prefix == " ":
+                cur_idx += 1
+            elif prefix == "-":
+                if cur_idx < len(result_lines):
+                    del result_lines[cur_idx]
+                deleted_count += 1
+                offset -= 1
+            elif prefix == "+":
+                result_lines.insert(cur_idx, val)
+                cur_idx += 1
+                added_count += 1
+                offset += 1
+
+    dest_path.parent.mkdir(parents=True, exist_ok=True)
     with open(archivo_destino, "w", encoding="utf-8") as f:
-        for linea in archivo_destino_contento:
-            f.write(linea + "\n")
+        for l in result_lines:
+            f.write(l + "\n")
 
     return {
         "archivos_modificados": [archivo_destino],
-        "lineas_agregadas": len([l for l in lineas if l.startswith("+")]) - 1,
-        "lineas_eliminadas": len([l for l in lineas if l.startswith("-")]) - 1,
+        "lineas_agregadas": added_count,
+        "lineas_eliminadas": deleted_count,
     }
 
 
-def diff_lado_al lado(
+def diff_lado_al_lado(
     archivo_a: str,
     archivo_b: str,
     ancho_columna_a: int = 40,
@@ -247,32 +199,40 @@ def diff_lado_al lado(
     Returns:
         Lista de strings con el diff lado a lado.
     """
-    with open(archivo_a, "r", encoding="utf-8") as f:
-        contenido_a = [linea.rstrip("\n") for linea in f.readlines()]
+    with open(archivo_a, "r", encoding="utf-8", errors="replace") as f:
+        contenido_a = [linea.rstrip("\r\n") for linea in f.readlines()]
 
-    with open(archivo_b, "r", encoding="utf-8") as f:
-        contenido_b = [linea.rstrip("\n") for linea in f.readlines()]
+    with open(archivo_b, "r", encoding="utf-8", errors="replace") as f:
+        contenido_b = [linea.rstrip("\r\n") for linea in f.readlines()]
 
-    dif = difflib.UnifiedDiff(
-        fromfile=Path(archivo_a).name,
-        tofile=Path(archivo_b).name,
-        fromlines=contenido_a,
-        tolines=contenido_b,
-        lineterm="",
-    )
-
+    matcher = difflib.SequenceMatcher(None, contenido_a, contenido_b)
     lineas = []
-    ancho_total = max(ancho_columna_a + 40, ancho_columna_b + 40)
+    w_a = max(20, ancho_columna_a)
+    w_b = max(20, ancho_columna_b)
 
-    for tag, a_linea, b_linea in dif:
+    header = f"{'ARCHIVO A (' + Path(archivo_a).name + ')':<{w_a}} | {'ARCHIVO B (' + Path(archivo_b).name + ')':<{w_b}}"
+    separator = f"{'-' * w_a}-+-{'-' * w_b}"
+    lineas.append(header)
+    lineas.append(separator)
+
+    for tag, i1, i2, j1, j2 in matcher.get_opcodes():
         if tag == "equal":
-            linea = f"{' ' * ancho_columna_a}{a_linea:<{ancho_columna_a}}{' ' * 12}{b_linea}"
+            for a, b in zip(contenido_a[i1:i2], contenido_b[j1:j2]):
+                lineas.append(f"  {a[:w_a-2]:<{w_a-2}} |   {b[:w_b-2]:<{w_b-2}}")
+        elif tag == "replace":
+            a_slice = contenido_a[i1:i2]
+            b_slice = contenido_b[j1:j2]
+            max_len = max(len(a_slice), len(b_slice))
+            for idx in range(max_len):
+                a_val = a_slice[idx] if idx < len(a_slice) else ""
+                b_val = b_slice[idx] if idx < len(b_slice) else ""
+                lineas.append(f"* {a_val[:w_a-2]:<{w_a-2}} | * {b_val[:w_b-2]:<{w_b-2}}")
         elif tag == "delete":
-            linea = f"{tag} {a_linea:<{ancho_columna_a}}{' ' * (ancho_total - len(linea))}"
-        else:
-            linea = f"+ {b_linea:<{ancho_columna_b}}"
-
-        lineas.append(linea)
+            for a in contenido_a[i1:i2]:
+                lineas.append(f"- {a[:w_a-2]:<{w_a-2}} |   {'' :<{w_b-2}}")
+        elif tag == "insert":
+            for b in contenido_b[j1:j2]:
+                lineas.append(f"  {'' :<{w_a-2}} | + {b[:w_b-2]:<{w_b-2}}")
 
     return lineas
 
@@ -280,7 +240,7 @@ def diff_lado_al lado(
 def resumen_cambios(
     archivo_original: str,
     archivo_modificado: str,
-) -> dict[str, any]:
+) -> dict[str, Any]:
     """Obtener un resumen de los cambios entre dos archivos.
 
     Args:
@@ -290,13 +250,14 @@ def resumen_cambios(
     Returns:
         Diccionario con estadísticas de cambios.
     """
-    with open(archivo_original, "r", encoding="utf-8") as f:
-        contenido_a = [linea.rstrip("\n") for linea in f.readlines()]
+    with open(archivo_original, "r", encoding="utf-8", errors="replace") as f:
+        contenido_a = [linea.rstrip("\r\n") for linea in f.readlines()]
 
-    with open(archivo_modificado, "r", encoding="utf-8") as f:
-        contenido_b = [linea.rstrip("\n") for linea in f.readlines()]
+    with open(archivo_modificado, "r", encoding="utf-8", errors="replace") as f:
+        contenido_b = [linea.rstrip("\r\n") for linea in f.readlines()]
 
-    dif = difflib.SequenceMatcher(None, contenido_a, contenido_b)
+    matcher = difflib.SequenceMatcher(None, contenido_a, contenido_b)
+    match = matcher.find_longest_match(0, len(contenido_a), 0, len(contenido_b))
 
     return {
         "archivos": {
@@ -305,8 +266,8 @@ def resumen_cambios(
         },
         "lineas_totales_original": len(contenido_a),
         "lineas_totales_modificadas": len(contenido_b),
-        "bloques_identicos_mayores": dif.block_size(),
-        "similitud_secuencial": round(100 * dif.ratio(), 2),
+        "bloques_identicos_mayores": match.size,
+        "similitud_secuencial": round(100 * matcher.ratio(), 2),
     }
 
 

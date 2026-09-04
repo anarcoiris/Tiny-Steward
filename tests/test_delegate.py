@@ -141,6 +141,33 @@ class TestDelegation(unittest.TestCase):
         self.assertIn("error", result)
         self.assertIn("complete problem statement", result["error"])
 
+    def test_task_contract_parsing_and_formatting(self):
+        from core.runtime_delegate import TaskContract
+
+        # Test plain string
+        c1 = TaskContract.parse("Fix memory leak in web_server.py")
+        self.assertEqual(c1.problem_statement, "Fix memory leak in web_server.py")
+        prompt1 = c1.format_prompt()
+        self.assertIn("Fix memory leak in web_server.py", prompt1)
+        self.assertIn("Directives for Execution Worker", prompt1)
+
+        # Test structured JSON
+        contract_data = {
+            "problem_statement": "Refactor test_runner",
+            "target_artifacts": ["core/task_runner.py", "tests/test_task_runner.py"],
+            "acceptance_criteria": "python -m unittest tests/test_task_runner.py passes",
+            "context_attachments": ["docs/rules.md"],
+        }
+        import json
+        c2 = TaskContract.parse(json.dumps(contract_data))
+        self.assertEqual(c2.problem_statement, "Refactor test_runner")
+        self.assertEqual(c2.target_artifacts, ["core/task_runner.py", "tests/test_task_runner.py"])
+        prompt2 = c2.format_prompt(context_text="Supplementary info")
+        self.assertIn("Refactor test_runner", prompt2)
+        self.assertIn("core/task_runner.py", prompt2)
+        self.assertIn("python -m unittest tests/test_task_runner.py passes", prompt2)
+        self.assertIn("Supplementary info", prompt2)
+
 
 if __name__ == "__main__":
     unittest.main()

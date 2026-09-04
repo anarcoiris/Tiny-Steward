@@ -15,6 +15,7 @@ from core.delegate_terminal import (
     resolve_terminal_mode,
     spawn_child,
 )
+from core.task_contract import TaskContract
 import core.display as display
 
 
@@ -26,7 +27,7 @@ class RuntimeDelegateMixin:
         if getattr(skill, "system_prompt", None):
             prompt_parts.append(skill.system_prompt)
         else:
-            prompt_parts.append(f"You are a specialist agent executing the skill: {skill.name}.")
+            prompt_parts.append(f"You are an atomic execution worker executing the skill: {skill.name}.")
             if skill.description:
                 prompt_parts.append(skill.description)
 
@@ -39,7 +40,9 @@ class RuntimeDelegateMixin:
         if skill.requires:
             prompt_parts.append(f"Available tools / primitives: {', '.join(skill.requires)}")
         prompt_parts.append(
-            "Adhere strictly to the guidelines and templates. Be extremely concise, professional, and actionable."
+            "You are an atomic execution worker operating under a strict Task Contract. "
+            "Adhere strictly to the guidelines and templates. Execute without debating or questioning the requirements. "
+            "Be extremely concise, professional, and actionable."
         )
         return "\n\n".join(prompt_parts)
 
@@ -195,12 +198,15 @@ class RuntimeDelegateMixin:
         display.print_event("delegate", f"Child session '{self.session.name}' finished ({status}).")
         return result
 
-    def _run_delegate_loop(self, skill, problem: str, context_text: str) -> str:
+    def _run_delegate_loop(self, skill, problem: Any, context_text: str = "") -> str:
         """Run atomic (Qwen) micro-agent with tool-call loop."""
+        contract = TaskContract.parse(problem)
         system_prompt = self._build_delegate_system_prompt(skill)
+        user_content = contract.format_prompt(context_text=context_text)
+
         messages: list[dict[str, Any]] = [
             {"role": "system", "content": system_prompt},
-            {"role": "user", "content": f"Problem:\n{problem}\n\nContext:\n{context_text}"},
+            {"role": "user", "content": user_content},
         ]
         skill_tools = self._tools_for_skill(skill)
         final_response = ""

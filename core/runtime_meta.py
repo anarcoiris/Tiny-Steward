@@ -457,13 +457,17 @@ class RuntimeMetaMixin:
                 return True
 
         display.print_event("info", f"Dreaming session '{target}' (atomic lane, dream priority)…")
-        result = run_dream(
-            sessions_dir=self.session_manager.dir,
-            session_name=target,
-            llm=llm,
-            watermark=watermark,
-            force_all=False,
-        )
+        try:
+            result = run_dream(
+                sessions_dir=self.session_manager.dir,
+                session_name=target,
+                llm=llm,
+                watermark=watermark,
+                force_all=False,
+            )
+        except Exception as e:
+            display.print_event("error", f"Dream execution failed: {e}")
+            return True
         if result.get("skipped"):
             display.print_event("info", result.get("reason", "nothing to dream"))
             return True

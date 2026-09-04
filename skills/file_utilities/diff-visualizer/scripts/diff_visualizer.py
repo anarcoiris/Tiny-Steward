@@ -14,11 +14,14 @@ Ejemplo:
 """
 
 
+import difflib
+from pathlib import Path
+
+
 def dif_unificado(
     ruta_archivo_a: str,
     ruta_archivo_b: str,
     contexto: int = 3,
-    max_líneas: int | None = None
 ) -> list[str]:
     """Generar un unified diff entre dos archivos.
 
@@ -26,7 +29,6 @@ def dif_unificado(
         ruta_archivo_a: Ruta al archivo original (antes).
         ruta_archivo_b: Ruta al archivo modificado (después).
         contexto: Número de líneas de contexto alrededor de cada cambio.
-        max_líneas: Límite máximo de líneas a mostrar en el diff.
 
     Returns:
         Lista de strings con la representación del diff.
@@ -46,14 +48,13 @@ def dif_unificado(
         return ["Error: archivo B no encontrado."]
 
     # Generar diff unificado con difflib
-    dif = difflib.UnifiedDiff(
+    dif = difflib.unified_diff(
+        contenido_a,
+        contenido_b,
         fromfile=f"archivo_a",
         tofile=f"archivo_b",
-        fromlines=contenido_a,
-        tolines=contenido_b,
         lineterm="",
-        context=contexto,
-        n=max_líneas if max_líneas else None,  # difflib no acepta None aquí
+        n=contexto,
     )
 
     return list(dif)
@@ -91,25 +92,34 @@ def resumen_dif(
     # Contar agregados y eliminados usando difflib
     dif = difflib.SequenceMatcher(None, contenido_a, contenido_b)
 
+    # block_size() fue eliminado en Python 3.10+, usamos ratio() como alternativa
     estadisticas = {
         "lineas_archivo_a": len(contenido_a),
         "lineas_archivo_b": len(contenido_b),
-        "bloque_identico": dif.block_size(),  # tamaño del bloque más grande idéntico
         "similitud_secuencial": round(100 * dif.ratio(), 2),
     }
 
-    # Contar líneas agregadas y eliminadas aproximadamente
-    agregados = sum(1 for op, texto in zip(dif.opcodes, contenido_b) if op == dif.INSERT)
-    eliminados = sum(1 for op, texto in zip(dif.opcodes, contenido_a) if op == dif.DELETE)
+    # Calcular el bloque más grande idéntico y estadísticas mediante opcodes
+    opcodes = dif.get_opcodes()
+    max_block = 0
+    for tag, i1, i2, j1, j2 in opcodes:
+        if tag == "equal":
+            max_block = max(max_block, j2 - j1)
+    estadisticas["bloque_identico_maximo"] = max_block
+
+    # Contar líneas agregadas, eliminadas y comunes
+    agregados = sum(j2 - j1 for tag, i1, i2, j1, j2 in opcodes if tag in ("insert", "replace"))
+    eliminados = sum(i2 - i1 for tag, i1, i2, j1, j2 in opcodes if tag in ("delete", "replace"))
+    comunes = sum(j2 - j1 for tag, i1, i2, j1, j2 in opcodes if tag == "equal")
 
     estadisticas["lineas_agregadas"] = agregados
     estadisticas["lineas_eliminadas"] = eliminados
-    estadisticas["lineas_comunes"] = sum(1 for op, _ in zip(dif.opcodes, contenido_b) if op == dif.EQUAL)
+    estadisticas["lineas_comunes"] = comunes
 
     return estadisticas
 
 
-def dif_lado_al lado(
+def dif_lado_al_lado(
     ruta_archivo_a: str,
     ruta_archivo_b: str,
     ancho_columna_a: int = 40,
@@ -129,38 +139,45 @@ def dif_lado_al lado(
     import difflib
 
     try:
-        with open(ruta_archivo_a, "r", encoding="utf-8") as f:
-            contenido_a = [linea.rstrip("\n") for linea in f.readlines()]
+        with open(ruta_archivo_a, "r", encoding="utf-8", errors="replace") as f:
+            contenido_a = [linea.rstrip("\r\n") for linea in f.readlines()]
     except FileNotFoundError:
         return ["Error: archivo A no encontrado."]
 
     try:
-        with open(ruta_archivo_b, "r", encoding="utf-8") as f:
-            contenido_b = [linea.rstrip("\n") for linea in f.readlines()]
+        with open(ruta_archivo_b, "r", encoding="utf-8", errors="replace") as f:
+            contenido_b = [linea.rstrip("\r\n") for linea in f.readlines()]
     except FileNotFoundError:
         return ["Error: archivo B no encontrado."]
 
-    # Generar diff unificado para obtener las operaciones
-    dif = difflib.UnifiedDiff(
-        fromfile="archivo_a",
-        tofile="archivo_b",
-        fromlines=contenido_a,
-        tolines=contenido_b,
-        lineterm="",
-    )
-
+    matcher = difflib.SequenceMatcher(None, contenido_a, contenido_b)
     lineas = []
-    ancho_total = max(ancho_columna_a + 30, ancho_columna_b + 30)
+    w_a = max(20, ancho_columna_a)
+    w_b = max(20, ancho_columna_b)
 
-    for tag, a_line, b_line in dif:
+    header = f"{'ARCHIVO A (' + Path(ruta_archivo_a).name + ')':<{w_a}} | {'ARCHIVO B (' + Path(ruta_archivo_b).name + ')':<{w_b}}"
+    separator = f"{'-' * w_a}-+-{'-' * w_b}"
+    lineas.append(header)
+    lineas.append(separator)
+
+    for tag, i1, i2, j1, j2 in matcher.get_opcodes():
         if tag == "equal":
-            linea = f"{' ' * ancho_columna_a}{a_line:<{ancho_columna_a}}{' ' * 12}{b_line}"
+            for a, b in zip(contenido_a[i1:i2], contenido_b[j1:j2]):
+                lineas.append(f"  {a[:w_a-2]:<{w_a-2}} |   {b[:w_b-2]:<{w_b-2}}")
+        elif tag == "replace":
+            a_slice = contenido_a[i1:i2]
+            b_slice = contenido_b[j1:j2]
+            max_len = max(len(a_slice), len(b_slice))
+            for idx in range(max_len):
+                a_val = a_slice[idx] if idx < len(a_slice) else ""
+                b_val = b_slice[idx] if idx < len(b_slice) else ""
+                lineas.append(f"* {a_val[:w_a-2]:<{w_a-2}} | * {b_val[:w_b-2]:<{w_b-2}}")
         elif tag == "delete":
-            linea = f"{tag} {a_line:<{ancho_columna_a}}{' ' * (ancho_total - len(linea))}"
-        else:  # insert
-            linea = f"+ {b_line:<{ancho_columna_b}}"
-
-        lineas.append(linea)
+            for a in contenido_a[i1:i2]:
+                lineas.append(f"- {a[:w_a-2]:<{w_a-2}} |   {'' :<{w_b-2}}")
+        elif tag == "insert":
+            for b in contenido_b[j1:j2]:
+                lineas.append(f"  {'' :<{w_a-2}} | + {b[:w_b-2]:<{w_b-2}}")
 
     return lineas
 

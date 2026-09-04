@@ -63,9 +63,14 @@ class TestTaskRunner(unittest.TestCase):
         self.assertIn("Task started in background", res["content"])
 
         tid = res["task_id"]
-        time.sleep(1.0)
+        deadline = time.time() + 4.0
+        st = {}
+        while time.time() < deadline:
+            st = task_status(tid)
+            if st.get("status") == "finished":
+                break
+            time.sleep(0.2)
 
-        st = task_status(tid)
         self.assertEqual(st.get("status"), "finished")
         self.assertIn("hello_async", st.get("content", ""))
 

@@ -13,8 +13,11 @@ from core import primitives
 class TestPrimitivesSmoke(unittest.TestCase):
     def setUp(self):
         self.temp = Path(tempfile.mkdtemp())
+        self.old_ws = primitives.get_workspace_dir()
+        primitives.set_workspace_dir(self.temp)
 
     def tearDown(self):
+        primitives.set_workspace_dir(self.old_ws)
         shutil.rmtree(self.temp, ignore_errors=True)
 
     def test_mkdir_write_read_ls(self):
@@ -48,6 +51,18 @@ class TestPrimitivesSmoke(unittest.TestCase):
         r = primitives.replace(str(target), "nonexistent", "new")
         self.assertIn("error", r)
         self.assertIn("Target string not found", r["error"])
+
+    def test_replace_crlf_normalization(self):
+        target = self.temp / "windows_crlf.py"
+        # Write file with explicit Windows CRLF line endings
+        target.write_bytes(b"def compute():\r\n    total = 10\r\n    return total\r\n")
+        # Replace using Unix LF line endings in old_str and new_str (standard LLM output)
+        r = primitives.replace(str(target), "total = 10\n    return total", "total = 42\n    return total")
+        self.assertNotIn("error", r)
+        self.assertIn("Successfully replaced", r["content"])
+        # Verify content was updated and preserved CRLF format
+        content_bytes = target.read_bytes()
+        self.assertIn(b"total = 42\r\n", content_bytes)
 
     def test_pwsh_ok(self):
         r = primitives.pwsh("Write-Output 'ok'")

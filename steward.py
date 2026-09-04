@@ -132,7 +132,11 @@ def main():
     atomic_llm: LLMClient | None = None
     if "atomic" in config.get("llm", {}):
         at_cfg = config["llm"]["atomic"]
-        atomic_llm = LLMClient.from_lane_config(at_cfg, gate_lane="atomic")
+        atomic_llm = LLMClient.from_lane_config(
+            at_cfg,
+            gate_lane="atomic",
+            fallback_providers=llm.fallback_providers if not at_cfg.get("fallbacks") else None,
+        )
 
     from core.backend_launcher import BackendLauncher
     backend_launcher = BackendLauncher.from_config(
