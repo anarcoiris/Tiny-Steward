@@ -1,0 +1,36 @@
+{
+  "title": "Radar de Nicho Técnico en Wallapop España: Astronomía y Flipper Zero",
+  "scout": "whisper_owl",
+  "market_observations": [
+    {
+      "niche": "Colimadores Cheshire y Máscaras Bahtinov",
+      "demand_level": "ALTA / CONSTANTE",
+      "price_range_wallapop": "€6 - €18",
+      "target_audience": "Aficionados a la astrofotografía y telescopios reflectores (SkyWatcher 150/750, 200/1000, Dobson 8 pulgadas).",
+      "key_search_terms": [
+        "colimador cheshire",
+        "mascara bahtinov 200",
+        "colimacion telescopio",
+        "skywatcher",
+        "celestron"
+      ],
+      "competitive_advantage": "Pieza en PLA mate negro con mirilla centrada a €6 frente a versiones metálicas chinas de €15 que tardan semanas en llegar."
+    },
+    {
+      "niche": "Flipper Zero Triple Antena Mod (CC1101 + NRF24 + ESP32)",
+      "demand_level": "MUY ALTA (Comunidad DevSecOps)",
+      "price_range_wallapop": "€35 - €49",
+      "target_audience": "Pentesters, entusiastas de ciberseguridad y radiofrecuencia Sub-GHz.",
+      "key_search_terms": [
+        "flipper zero",
+        "triple antena flipper",
+        "cc1101 nrf24",
+        "flipper killer mod",
+        "antena sma flipper"
+      ],
+      "competitive_advantage": "Placa JLCPCB v4 terminada con soldadura SMD limpia y conectores SMA chapados en oro."
+    }
+  ],
+  "recommended_sales_strategy": "Venta híbrida: Wallapop para entrega rápida en mano/envíos en España (€ fiduciario) y Checkout Web para compradores cripto (XMR/BTC con descuento 10%).",
+  "timestamp_iso": "2026-09-28T03:10:43.430981+00:00"
+}

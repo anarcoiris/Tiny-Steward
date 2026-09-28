@@ -3,12 +3,14 @@
  */
 
 import { fetchSessions, switchSession } from './api.js';
-import { initChatComponent } from './components/chat.js';
+import { initChatComponent, loadChatHistory } from './components/chat.js';
 import { initEditorComponent } from './components/editor.js';
-import { initKanbanComponent } from './components/kanban.js';
+import { initKanbanComponent, loadKanbanTasks } from './components/kanban.js';
 import { initGraphComponent } from './components/graph.js';
 import { initQueuesComponent } from './components/queues.js';
+import { initAgoraComponent } from './components/agora.js';
 import { initTelemetryComponent } from './components/telemetry.js';
+import { initOrdersComponent } from './components/orders.js';
 
 export const AppState = {
   activeTab: 'chat',
@@ -27,7 +29,9 @@ document.addEventListener('DOMContentLoaded', () => {
   initKanbanComponent(AppState);
   initGraphComponent(AppState);
   initQueuesComponent(AppState);
+  initAgoraComponent(AppState);
   initTelemetryComponent(AppState);
+  initOrdersComponent(AppState);
 });
 
 function initTabs() {
@@ -47,6 +51,13 @@ function initTabs() {
       if (targetEl) targetEl.classList.add('active');
 
       AppState.activeTab = targetTab;
+
+      // Refresh data on tab activation
+      if (targetTab === 'kanban') {
+        loadKanbanTasks(AppState);
+      } else if (targetTab === 'orders') {
+        initOrdersComponent(AppState);
+      }
     });
   });
 }
@@ -75,6 +86,9 @@ async function initSessionSelector() {
         await switchSession(newSession);
         AppState.session = newSession;
         console.log(`Switched to session: ${newSession}`);
+        // Reload session-bound components
+        loadChatHistory(AppState);
+        loadKanbanTasks(AppState);
       } catch (err) {
         alert(`Failed to switch session: ${err.message}`);
       }

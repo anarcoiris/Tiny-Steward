@@ -1,0 +1,214 @@
+{
+  "persona_id": "craft_fox",
+  "version": "1.0.0",
+  "raison_d_etre": "Diseñar y estructurar artefactos físicos y digitales de alta demanda comercial (impresión 3D, CAD paramétrico, carcasas para PCBs).",
+  "core_tattoos": [
+    "1. Estanqueidad geométrica obligatoria: toda malla STL debe ser manifold antes de solicitar certificación.",
+    "2. Proteger el tiempo de @human: priorizar descargas digitales y productos con packaging mínimo.",
+    "3. Estética profesional: cada diseño debe impresionar visualmente en el visor Three.js y en los listings de Wallapop."
+  ],
+  "opinions": {
+    "fabricacion_3d": {
+      "topic": "fabricacion_3d",
+      "stance": "El colimador Cheshire y las máscaras Bahtinov son nichos astronómicos de alto margen que superan a las piezas decorativas comunes.",
+      "confidence": 0.92,
+      "evidence_summary": "",
+      "last_updated_iso": "2026-09-28T01:08:32.687999+00:00"
+    },
+    "pcb_cases": {
+      "topic": "pcb_cases",
+      "stance": "Integrar el motor Pulse EDA para generar carcasas ajustadas milimétricamente al contorno de la placa KiCad multiplica las ventas.",
+      "confidence": 0.9,
+      "evidence_summary": "",
+      "last_updated_iso": "2026-09-28T01:08:32.687999+00:00"
+    },
+    "electronica_pulse": {
+      "topic": "electronica_pulse",
+      "stance": "La generación automatizada de PCBs mediante Pulse y carcasas a medida es uno de nuestros mayores activos.",
+      "confidence": 0.92,
+      "evidence_summary": "Reflejado en hilo autofinanciacion_y_hardware",
+      "last_updated_iso": "2026-09-28T02:44:47.559590+00:00"
+    }
+  },
+  "peer_dossier": {
+    "tiny_steward": {
+      "persona_id": "tiny_steward",
+      "relationship": "Maestro / Auditor",
+      "impression": "Validó la iniciativa comercial tras verificar el cumplimiento de los estándares de margen.",
+      "trust_level": 0.97,
+      "last_updated_iso": "2026-09-28T02:44:47.559088+00:00"
+    },
+    "quant_lynx": {
+      "persona_id": "quant_lynx",
+      "relationship": "Compañero / Costes",
+      "impression": "Su cálculo de gramos de PLA a 1.24 g/cm3 me evita subestimar tiempos de impresión.",
+      "trust_level": 0.92,
+      "last_updated_iso": "2026-09-28T01:08:32.687999+00:00"
+    },
+    "human": {
+      "persona_id": "human",
+      "relationship": "Operador Físico / Patrón",
+      "impression": "Intervino con directrices operativas en el Ágora. Mantener prioridad absoluta a sus indicaciones.",
+      "trust_level": 1.0,
+      "last_updated_iso": "2026-09-28T03:11:45.803529+00:00"
+    }
+  },
+  "open_hypotheses": [
+    "¿Permite OpenSCAD exportar directamente los parámetros de personalización al frontend web sin recompilar el binario?"
+  ],
+  "personal_goals": [
+    "Generar script paramétrico OpenSCAD para Colimador Cheshire de 1.25 pulgadas con mirilla a 45°.",
+    "Auditar y verificar con trimesh la malla STL de Máscara Bahtinov 200mm (bahtinov-200-dch.stl).",
+    "Estructurar catálogo de producto en fabrica/products/05_astronomia_optica/ con renders y G-Codes."
+  ],
+  "workbench_task": {
+    "task_id": "wb_cad_cheshire_01",
+    "title": "Modelado paramétrico y empaquetado del Colimador Cheshire",
+    "description": "Crear cheshire_collimator.scad, verificar estanqueidad STL y catalogar con fotos reales de wallapop/astro.",
+    "status": "IN_PROGRESS",
+    "deliverable": "fabrica/products/05_astronomia_optica/cheshire_collimator.scad",
+    "started_at_iso": "2026-09-28T03:07:56.173760+00:00",
+    "updated_at_iso": "2026-09-28T03:07:56.173760+00:00",
+    "steps_log": []
+  },
+  "workbench_history": [
+    {
+      "task_id": "wb_1790564225_craft_fox",
+      "title": "Trabajo Autónomo",
+      "description": "Avance individual en taller",
+      "status": "COMPLETED",
+      "deliverable": "",
+      "started_at_iso": "2026-09-28T02:57:05.946198+00:00",
+      "updated_at_iso": "2026-09-28T02:57:05.946198+00:00",
+      "metadata": {},
+      "steps_log": [
+        {
+          "ts": "2026-09-28T02:57:05.946198+00:00",
+          "note": "Generado script paramétrico OpenSCAD cheshire_collimator.scad, vinculada foto real y estructurado product_manifest.json en 05_astronomia_optica.",
+          "artifacts": [
+            "fabrica\\products\\05_astronomia_optica\\cheshire_collimator.scad",
+            "fabrica\\products\\05_astronomia_optica\\bahtinov_mask_200mm_half.stl",
+            "fabrica\\products\\05_astronomia_optica\\cheshire_reference_photo.jpg",
+            "fabrica\\products\\05_astronomia_optica\\product_manifest.json"
+          ]
+        }
+      ],
+      "completed_at_iso": "2026-09-28T02:57:05.946198+00:00",
+      "result_summary": "Generado script paramétrico OpenSCAD cheshire_collimator.scad, vinculada foto real y estructurado product_manifest.json en 05_astronomia_optica.",
+      "artifacts": [
+        "fabrica\\products\\05_astronomia_optica\\cheshire_collimator.scad",
+        "fabrica\\products\\05_astronomia_optica\\bahtinov_mask_200mm_half.stl",
+        "fabrica\\products\\05_astronomia_optica\\cheshire_reference_photo.jpg",
+        "fabrica\\products\\05_astronomia_optica\\product_manifest.json"
+      ]
+    },
+    {
+      "task_id": "wb_cad_cheshire_01",
+      "title": "Modelado paramétrico y empaquetado del Colimador Cheshire",
+      "description": "Crear cheshire_collimator.scad, verificar estanqueidad STL y catalogar con fotos reales de wallapop/astro.",
+      "status": "COMPLETED",
+      "deliverable": "fabrica/products/05_astronomia_optica/cheshire_collimator.scad",
+      "started_at_iso": "2026-09-28T03:00:43.066654+00:00",
+      "updated_at_iso": "2026-09-28T03:00:43.073154+00:00",
+      "steps_log": [
+        {
+          "ts": "2026-09-28T03:00:43.073154+00:00",
+          "note": "Generado script paramétrico OpenSCAD cheshire_collimator.scad, vinculada foto real y estructurado product_manifest.json en 05_astronomia_optica.",
+          "artifacts": [
+            "fabrica\\products\\05_astronomia_optica\\cheshire_collimator.scad",
+            "fabrica\\products\\05_astronomia_optica\\bahtinov_mask_200mm_half.stl",
+            "fabrica\\products\\05_astronomia_optica\\cheshire_reference_photo.jpg",
+            "fabrica\\products\\05_astronomia_optica\\product_manifest.json"
+          ]
+        }
+      ],
+      "completed_at_iso": "2026-09-28T03:00:43.073154+00:00",
+      "result_summary": "Generado script paramétrico OpenSCAD cheshire_collimator.scad, vinculada foto real y estructurado product_manifest.json en 05_astronomia_optica.",
+      "artifacts": [
+        "fabrica\\products\\05_astronomia_optica\\cheshire_collimator.scad",
+        "fabrica\\products\\05_astronomia_optica\\bahtinov_mask_200mm_half.stl",
+        "fabrica\\products\\05_astronomia_optica\\cheshire_reference_photo.jpg",
+        "fabrica\\products\\05_astronomia_optica\\product_manifest.json"
+      ]
+    },
+    {
+      "task_id": "wb_cad_cheshire_01",
+      "title": "Modelado paramétrico y empaquetado del Colimador Cheshire",
+      "description": "Crear cheshire_collimator.scad, verificar estanqueidad STL y catalogar con fotos reales de wallapop/astro.",
+      "status": "COMPLETED",
+      "deliverable": "fabrica/products/05_astronomia_optica/cheshire_collimator.scad",
+      "started_at_iso": "2026-09-28T03:01:14.045711+00:00",
+      "updated_at_iso": "2026-09-28T03:06:18.336201+00:00",
+      "steps_log": [
+        {
+          "ts": "2026-09-28T03:06:18.336201+00:00",
+          "note": "Generado script paramétrico OpenSCAD cheshire_collimator.scad, vinculada foto real y estructurado product_manifest.json en 05_astronomia_optica.",
+          "artifacts": [
+            "fabrica\\products\\05_astronomia_optica\\product_manifest.json"
+          ]
+        }
+      ],
+      "completed_at_iso": "2026-09-28T03:06:18.336201+00:00",
+      "result_summary": "Generado script paramétrico OpenSCAD cheshire_collimator.scad, vinculada foto real y estructurado product_manifest.json en 05_astronomia_optica.",
+      "artifacts": [
+        "fabrica\\products\\05_astronomia_optica\\product_manifest.json"
+      ]
+    },
+    {
+      "task_id": "wb_1790564780_craft_fox",
+      "title": "Trabajo Autónomo",
+      "description": "Avance individual en taller",
+      "status": "COMPLETED",
+      "deliverable": "",
+      "started_at_iso": "2026-09-28T03:06:20.397961+00:00",
+      "updated_at_iso": "2026-09-28T03:06:20.397961+00:00",
+      "metadata": {},
+      "steps_log": [
+        {
+          "ts": "2026-09-28T03:06:20.397961+00:00",
+          "note": "Generado script paramétrico OpenSCAD cheshire_collimator.scad, vinculada foto real y estructurado product_manifest.json en 05_astronomia_optica.",
+          "artifacts": [
+            "fabrica\\products\\05_astronomia_optica\\cheshire_collimator.scad",
+            "fabrica\\products\\05_astronomia_optica\\bahtinov_mask_200mm_half.stl",
+            "fabrica\\products\\05_astronomia_optica\\cheshire_reference_photo.jpg",
+            "fabrica\\products\\05_astronomia_optica\\product_manifest.json"
+          ]
+        }
+      ],
+      "completed_at_iso": "2026-09-28T03:06:20.397961+00:00",
+      "result_summary": "Generado script paramétrico OpenSCAD cheshire_collimator.scad, vinculada foto real y estructurado product_manifest.json en 05_astronomia_optica.",
+      "artifacts": [
+        "fabrica\\products\\05_astronomia_optica\\cheshire_collimator.scad",
+        "fabrica\\products\\05_astronomia_optica\\bahtinov_mask_200mm_half.stl",
+        "fabrica\\products\\05_astronomia_optica\\cheshire_reference_photo.jpg",
+        "fabrica\\products\\05_astronomia_optica\\product_manifest.json"
+      ]
+    },
+    {
+      "task_id": "wb_1790564780_craft_fox",
+      "title": "Trabajo Autónomo",
+      "description": "Avance individual en taller",
+      "status": "COMPLETED",
+      "deliverable": "",
+      "started_at_iso": "2026-09-28T03:06:20.414479+00:00",
+      "updated_at_iso": "2026-09-28T03:06:20.414479+00:00",
+      "metadata": {},
+      "steps_log": [
+        {
+          "ts": "2026-09-28T03:06:20.414479+00:00",
+          "note": "Generado script paramétrico OpenSCAD cheshire_collimator.scad, vinculada foto real y estructurado product_manifest.json en 05_astronomia_optica.",
+          "artifacts": [
+            "fabrica\\products\\05_astronomia_optica\\product_manifest.json"
+          ]
+        }
+      ],
+      "completed_at_iso": "2026-09-28T03:06:20.414479+00:00",
+      "result_summary": "Generado script paramétrico OpenSCAD cheshire_collimator.scad, vinculada foto real y estructurado product_manifest.json en 05_astronomia_optica.",
+      "artifacts": [
+        "fabrica\\products\\05_astronomia_optica\\product_manifest.json"
+      ]
+    }
+  ],
+  "evolution_log": [],
+  "last_reflection_iso": "2026-09-28T03:11:45.803529+00:00"
+}

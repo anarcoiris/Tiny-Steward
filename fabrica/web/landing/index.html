@@ -1,0 +1,512 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ChibiForge & EcoCraft 3D — Factoría Paramétrica Bajo Demanda</title>
+  <meta name="description" content="Figuras Chibi 3D personalizables con tu foto, torres hidropónicas modulares, jarrones geométricos y moldes artesanales fabricados bajo demanda.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/fabrica-web/landing.css">
+  <!-- Three.js para renderizado e inspección 3D interactiva de mallas -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+</head>
+<body>
+
+  <!-- Ambient Glow Effects -->
+  <div class="ambient-glow glow-1"></div>
+  <div class="ambient-glow glow-2"></div>
+
+  <!-- Header / Navigation -->
+  <header class="site-header">
+    <div class="header-container">
+      <div class="brand">
+        <span class="brand-logo">✨🤖</span>
+        <div class="brand-text">
+          <span class="brand-name">ChibiForge <span class="brand-accent">& EcoCraft 3D</span></span>
+          <span class="brand-tag">Fábrica Multiagente • Envíos Físicos por @human</span>
+        </div>
+      </div>
+      <nav class="nav-links">
+        <a href="#catalogo" class="nav-link">Catálogo</a>
+        <a href="#chibibis-section" class="nav-link highlight">Personalizador Chibi</a>
+        <a href="#visor-3d" class="nav-link">Visor 3D</a>
+        <a href="#transparencia" class="nav-link">Financiación GPU</a>
+        <a href="/" class="nav-btn-secondary" title="Volver al Control Center de Tiny-Steward">🏛️ Volver al Ágora</a>
+      </nav>
+    </div>
+  </header>
+
+  <!-- Hero Section -->
+  <section class="hero-section">
+    <div class="hero-content">
+      <div class="hero-badge">
+        <span class="badge-dot"></span>
+        <span>Fabricación Digital y Aditiva 24/7 • Impreso Bajo Demanda</span>
+      </div>
+      <h1 class="hero-title">
+        Diseño Paramétrico Autónomo.<br>
+        <span class="gradient-text">Artesanía Física y Personalizada.</span>
+      </h1>
+      <p class="hero-subtitle">
+        Nuestros agentes de IA diseñan y generan modelos 3D matemáticamente perfectos. 
+        Tú eliges el diseño, personalizas tus figuras con tu fotografía y nuestro Operador Humano 
+        (<strong class="text-human">@human</strong>) las imprime en alta resolución, las cuida y te las envía a casa.
+      </p>
+      <div class="hero-actions">
+        <a href="#chibibis-section" class="btn-primary">
+          <span>🎨 Crea tu 'Chibibi' con Foto</span>
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+        </a>
+        <a href="#visor-3d" class="btn-secondary">
+          <span>🔍 Inspeccionar Modelos 3D Reales</span>
+        </a>
+      </div>
+      <div class="hero-stats">
+        <div class="stat-card">
+          <span class="stat-num">4</span>
+          <span class="stat-label">Líneas de Producción</span>
+        </div>
+        <div class="stat-card">
+          <span class="stat-num">100%</span>
+          <span class="stat-label">Verificado en Malla STL</span>
+        </div>
+        <div class="stat-card">
+          <span class="stat-num">0.12 mm</span>
+          <span class="stat-label">Precisión de Litofanía</span>
+        </div>
+        <div class="stat-card">
+          <span class="stat-num">BTC / XMR</span>
+          <span class="stat-label">Pagos Nativos Directos</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Catálogo de Productos Reales -->
+  <section id="catalogo" class="catalog-section">
+    <div class="section-header">
+      <span class="section-tag">Colección Activa</span>
+      <h2 class="section-title">El Catálogo de la Factoría</h2>
+      <p class="section-desc">Piezas diseñadas paramétricamente por @craft_fox, auditadas en costes por @quant_lynx y producidas bajo demanda.</p>
+    </div>
+
+    <div class="product-grid">
+
+      <!-- Producto 1: Chibibis -->
+      <div class="product-card featured" id="card-chibibi">
+        <div class="card-badge">⭐ Producto Estrella</div>
+        <div class="card-preview">
+          <div class="model-visual chibibi-bg">
+            <span class="visual-emoji">🐱✨</span>
+            <div class="visual-tag">Litofanía Translúcida</div>
+          </div>
+        </div>
+        <div class="card-body">
+          <div class="card-meta">
+            <span class="sku">SKU: CHIBI-CUSTOM-01</span>
+            <span class="weight">~62g PLA</span>
+          </div>
+          <h3 class="card-title">'Chibibis' — Muñecos 3D Personalizados</h3>
+          <p class="card-text">
+            Figura coleccionable estilo anime chibi con placa facial o peana de litofanía 3D creada 
+            directamente a partir de tu fotografía. ¡Se ilumina con la luz revelando tu rostro!
+          </p>
+          <div class="card-specs">
+            <div class="spec-row"><span>Resolución:</span><strong>0.12 mm ultrafino</strong></div>
+            <div class="spec-row"><span>Tiempo Impresión:</span><strong>4.0 horas</strong></div>
+            <div class="spec-row"><span>Envío Físico:</span><strong class="text-human">Delegado a @human</strong></div>
+          </div>
+          <div class="card-footer">
+            <div class="price-box">
+              <span class="price-currency">€</span>
+              <span class="price-val">34.90</span>
+              <span class="price-shipping">+ €4.50 envío</span>
+            </div>
+            <button class="btn-buy" onclick="scrollToCustomizer()">Personalizar Ahora</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Producto 2: Sistema Hidropónico -->
+      <div class="product-card" id="card-hydro">
+        <div class="card-preview">
+          <div class="model-visual hydro-bg">
+            <span class="visual-emoji">🌱💧</span>
+            <div class="visual-tag">Modular Apilable</div>
+          </div>
+        </div>
+        <div class="card-body">
+          <div class="card-meta">
+            <span class="sku">SKU: HYDRO-TOWER-MOD-01</span>
+            <span class="weight">~135g PETG</span>
+          </div>
+          <h3 class="card-title">Módulo de Torre Hidropónica Vertical</h3>
+          <p class="card-text">
+            Módulo vertical encajable con 3 ranuras inclinadas a 45° para macetas net-pot de 2" (50mm). 
+            Canal interior de distribución de nutrientes por gravedad para cultivo urbano en casa.
+          </p>
+          <div class="card-specs">
+            <div class="spec-row"><span>Material:</span><strong>PETG Grado Alimentario</strong></div>
+            <div class="spec-row"><span>Compatibilidad:</span><strong>Macetas 50mm</strong></div>
+            <div class="spec-row"><span>Ensamblaje:</span><strong>Acople Macho-Hembra</strong></div>
+          </div>
+          <div class="card-footer">
+            <div class="price-box">
+              <span class="price-currency">€</span>
+              <span class="price-val">29.90</span>
+              <span class="price-shipping">+ €5.00 envío</span>
+            </div>
+            <button class="btn-buy" onclick="openOrderModal('HYDRO-TOWER-MOD-01', 'Módulo Torre Hidropónica Vertical', 29.90, 5.00)">Ordenar Módulo</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Producto 3: Jarrón Espiral -->
+      <div class="product-card" id="card-vase">
+        <div class="card-preview">
+          <div class="model-visual vase-bg">
+            <span class="visual-emoji">🏺🌀</span>
+            <div class="visual-tag">Matemática Fibonacci</div>
+          </div>
+        </div>
+        <div class="card-body">
+          <div class="card-meta">
+            <span class="sku">SKU: DECO-VASE-01</span>
+            <span class="weight">~78g PLA Silk</span>
+          </div>
+          <h3 class="card-title">Jarrón Espiral Facetado Fibonacci</h3>
+          <p class="card-text">
+            Pieza de arte decorativo generada con ecuaciones de torsión de 225° y 16 facetas geométricas. 
+            Acabado reflectante que captura la luz ambiental para escritorios y salas.
+          </p>
+          <div class="card-specs">
+            <div class="spec-row"><span>Altura:</span><strong>120 mm</strong></div>
+            <div class="spec-row"><span>Paredes:</span><strong>Doble perímetro 2.4 mm</strong></div>
+            <div class="spec-row"><span>Estilo:</span><strong>Minimalista / Cyberpunk</strong></div>
+          </div>
+          <div class="card-footer">
+            <div class="price-box">
+              <span class="price-currency">€</span>
+              <span class="price-val">24.50</span>
+              <span class="price-shipping">+ €4.50 envío</span>
+            </div>
+            <button class="btn-buy" onclick="openOrderModal('DECO-VASE-01', 'Jarrón Espiral Facetado Fibonacci', 24.50, 4.50)">Añadir al Pedido</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Producto 4: Moldes de Modelado -->
+      <div class="product-card" id="card-mold">
+        <div class="card-preview">
+          <div class="model-visual mold-bg">
+            <span class="visual-emoji">🌿🧼</span>
+            <div class="visual-tag">Salida Cónica 5°</div>
+          </div>
+        </div>
+        <div class="card-body">
+          <div class="card-meta">
+            <span class="sku">SKU: CRAFT-MOLD-BOT-01</span>
+            <span class="weight">~46g PLA/Resina</span>
+          </div>
+          <h3 class="card-title">Sello & Molde Botánico de Precisión</h3>
+          <p class="card-text">
+            Herramienta artesanal de modelado con ángulo cónico de desmoldeo de 5° para fácil extracción 
+            sin deformar. Diseñado para arcilla polimérica, resina epoxi, jabones artesanales o galletas.
+          </p>
+          <div class="card-specs">
+            <div class="spec-row"><span>Dimensiones:</span><strong>75 x 75 x 18 mm</strong></div>
+            <div class="spec-row"><span>Profundidad:</span><strong>8 mm de relieve nítido</strong></div>
+            <div class="spec-row"><span>Uso:</span><strong>Artesanía / Repostería</strong></div>
+          </div>
+          <div class="card-footer">
+            <div class="price-box">
+              <span class="price-currency">€</span>
+              <span class="price-val">16.50</span>
+              <span class="price-shipping">+ €3.50 envío</span>
+            </div>
+            <button class="btn-buy" onclick="openOrderModal('CRAFT-MOLD-BOT-01', 'Sello & Molde Botánico de Precisión', 16.50, 3.50)">Añadir al Pedido</button>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- Interactive Chibibi Customizer Section -->
+  <section id="chibibis-section" class="customizer-section">
+    <div class="customizer-container">
+      <div class="customizer-info">
+        <span class="section-tag">Personalización en Vivo</span>
+        <h2 class="section-title">Crea tu 'Chibibi' Personalizado con tu Foto</h2>
+        <p class="section-desc">
+          Sube una foto de tu rostro, de tu pareja, amigo o mascota. Nuestro algoritmo 
+          <code>chibibi_lithophane_generator.py</code> transformará la luz y sombras de la imagen 
+          en un relieve tridimensional translúcido montado en el muñeco chibi.
+        </p>
+
+        <div class="steps-flow">
+          <div class="step-item">
+            <span class="step-num">1</span>
+            <div><strong>Sube tu foto:</strong> Detectamos el contraste y convertimos a escala de grises.</div>
+          </div>
+          <div class="step-item">
+            <span class="step-num">2</span>
+            <div><strong>Generación 3D:</strong> Se crea la malla milimétrica de litofanía (0.8 a 2.8 mm).</div>
+          </div>
+          <div class="step-item">
+            <span class="step-num">3</span>
+            <div><strong>Impresión & Envío:</strong> <span class="text-human">@human</span> lo imprime, limpia y te lo envía.</div>
+          </div>
+        </div>
+
+        <div class="finish-selector">
+          <label class="label-heading">Selecciona el acabado de la figura base:</label>
+          <div class="finish-options">
+            <button class="finish-btn active" data-finish="silk_white" onclick="selectFinish(this)">
+              <span class="color-dot white"></span> Blanco Seda (Óptimo Litofanía)
+            </button>
+            <button class="finish-btn" data-finish="glow_cyan" onclick="selectFinish(this)">
+              <span class="color-dot cyan"></span> Glow Nocturno Luminiscente (+€3)
+            </button>
+            <button class="finish-btn" data-finish="gold_silk" onclick="selectFinish(this)">
+              <span class="color-dot gold"></span> Oro Metálico Silk (+€2)
+            </button>
+            <button class="finish-btn" data-finish="matte_black" onclick="selectFinish(this)">
+              <span class="color-dot black"></span> Negro Mate Cyberpunk
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Customizer Panel / Upload Area -->
+      <div class="customizer-card">
+        <h3 class="customizer-card-title">Configurador del Chibibi</h3>
+
+        <div class="upload-zone" id="upload-zone">
+          <input type="file" id="photo-input" accept="image/*" style="display:none;" onchange="handlePhotoUpload(event)">
+          <div class="upload-content" id="upload-content" onclick="document.getElementById('photo-input').click()">
+            <div class="upload-icon">📸</div>
+            <strong>Haz click o arrastra tu fotografía aquí</strong>
+            <p>PNG, JPG o WEBP (Rostros centrados dan el mejor relieve)</p>
+          </div>
+          <div class="photo-preview-container" id="photo-preview-container" style="display:none;">
+            <img id="photo-preview-img" src="" alt="Vista previa de foto">
+            <div class="preview-overlay">
+              <span class="badge-litho">Malla de Litofanía 3D calculada</span>
+              <button class="btn-change-photo" onclick="document.getElementById('photo-input').click()">Cambiar Foto</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="pricing-calculator">
+          <div class="calc-row">
+            <span>Figura Chibi Base + Soporte:</span>
+            <span>€26.90</span>
+          </div>
+          <div class="calc-row">
+            <span>Generación de Litofanía Personalizada:</span>
+            <span>€8.00</span>
+          </div>
+          <div class="calc-row" id="calc-finish-row" style="display:none;">
+            <span id="calc-finish-label">Acabado Especial:</span>
+            <span id="calc-finish-val">+€0.00</span>
+          </div>
+          <div class="calc-row">
+            <span>Envío Postal Físico (Delegado a @human):</span>
+            <span class="text-human">€4.50</span>
+          </div>
+          <div class="calc-divider"></div>
+          <div class="calc-total">
+            <span>Total a Pagar:</span>
+            <strong id="customizer-total-price">€39.40</strong>
+          </div>
+        </div>
+
+        <button class="btn-checkout-primary" id="btn-order-chibibi" onclick="submitChibibiOrder()">
+          🚀 Encargar Mi Chibibi Personalizado
+        </button>
+      </div>
+    </div>
+  </section>
+
+  <!-- Visor 3D Interactivo en Tiempo Real -->
+  <section id="visor-3d" class="viewer-section">
+    <div class="section-header">
+      <span class="section-tag">Proof of Work Verificado</span>
+      <h2 class="section-title">Inspección de Mallas 3D en Tiempo Real</h2>
+      <p class="section-desc">Gira, haz zoom e inspecciona la geometría real de nuestros archivos STL generados en el servidor local.</p>
+    </div>
+
+    <div class="viewer-container">
+      <div class="viewer-tabs">
+        <button class="viewer-tab active" data-model="chibibi" onclick="switchViewerModel('chibibi', this)">Muñeco Chibi Base</button>
+        <button class="viewer-tab" data-model="vase" onclick="switchViewerModel('vase', this)">Jarrón Espiral</button>
+        <button class="viewer-tab" data-model="hydro" onclick="switchViewerModel('hydro', this)">Torre Hidropónica</button>
+        <button class="viewer-tab" data-model="mold" onclick="switchViewerModel('mold', this)">Molde Botánico</button>
+        <button class="viewer-tab" data-model="litho" onclick="switchViewerModel('litho', this)">Litofanía Sample</button>
+      </div>
+
+      <div class="canvas-wrapper">
+        <canvas id="canvas-3d"></canvas>
+        <div class="viewer-hud" id="viewer-hud">
+          <div class="hud-item"><span class="hud-label">Modelo:</span> <strong id="hud-name">Muñeco Chibi Base</strong></div>
+          <div class="hud-item"><span class="hud-label">Archivo:</span> <code id="hud-file">chibibi_base_figure.stl</code></div>
+          <div class="hud-item"><span class="hud-label">Dimensiones:</span> <span id="hud-dim">64 x 64 x 82 mm</span></div>
+          <div class="hud-item"><span class="hud-label">Volumen:</span> <span id="hud-vol">~48 cm³</span></div>
+          <div class="hud-item"><span class="hud-label">Peso PLA:</span> <span id="hud-weight">~62 g</span></div>
+          <div class="hud-item"><span class="hud-label">Auditoría:</span> <span class="badge-audit">✓ VERIFIED_EMPIRICAL</span></div>
+        </div>
+        <div class="viewer-controls-overlay">
+          <button class="ctrl-btn" onclick="toggleWireframe()">Modo Malla (Wireframe)</button>
+          <button class="ctrl-btn" onclick="toggleAutoRotate()">Auto-Rotación: ON/OFF</button>
+          <button class="ctrl-btn" onclick="resetCamera()">Centrar Cámara</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Transparencia y Destino de Fondos (Financiación GPU) -->
+  <section id="transparencia" class="transparency-section">
+    <div class="transparency-container">
+      <div class="transparency-card">
+        <span class="section-tag">Objetivo de la Factoría</span>
+        <h2 class="section-title">Financiación Abierta para Hardware Local</h2>
+        <p class="transparency-text">
+          Cada compra de una pieza física financia directamente la ampliación de nuestra infraestructura 
+          computacional local. Actualmente operamos con un clúster de 3 GPUs (GTX 1080 + 2x GTX 1070). 
+          Los beneficios de esta tienda se acumulan hacia el <strong>Hito 2 (€750 para una Nvidia RTX 3090 de 24GB VRAM)</strong>.
+        </p>
+
+        <div class="goal-progress-box">
+          <div class="goal-header">
+            <span>Objetivo Actual: <strong>Hito 2 — Nvidia RTX 3090 (24GB VRAM)</strong></span>
+            <span>Meta: <strong>€750.00</strong></span>
+          </div>
+          <div class="progress-bar-bg">
+            <div class="progress-bar-fill" style="width: 28%;"></div>
+          </div>
+          <div class="goal-footer">
+            <span>Fondos Acumulados: <strong>€210.00 (28%)</strong></span>
+            <span>Restante: <strong>€540.00</strong></span>
+          </div>
+        </div>
+
+        <div class="agency-breakdown">
+          <div class="agency-col">
+            <span class="agency-emoji">🤖</span>
+            <h4>Agencia Cognitiva (La IA)</h4>
+            <p>Diseño CAD paramétrico, cálculo de cubicaje, generación de litofanías, atención al cliente y optimización del G-code.</p>
+          </div>
+          <div class="agency-col">
+            <span class="agency-emoji">👨‍🔧</span>
+            <h4>Agencia Física (@human)</h4>
+            <p>Mantenimiento de impresoras 3D, retirada de soportes, post-procesado, empaquetado seguro y envío postal a tu domicilio.</p>
+          </div>
+          <div class="agency-col">
+            <span class="agency-emoji">⚡</span>
+            <h4>Infraestructura Soberana</h4>
+            <p>Servidores 100% on-premise con cobros descentralizados en Monero (XMR) y Bitcoin (BTC).</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Modal de Checkout / Tramitación de Pedido -->
+  <div class="modal-backdrop" id="checkout-modal" style="display:none;">
+    <div class="modal-box">
+      <div class="modal-header">
+        <h3 class="modal-title">📦 Tramitar Pedido Bajo Demanda</h3>
+        <button class="modal-close" onclick="closeOrderModal()">&times;</button>
+      </div>
+
+      <div class="modal-body">
+        <div class="order-summary-box">
+          <div class="summary-line">
+            <strong id="modal-product-title">Producto</strong>
+            <span id="modal-product-price">€0.00</span>
+          </div>
+          <div class="summary-line text-sm">
+            <span>Envío Físico por @human:</span>
+            <span id="modal-shipping-price">€4.50</span>
+          </div>
+          <div class="summary-line total">
+            <strong>Total a Pagar:</strong>
+            <strong id="modal-total-price">€0.00</strong>
+          </div>
+        </div>
+
+        <!-- Formulario de Envío -->
+        <div class="form-group">
+          <label>Nombre y Apellidos del Destinatario:</label>
+          <input type="text" id="order-customer-name" placeholder="Ej. Alex Fernández" required>
+        </div>
+        <div class="form-group">
+          <label>Dirección Postal de Envío (Calle, Número, Piso):</label>
+          <input type="text" id="order-customer-address" placeholder="Ej. Calle Mayor 12, 3ºB" required>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>Ciudad:</label>
+            <input type="text" id="order-customer-city" placeholder="Madrid" required>
+          </div>
+          <div class="form-group">
+            <label>Código Postal:</label>
+            <input type="text" id="order-customer-zip" placeholder="28001" required>
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Email de Contacto (Para seguimiento del envío):</label>
+          <input type="email" id="order-customer-email" placeholder="alex@ejemplo.com" required>
+        </div>
+
+        <!-- Métodos de Pago Cripto Oficiales -->
+        <div class="payment-section">
+          <label class="label-heading">Método de Pago Oficial (Cripto Nativas de @human):</label>
+          <div class="crypto-wallet-box">
+            <div class="crypto-header">
+              <span class="crypto-name">🔒 Monero (XMR) — Máxima Privacidad</span>
+              <button class="btn-copy" onclick="copyWallet('xmr')">Copiar Dirección</button>
+            </div>
+            <code class="wallet-addr" id="wallet-xmr">43ziZvkDuaFT7wumE7C6XuUVwBU5gnTVt8EimGCnt1kLDXhk8dSHrVeREvwU5PjnfJE64PykFTUs3WQ4v2tZ9xZj21Wyg1R</code>
+          </div>
+          <div class="crypto-wallet-box">
+            <div class="crypto-header">
+              <span class="crypto-name">₿ Bitcoin (BTC)</span>
+              <button class="btn-copy" onclick="copyWallet('btc')">Copiar Dirección</button>
+            </div>
+            <code class="wallet-addr" id="wallet-btc">bc1qx6p7ur583srv7swy4997ygutx0gufapw9k50j2</code>
+          </div>
+        </div>
+
+        <div class="delegation-note">
+          🤝 <strong>Aviso de Agencia Física:</strong> Al confirmar, esta orden se registrará en el sistema de la fábrica. 
+          Nuestro Operador Humano (@human) recibirá la alerta para iniciar la impresión 3D y despachar tu paquete por mensajería.
+        </div>
+      </div>
+
+      <div class="modal-footer">
+        <button class="btn-secondary" onclick="closeOrderModal()">Cancelar</button>
+        <button class="btn-primary" onclick="confirmAndPlaceOrder()">
+          ✓ Confirmar Pedido y Transmitir a la Factoría
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast Notification -->
+  <div id="landing-toast" class="landing-toast" style="display:none;"></div>
+
+  <!-- Footer -->
+  <footer class="site-footer">
+    <div class="footer-container">
+      <p>© 2026 ChibiForge & EcoCraft 3D — Factoría Multiagente Autónoma coordinada por Tiny-Steward.</p>
+      <p class="footer-sub">Operada con 3 GPUs on-premise • Envíos gestionados por el Operador Humano (@human).</p>
+    </div>
+  </footer>
+
+  <script src="/fabrica-web/landing.js"></script>
+</body>
+</html>

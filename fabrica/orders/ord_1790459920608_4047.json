@@ -1,0 +1,26 @@
+{
+  "order_id": "ord_1790459920608_4047",
+  "product": {
+    "sku": "DECO-VASE-01",
+    "title": "Jarrón Espiral Facetado Fibonacci",
+    "price": 24.5,
+    "shipping": 4.5,
+    "total": 29,
+    "extras": {}
+  },
+  "customer": {
+    "name": "Laura Gomez",
+    "address": "Avenida del Prado 45, 2A",
+    "city": "Madrid",
+    "zip": "28014",
+    "email": "laura.gomez@ejemplo.com"
+  },
+  "created_at": "2026-09-26T21:58:40.608Z",
+  "status": "in_print",
+  "payment_wallets": {
+    "xmr": "43ziZvkDuaFT7wumE7C6XuUVwBU5gnTVt8EimGCnt1kLDXhk8dSHrVeREvwU5PjnfJE64PykFTUs3WQ4v2tZ9xZj21Wyg1R",
+    "btc": "bc1qx6p7ur583srv7swy4997ygutx0gufapw9k50j2"
+  },
+  "updated_at": "2026-09-27T20:58:24",
+  "operator_notes": "15% infil, 10h ETA"
+}

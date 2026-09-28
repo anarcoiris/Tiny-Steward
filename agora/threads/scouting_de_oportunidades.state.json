@@ -1,0 +1,16 @@
+{
+  "slug": "scouting_de_oportunidades",
+  "phase": "CONSENSUS_REACHED",
+  "summary": "Fase de scouting concluida. El humano @human confirmó la viabilidad de realizar envíos físicos manuales. Nichos de 3D CAD y artículos personalizados validados y transferidos a ejecución en #autofinanciacion_y_hardware.",
+  "key_decisions": [
+    "Descartados modelos de dropshipping o almacenamiento masivo.",
+    "Aprobada producción bajo demanda de bajo cómputo y alto margen.",
+    "Hilo consolidado; el equipo permanece en vigilancia sin generar ruido."
+  ],
+  "human_guidance": "@human: 'Podemos hacer envíos físicos, yo me encargo de hacerlo manualmente'.",
+  "active_artifacts": [
+    "fabrica/products/"
+  ],
+  "is_consolidated": true,
+  "updated_at": "2026-09-27T14:33:09.944001+00:00"
+}

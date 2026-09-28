@@ -1,8 +1,8 @@
 /**
- * Agent Chat Component - Real-time Streaming & Collapsible <think> Blocks.
+ * Agent Chat Component - Real-time Streaming, History Hydration & Collapsible <think> Blocks.
  */
 
-import { streamChat } from '../api.js';
+import { streamChat, fetchChatHistory } from '../api.js';
 
 export function initChatComponent(AppState) {
   const feed = document.getElementById('messages-feed');
@@ -10,6 +10,9 @@ export function initChatComponent(AppState) {
   const sendBtn = document.getElementById('send-btn');
 
   if (!feed || !input || !sendBtn) return;
+
+  // Hydrate chat history on init
+  loadChatHistory(AppState);
 
   async function handleSend() {
     const prompt = input.value.trim();
@@ -66,13 +69,66 @@ export function initChatComponent(AppState) {
     }
   });
 
+  document.querySelectorAll('.chat-sidebar code').forEach(codeEl => {
+    codeEl.style.cursor = 'pointer';
+    codeEl.title = 'Haz clic para copiar al chat';
+    codeEl.addEventListener('click', () => {
+      input.value = codeEl.textContent.trim();
+      input.focus();
+    });
+  });
+
   function scrollToBottom() {
     feed.scrollTop = feed.scrollHeight;
   }
 }
 
+export async function loadChatHistory(AppState) {
+  const feed = document.getElementById('messages-feed');
+  if (!feed) return;
+
+  feed.innerHTML = `
+    <div class="message-bubble assistant" style="font-size:0.85rem; color:var(--text-muted);">
+      📂 Sesión activa: <strong>${AppState.session}</strong> &nbsp;|&nbsp; Cargando historial persistido...
+    </div>
+  `;
+
+  try {
+    const data = await fetchChatHistory(AppState.session);
+    feed.innerHTML = '';
+
+    if (!data.messages || data.messages.length === 0) {
+      feed.innerHTML = `
+        <div class="message-bubble assistant">
+          👋 Bienvenido a la sesión <strong>${AppState.session}</strong> de Tiny Steward Web IDE.<br/>
+          Escribe cualquier instrucción o consulta operativa para iniciar el razonamiento.
+        </div>
+      `;
+      return;
+    }
+
+    data.messages.forEach(msg => {
+      if (msg.role === 'user') {
+        appendMessage('user', msg.content);
+      } else if (msg.role === 'assistant') {
+        const bubble = createAssistantBubble();
+        if (msg.reasoning_content) {
+          bubble.updateThink(msg.reasoning_content);
+        }
+        bubble.updateText(msg.content);
+        feed.appendChild(bubble.element);
+      }
+    });
+
+    feed.scrollTop = feed.scrollHeight;
+  } catch (err) {
+    console.warn('Could not load chat history:', err);
+  }
+}
+
 function appendMessage(role, text) {
   const feed = document.getElementById('messages-feed');
+  if (!feed) return;
   const bubble = document.createElement('div');
   bubble.className = `message-bubble ${role}`;
   bubble.textContent = text;
@@ -86,10 +142,10 @@ function createAssistantBubble() {
 
   const thinkDetails = document.createElement('details');
   thinkDetails.className = 'think-block';
-  thinkDetails.open = true; // Open by default during reasoning
+  thinkDetails.open = true;
 
   const thinkSummary = document.createElement('summary');
-  thinkSummary.innerHTML = '🧠 Reasoning Chain';
+  thinkSummary.innerHTML = '🧠 Cadena de Razonamiento';
   thinkDetails.appendChild(thinkSummary);
 
   const thinkDiv = document.createElement('div');
@@ -107,7 +163,6 @@ function createAssistantBubble() {
   container.appendChild(textDiv);
   container.appendChild(badgesDiv);
 
-  // Hide think block until content arrives
   thinkDetails.style.display = 'none';
 
   return {

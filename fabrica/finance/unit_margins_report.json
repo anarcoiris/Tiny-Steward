@@ -1,0 +1,35 @@
+{
+  "title": "Auditoría de Costes Unitarios y Márgenes de la Factoría",
+  "auditor": "quant_lynx",
+  "products": {
+    "cheshire_collimator_1_25": {
+      "pvp_eur": 6.0,
+      "filament_grams": 30.38,
+      "unit_cost_eur": 0.9,
+      "gross_profit_eur": 5.1,
+      "net_margin_percent": 85.0,
+      "status": "APPROVED_HIGH_MARGIN (>80%)"
+    },
+    "flipper_killer_triple_antenna_v4": {
+      "pvp_eur": 39.0,
+      "bom_components_count": 27,
+      "unit_cost_eur": 11.75,
+      "gross_profit_eur": 27.25,
+      "net_margin_percent": 69.9,
+      "status": "APPROVED_TARGET_MARGIN (>65%)"
+    }
+  },
+  "treasury_and_gpu_fund": {
+    "milestone_1_risers_and_psu": {
+      "target_eur": 250,
+      "accumulated_eur": 45,
+      "progress_percent": 18.0
+    },
+    "milestone_2_rtx_3090_24gb": {
+      "target_eur": 750,
+      "accumulated_eur": 45,
+      "progress_percent": 6.0
+    }
+  },
+  "timestamp_iso": "2026-09-28T02:57:12.757598+00:00"
+}

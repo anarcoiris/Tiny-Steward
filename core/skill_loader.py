@@ -184,6 +184,23 @@ class SkillIndex:
         idx = self._name_map.get(name.lower())
         return self.skills[idx] if idx is not None else None
 
+    def get_by_domains(self, domains: list[str]) -> list[Skill]:
+        """Retrieve all skills belonging to the specified domain folders or tags."""
+        if not domains:
+            return []
+        domain_set = {d.lower().strip() for d in domains}
+        matched: list[Skill] = []
+        seen_slugs = set()
+        for skill in self.skills:
+            if skill.slug in seen_slugs:
+                continue
+            path_parts = [p.lower() for p in Path(skill.path).parts]
+            skill_tags = {t.lower() for t in skill.tags}
+            if any(d in path_parts or d in skill_tags for d in domain_set):
+                matched.append(skill)
+                seen_slugs.add(skill.slug)
+        return matched
+
     @property
     def size(self) -> int:
         return len(self.skills)
@@ -251,3 +268,43 @@ def build_index(skills_root: Path, embedder) -> SkillIndex:
     print(f"  Index built: {vectors.shape}")
 
     return SkillIndex(skills, vectors)
+
+
+def resolve_persona_skills(
+    persona_or_domains: Any,
+    index: SkillIndex,
+    fallback_query: str = "",
+    embedder: Any = None,
+    top_k_fallback: int = 3,
+) -> list[Skill]:
+    """Retrieve pre-assigned skills for a Persona, plus optional semantic fallback.
+
+    1. Directly injects all skills under the persona's `assigned_skill_domains`.
+    2. If fallback_query and embedder are provided, queries the index for additional relevant skills.
+    """
+    domains = (
+        getattr(persona_or_domains, "assigned_skill_domains", [])
+        if not isinstance(persona_or_domains, (list, set, tuple))
+        else list(persona_or_domains)
+    )
+
+    core_skills = index.get_by_domains(domains)
+    if not fallback_query or not embedder or index.vectors is None:
+        return core_skills
+
+    # RAG search for fallback
+    try:
+        q_vec = embedder.embed(fallback_query)
+        sims = np.dot(index.vectors, q_vec)
+        top_indices = np.argsort(sims)[::-1][:top_k_fallback]
+        seen_slugs = {s.slug for s in core_skills}
+        for idx in top_indices:
+            cand = index.skills[idx]
+            if cand.slug not in seen_slugs:
+                core_skills.append(cand)
+                seen_slugs.add(cand.slug)
+    except Exception:
+        pass
+
+    return core_skills
+

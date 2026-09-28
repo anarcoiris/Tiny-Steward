@@ -1,0 +1,26 @@
+{
+  "sku": "CHIBI-CUSTOM-01",
+  "title": "'Chibibis' — Muñecos Coleccionables 3D Personalizados con Fotografía",
+  "category": "Regalos Personalizados / Figuras Coleccionables Anime & Chibi",
+  "designer": "craft_fox & signal_raven",
+  "stl_file": "chibibi_base_figure.stl",
+  "scad_file": "chibibi_base_figure.scad",
+  "lithophane_sample_stl": "chibibi_lithophane_sample.stl",
+  "pricing_eur": 34.9,
+  "material_cost_eur": 2.8,
+  "human_shipping_fee_eur": 4.5,
+  "net_factory_margin_eur": 27.6,
+  "print_specs": {
+    "recommended_material": "PLA / Resina Fotosensible (Cara translúcida blanca)",
+    "layer_height_mm": 0.12,
+    "infill_pct": 20,
+    "print_time_hours": 4.0,
+    "weight_grams": 62
+  },
+  "customization_workflow": {
+    "step_1": "El cliente sube la fotografía en la Micro-Landing.",
+    "step_2": "chibibi_lithophane_generator.py construye la litofanía 3D milimétrica en segundos.",
+    "step_3": "Se genera el código G-code y el pedido consolidado en fabrica/orders/.",
+    "step_4": "El Operador Humano (@human) retira la pieza de la impresora 3D, empaqueta y realiza el envío postal."
+  }
+}

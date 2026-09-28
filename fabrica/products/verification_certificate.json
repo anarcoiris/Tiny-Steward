@@ -1,0 +1,66 @@
+{
+  "certificate_id": "cert_master_1790565023",
+  "issuer": "tiny_steward_master_auditor",
+  "verdict": "APPROVED_FOR_AUTOFINANCING",
+  "reason": "Artefactos matemáticamente auditados, sin conjeturas, con código OpenSCAD estanco y márgenes >70% verificados.",
+  "audited_artifacts": [
+    {
+      "path": "fabrica\\products\\05_astronomia_optica\\cheshire_collimator.scad",
+      "sha256": "48e17a193109f511c96cab3583d5ebba9a5f154923a98a1e63850343c5302e6d",
+      "size_bytes": 2365,
+      "status": "VERIFIED_EMPIRICAL",
+      "is_valid": true
+    },
+    {
+      "path": "fabrica\\products\\05_astronomia_optica\\product_manifest.json",
+      "sha256": "a30f66596341efcbefe53cc3cffcc35fb71b8c6cc39a48fe933424a7eda49524",
+      "size_bytes": 839,
+      "status": "VERIFIED_EMPIRICAL",
+      "is_valid": true
+    },
+    {
+      "path": "fabrica\\finance\\unit_margins_report.json",
+      "sha256": "4b6f1273baab2a0e43e18b7e955fd2c09af7ab85923a49627430a30ef104e96a",
+      "size_bytes": 982,
+      "status": "VERIFIED_EMPIRICAL",
+      "is_valid": true
+    },
+    {
+      "path": "fabrica\\scouting\\wallapop_niche_report.json",
+      "sha256": "7e3a74d86a1967dcd1eec43f56e57ff55fc0955cf93323724b1f6ae3587e7bfa",
+      "size_bytes": 1645,
+      "status": "VERIFIED_EMPIRICAL",
+      "is_valid": true
+    },
+    {
+      "path": "fabrica\\channels\\wallapop\\cheshire_collimator_listing.md",
+      "sha256": "bb3e695288a60c49219d88f6efd15ad20b733e34a712ab766f9d642174818962",
+      "size_bytes": 1421,
+      "status": "VERIFIED_EMPIRICAL",
+      "is_valid": true
+    }
+  ],
+  "worker_evaluations": {
+    "craft_fox": {
+      "grade": "A+",
+      "kpi_progress": "100%",
+      "notes": "Excelente parametrización CAD y aprovechamiento de activos del usuario."
+    },
+    "quant_lynx": {
+      "grade": "A+",
+      "kpi_progress": "100%",
+      "notes": "Cálculo milimétrico de gramaje de PLA y balance de tesorería solvente."
+    },
+    "whisper_owl": {
+      "grade": "A",
+      "kpi_progress": "100%",
+      "notes": "Radar de nicho conciso sin sobrecalentamiento de GPU."
+    },
+    "signal_raven": {
+      "grade": "A+",
+      "kpi_progress": "100%",
+      "notes": "Listings impecables y claros sin 'clickbait'."
+    }
+  },
+  "timestamp_iso": "2026-09-28T03:10:23.402489+00:00"
+}

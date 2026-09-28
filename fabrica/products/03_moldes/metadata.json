@@ -1,0 +1,19 @@
+{
+  "sku": "CRAFT-MOLD-BOT-01",
+  "title": "Sello / Molde de Alta Precisión Botánica con Ángulo de Desmoldeo",
+  "category": "Artesanía / Arcilla / Jabones / Resina",
+  "designer": "craft_fox",
+  "stl_file": "craft_mold_botanical.stl",
+  "scad_file": "craft_mold_botanical.scad",
+  "pricing_eur": 16.5,
+  "material_cost_eur": 1.2,
+  "human_shipping_fee_eur": 3.5,
+  "net_factory_margin_eur": 11.8,
+  "print_specs": {
+    "recommended_material": "PLA / Resina Tough (Grado alimentario opcional)",
+    "layer_height_mm": 0.16,
+    "infill_pct": 25,
+    "print_time_hours": 2.1,
+    "weight_grams": 46
+  }
+}

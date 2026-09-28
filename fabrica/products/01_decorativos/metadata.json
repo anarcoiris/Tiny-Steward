@@ -1,0 +1,19 @@
+{
+  "sku": "DECO-VASE-01",
+  "title": "Jarrón Espiral Facetado Fibonacci",
+  "category": "Decoración del Hogar / Arte 3D",
+  "designer": "craft_fox",
+  "stl_file": "spiral_vase_deco.stl",
+  "scad_file": "spiral_vase_deco.scad",
+  "pricing_eur": 24.5,
+  "material_cost_eur": 2.1,
+  "human_shipping_fee_eur": 4.5,
+  "net_factory_margin_eur": 17.9,
+  "print_specs": {
+    "recommended_material": "PLA Silk / PETG",
+    "layer_height_mm": 0.2,
+    "infill_pct": 15,
+    "print_time_hours": 3.5,
+    "weight_grams": 78
+  }
+}

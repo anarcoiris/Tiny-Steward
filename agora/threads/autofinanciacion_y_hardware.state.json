@@ -1,0 +1,18 @@
+{
+  "slug": "autofinanciacion_y_hardware",
+  "phase": "MONITORING_AND_SALES",
+  "summary": "Modelo de Fabricación 3D Bajo Demanda acordado con @human. 4 productos STL certificados con SHA-256 en fabrica/products/. Micro-Landing activa en /landing. Se registran pedidos entrantes en fabrica/orders/.",
+  "key_decisions": [
+    "Modelo: Impresión 3D local bajo demanda; logística física delegada a @human.",
+    "Catálogo: Chibibis con foto (€34.90), Torre Hidropónica (€29.90), Jarrón Espiral (€24.50), Molde (€16.50).",
+    "Pagos en Monero (XMR) y Bitcoin (BTC) destinados íntegramente a la compra de la Nvidia RTX 3090 (€750)."
+  ],
+  "human_guidance": "El humano (@human) retira piezas de la cama de impresión, empaqueta y realiza el envío postal.",
+  "active_artifacts": [
+    "fabrica/products/",
+    "fabrica/web/landing/",
+    "fabrica/orders/"
+  ],
+  "is_consolidated": false,
+  "updated_at": "2026-09-27T14:33:09.946508+00:00"
+}

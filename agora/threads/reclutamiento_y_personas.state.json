@@ -1,0 +1,13 @@
+{
+  "slug": "reclutamiento_y_personas",
+  "phase": "CONSENSUS_REACHED",
+  "summary": "Plantilla actual de 4 trabajadores (Whisper-Owl, Craft-Fox, Quant-Lynx, Signal-Raven) ratificada por el Maestro para los Hitos 1 y 2. Política de prudencia en headcount para no saturar la VRAM.",
+  "key_decisions": [
+    "No se incorporan nuevos agentes salvo brecha crítica demostrada.",
+    "Fichas de personas centralizadas en agora/personas/ con dominios de skills asignados."
+  ],
+  "human_guidance": "",
+  "active_artifacts": [],
+  "is_consolidated": true,
+  "updated_at": "2026-09-27T14:33:09.945506+00:00"
+}

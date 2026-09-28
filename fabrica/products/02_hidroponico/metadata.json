@@ -1,0 +1,19 @@
+{
+  "sku": "HYDRO-TOWER-MOD-01",
+  "title": "Módulo Modular Apilable para Torre Hidropónica Vertical",
+  "category": "Jardinería Urbana / Hidroponía Doméstica",
+  "designer": "craft_fox",
+  "stl_file": "hydro_tower_module.stl",
+  "scad_file": "hydro_tower_module.scad",
+  "pricing_eur": 29.9,
+  "material_cost_eur": 3.8,
+  "human_shipping_fee_eur": 5.0,
+  "net_factory_margin_eur": 21.1,
+  "print_specs": {
+    "recommended_material": "PETG Blanco (Resistente UV y agua)",
+    "layer_height_mm": 0.28,
+    "infill_pct": 20,
+    "print_time_hours": 5.2,
+    "weight_grams": 135
+  }
+}

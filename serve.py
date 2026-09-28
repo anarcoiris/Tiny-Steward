@@ -11,6 +11,15 @@ import webbrowser
 import uvicorn
 
 
+import sys
+if sys.platform == "win32":
+    try:
+        sys.stdout.reconfigure(encoding="utf-8")
+        sys.stderr.reconfigure(encoding="utf-8")
+    except Exception:
+        pass
+
+
 def find_free_port(start_port=8000, max_port=8100):
     for port in range(start_port, max_port):
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
@@ -30,11 +39,12 @@ def main():
         sys.exit(1)
 
     url = f"http://127.0.0.1:{port}/"
-    print(f"\n=============================================================")
-    print(f"   ⚡ Tiny Steward Web IDE & Control Center Platform ⚡")
-    print(f"=============================================================")
+    print("\n=============================================================")
+    print("   [Tiny Steward] Web IDE & Multi-Agent Control Center")
+    print("=============================================================")
     print(f"  URL: {url}")
-    print(f"=============================================================\n")
+    print("=============================================================\n")
+
 
     def launch_browser():
         time.sleep(1.2)

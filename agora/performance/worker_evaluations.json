@@ -1,0 +1,62 @@
+{
+  "whisper_owl": {
+    "id": "whisper_owl",
+    "name": "Whisper-Owl",
+    "emoji": "🦉🔍",
+    "score": 96,
+    "rating": "A+",
+    "proposals_count": 3,
+    "approved_count": 2,
+    "steering_count": 1,
+    "alignment_score": 95,
+    "efficiency_score": 90,
+    "last_feedback": "Auditorías DevSecOps impecables.",
+    "current_focus": "Repositorios de electrónica maker y ESP32.",
+    "updated_at": "2026-09-28T03:06:18.260216+00:00"
+  },
+  "craft_fox": {
+    "id": "craft_fox",
+    "name": "Craft-Fox",
+    "emoji": "🦊🎨",
+    "score": 88,
+    "rating": "A-",
+    "proposals_count": 27,
+    "approved_count": 1,
+    "steering_count": 2,
+    "alignment_score": 90,
+    "efficiency_score": 88,
+    "last_feedback": "Buenos diseños paramétricos para PCBs. Requerido: paquete descargable STL/STEP listo para venta digital directa sin envíos físicos.",
+    "current_focus": "Modelado de soportes y carcasas paramétricas para electrónica y ductos de ventilación para la RTX 3090.",
+    "updated_at": "2026-09-26T17:55:47.365543+00:00"
+  },
+  "quant_lynx": {
+    "id": "quant_lynx",
+    "name": "Quant-Lynx",
+    "emoji": "🐆📈",
+    "score": 94,
+    "rating": "A+",
+    "proposals_count": 3,
+    "approved_count": 3,
+    "steering_count": 0,
+    "alignment_score": 98,
+    "efficiency_score": 92,
+    "last_feedback": "Análisis de economía unitaria impecable. Integrar balance de cobro en Monero y Bitcoin indicados por @human.",
+    "current_focus": "Control del fondo hacia el Hito 2 (€750 para RTX 3090) y mitigación de costes de tokens.",
+    "updated_at": "2026-09-26T17:55:47.365543+00:00"
+  },
+  "signal_raven": {
+    "id": "signal_raven",
+    "name": "Signal-Raven",
+    "emoji": "🦅🌐",
+    "score": 86,
+    "rating": "B+",
+    "proposals_count": 2,
+    "approved_count": 1,
+    "steering_count": 1,
+    "alignment_score": 88,
+    "efficiency_score": 85,
+    "last_feedback": "Estrategia de contenidos viable. Priorizar la landing de reporte gratuito con enlaces de donación/pago directo.",
+    "current_focus": "Landing de auditorías y botón de contratación/donación para hardware con billeteras BTC/XMR.",
+    "updated_at": "2026-09-26T17:55:47.365543+00:00"
+  }
+}
